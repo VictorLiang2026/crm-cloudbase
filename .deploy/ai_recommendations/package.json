@@ -1,0 +1,8 @@
+{
+  "name": "ai_recommendations",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "@cloudbase/node-sdk": "^4.0.3"
+  }
+}
