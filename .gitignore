@@ -1,0 +1,52 @@
+# ===== 敏感信息 =====
+# 真实环境变量(保留 .env.example 作为模板)
+.env
+.env.local
+.env.*.local
+# PG 凭证、数据库信息(SPEC 硬约束:不入仓库)
+数据库信息.txt
+*.secret
+*.key
+
+# ===== 测试与临时文件 =====
+# OCR/图片测试数据
+test_ocr.*
+# 测试脚本与生成产物
+gen_test_img.js
+# HTML 副本(误存的备份)
+admin - 副本.html
+*.bak
+*.tmp
+*.swp
+*~
+
+# ===== 依赖 =====
+node_modules/
+package-lock.json
+yarn.lock
+.pnpm-store/
+
+# ===== 构建产物 / 部署缓存 =====
+dist/
+build/
+.deploy/
+*.tsbuildinfo
+
+# ===== IDE / 编辑器 =====
+.trae/
+.workbuddy/
+.vscode/
+.idea/
+*.code-workspace
+
+# ===== 操作系统 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 日志 =====
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
