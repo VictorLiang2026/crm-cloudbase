@@ -1,17 +1,18 @@
 /**
  * ai_parse — AI 文本/照片解析 → 客户资料（事件云函数，超时 120s，rdb() 版）
- * 入参 event: { text?, image_base64?, content_type? }
- *   - text: 待解析的自然语言文本（与 image_base64 至少提供一个）
- *   - image_base64: 可选，照片 base64（不含 data: 前缀）；提供时走多模态识别图中文字
+ * 入参 event: { text?, images?, image_base64?, content_type?, file_name? }
+ *   - text: 待解析的自然语言文本（与图片至少提供一个）；可包含附件文件名/文本文件内容等上下文
+ *   - images: 可选，多图数组 [{ base64, content_type?, file_name? }]（不含 data: 前缀），多模态识别
+ *   - image_base64: 可选，单图 base64（向后兼容旧入参，等价 images:[{base64}]）
  * 出参: { parsed, raw }
  *   - parsed: { customer_name, gender, phone, birthday, occupation, marital_status,
  *               customer_stage, sales_priority, recruitment_priority, referral_priority,
  *               hobbies, source, additional_info, ... }
  *   - raw: 模型原始输出文本
  *
- * 解析前的原始内容（用户输入文本 + 照片识别出的全部文字）统一追加到 parsed.additional_info，
+ * 解析前的原始内容（用户输入文本 + 各照片识别出的全部文字）统一追加到 parsed.additional_info，
  * 由前端确认表单随结构化字段一起入库。
- * 照片本身不再由本函数保存，由前端在客户创建/更新成功后调 photos.create 保存。
+ * 文件本身不再由本函数保存，由前端在客户创建成功后按 category（photo/attachment）调 photos.create 保存。
  */
 'use strict';
 
@@ -35,30 +36,39 @@ const FIELD_SPEC = [
 const SYSTEM = '你是一个客户信息解析助手。从用户提供的文本中提取客户资料，输出 JSON。\n字段：\n' + FIELD_SPEC;
 
 const SYSTEM_VISION = [
-  '你是一个客户信息解析助手。第一步：完整识别图片中的所有文字（OCR）。',
-  '第二步：从识别出的文字中提取客户资料。',
+  '你是一个客户信息解析助手。用户会提供一张或多张图片（以及可能的补充文本/附件说明）。',
+  '第一步：完整识别每张图片中的所有文字（OCR），并在 ocr_text 中按【照片N：文件名】的格式分段拼接各图识别结果。',
+  '第二步：综合所有图片和文本内容提取同一位客户的资料；信息冲突时以更明确的一处为准。',
   '输出 JSON，字段：',
-  'ocr_text(图片中识别出的全部原始文字，按阅读顺序拼接),',
+  'ocr_text(所有图片中识别出的全部原始文字，按图片顺序分段拼接),',
 ].join('\n') + FIELD_SPEC;
 
 exports.main = async (event, context) => {
   try {
     const text = ((event && event.text) || '').trim();
-    const imageBase64 = event && event.image_base64;
-    if (!text && !imageBase64) return { error: 'text or image required' };
+    // 组装多图数组：优先 images，兼容旧的单图入参
+    let images = (event && Array.isArray(event.images)) ? event.images : [];
+    if (!images.length && event && event.image_base64) {
+      images = [{ base64: event.image_base64, content_type: event.content_type, file_name: event.file_name }];
+    }
+    images = images.filter(function (im) { return im && im.base64; });
+    if (!text && !images.length) return { error: 'text or image required' };
 
     let raw = '';
-    if (imageBase64) {
-      // 多模态：图片（+可选补充文本）→ 识别文字 + 结构化提取
-      const contentType = (event && event.content_type) || 'image/jpeg';
-      const dataUrl = 'data:' + contentType + ';base64,' + imageBase64;
-      const userText = text || '请识别图片中的客户资料。';
+    if (images.length) {
+      // 多模态：多图（+可选补充文本）→ 识别文字 + 结构化提取
+      const content = [{ type: 'text', text: text || '请识别图片中的客户资料。' }];
+      images.forEach(function (im, idx) {
+        const contentType = im.content_type || 'image/jpeg';
+        const label = im.file_name ? ('（文件名：' + im.file_name + '）') : '';
+        if (images.length > 1 || label) {
+          content.push({ type: 'text', text: '照片' + (idx + 1) + label + '：' });
+        }
+        content.push({ type: 'image_url', image_url: { url: 'data:' + contentType + ';base64,' + im.base64 } });
+      });
       const messages = [
         { role: 'system', content: SYSTEM_VISION },
-        { role: 'user', content: [
-          { type: 'text', text: userText },
-          { type: 'image_url', image_url: { url: dataUrl } },
-        ] },
+        { role: 'user', content: content },
       ];
       const res = await generateText(messages, { timeout: 120000, model: VISION_MODEL });
       raw = res.text;

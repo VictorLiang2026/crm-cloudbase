@@ -117,7 +117,7 @@ async function get(event) {
     rdb.from('gifts').select().eq('customer_id', id)
       .order('given_date', { ascending: false, nullsFirst: false })
       .order('Id', { ascending: false }),
-    rdb.from('photos').select('id, customer_id, customer_name, file_name, content_type, sort_order, created_at')
+    rdb.from('photos').select('id, customer_id, customer_name, file_name, content_type, sort_order, created_at, photo_notes, category')
       .eq('customer_id', id)
       .order('sort_order', { ascending: true })
       .order('id', { ascending: true }),

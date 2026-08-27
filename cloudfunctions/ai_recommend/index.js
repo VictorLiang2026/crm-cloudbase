@@ -25,6 +25,10 @@ const SYSTEM = [
   '只输出 JSON，不要解释。',
 ].join('\n');
 
+// 给模型的历史建议参考说明（与 SYSTEM 分开，便于在 user 消息里拼接）
+const HISTORY_HINT =
+  '以下是该客户的历史 AI 跟进建议（按时间倒序，仅作参考）。请结合这些历史建议避免重复、体现递进，生成一条新的、更深入的跟进建议：';
+
 exports.main = async (event, context) => {
   try {
     const customerId = parseInt(event && event.customer_id, 10);
@@ -35,7 +39,7 @@ exports.main = async (event, context) => {
     if (!c.data) return { error: 'customer not found' };
     const customer = c.data;
 
-    const [fol, prod, gif] = await Promise.all([
+    const [fol, prod, gif, hist, photos] = await Promise.all([
       rdb.from('followups').select().eq('customer_id', customerId)
         .order('followup_date', { ascending: false, nullsFirst: false })
         .order('Id', { ascending: false })
@@ -45,10 +49,24 @@ exports.main = async (event, context) => {
         .order('given_date', { ascending: false, nullsFirst: false })
         .order('Id', { ascending: false })
         .limit(5),
+      // 拉取历史 AI 建议（最近 5 条，按时间倒序）作为生成新建议的参考
+      rdb.from('ai_recommendations').select(
+        'recommendation_date,suggested_message,suggested_strategy,suggested_followup_date,suggested_customer_stage,suggested_followup_goal'
+      ).eq('customer_id', customerId)
+        .order('recommendation_date', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: false })
+        .limit(5),
+      // 拉取照片元数据（最近 5 条）
+      rdb.from('photos').select('file_name,photo_notes,created_at').eq('customer_id', customerId)
+        .order('created_at', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: false })
+        .limit(5),
     ]);
     const folRows = assertOk(fol).data || [];
     const prodRows = assertOk(prod).data || [];
     const gifRows = assertOk(gif).data || [];
+    const histRows = assertOk(hist).data || [];
+    const photoRows = assertOk(photos).data || [];
 
     const ctx = {
       customer: {
@@ -67,11 +85,40 @@ exports.main = async (event, context) => {
       recent_gifts: gifRows.map(function (g) {
         return { name: g.gift_name, date: g.given_date };
       }),
+      recent_photos: photoRows.map(function (p) {
+        return { file: p.file_name, notes: p.photo_notes, date: p.created_at };
+      }),
+      // 历史 AI 建议作为参考（倒序，最新在前）
+      recent_recommendations: histRows.map(function (r) {
+        return {
+          date: r.recommendation_date,
+          message: r.suggested_message,
+          strategy: r.suggested_strategy,
+          followup_date: r.suggested_followup_date,
+          stage: r.suggested_customer_stage,
+          goal: r.suggested_followup_goal,
+        };
+      }),
     };
+
+    // 拼接 user 消息：客户资料 + 历史建议参考
+    let userContent = '客户资料：\n' + JSON.stringify(ctx, null, 2);
+    if (histRows.length) {
+      userContent += '\n\n' + HISTORY_HINT + '\n' + JSON.stringify(histRows.map(function (r) {
+        return {
+          date: r.recommendation_date,
+          message: r.suggested_message,
+          strategy: r.suggested_strategy,
+          followup_date: r.suggested_followup_date,
+          stage: r.suggested_customer_stage,
+          goal: r.suggested_followup_goal,
+        };
+      }), null, 2);
+    }
 
     const messages = [
       { role: 'system', content: SYSTEM },
-      { role: 'user', content: '客户资料：\n' + JSON.stringify(ctx, null, 2) },
+      { role: 'user', content: userContent },
     ];
     const { text: raw } = await generateText(messages, { timeout: 120000 });
     const parsed = extractJson(raw) || {};

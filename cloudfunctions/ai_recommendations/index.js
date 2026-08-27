@@ -25,6 +25,7 @@ exports.main = async (event, context) => {
     switch (action) {
       case 'list': return await list(event);
       case 'listAll': return await listAll(event);
+      case 'get': return await get(event);
       default: return { error: 'unknown action: ' + action };
     }
   } catch (e) {
@@ -66,4 +67,13 @@ async function listAll(event) {
   let page = Math.min(Math.max(1, parseInt(event.page, 10) || 1), pages);
   const start = (page - 1) * pageSize;
   return { rows: rows.slice(start, start + pageSize), total: total, page: page, pages: pages };
+}
+
+// 按 id 查询单条 AI 建议（完整字段，供详情页使用）
+async function get(event) {
+  const id = parseInt(event.id, 10);
+  if (!id) return { error: 'id required' };
+  const r = assertOk(await rdb.from('ai_recommendations').select().eq('id', id).maybeSingle());
+  if (!r.data) return { error: 'not found' };
+  return { recommendation: r.data };
 }
