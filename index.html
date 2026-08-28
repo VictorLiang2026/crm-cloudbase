@@ -86,6 +86,20 @@
   .diff-field{white-space:nowrap;font-weight:600;color:#475569}
   .diff-old{color:var(--muted)}
   .diff-new{color:var(--pri);font-weight:600}
+  .ocr-item{margin-bottom:12px;padding:14px}
+  .ocr-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+  .ocr-time{font-weight:600;color:var(--text);font-size:14px}
+  .ocr-actions{display:flex;gap:8px}
+  .ocr-block{margin-bottom:10px}
+  .ocr-block-label{font-size:12px;color:var(--muted);margin-bottom:4px}
+  .ocr-summary{font-size:14px;color:var(--text);line-height:1.7;white-space:pre-wrap;background:#f8fafc;border:1px solid var(--border-light);border-radius:8px;padding:10px 12px}
+  .ocr-raw{margin-bottom:10px}
+  .ocr-raw summary{cursor:pointer;font-size:13px;color:var(--pri);font-weight:600;user-select:none}
+  .ocr-raw-text{margin-top:6px;font-size:12.5px;color:var(--text-secondary);line-height:1.7;white-space:pre-wrap;background:#f8fafc;border:1px solid var(--border-light);border-radius:8px;padding:10px 12px;max-height:260px;overflow:auto;font-family:Consolas,monospace}
+  .ocr-file-chips{display:flex;flex-wrap:wrap;gap:6px}
+  .ocr-file-chip{max-width:100%;font-size:12.5px;color:var(--pri);background:var(--pri-light);border:none;border-radius:14px;padding:4px 12px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ocr-file-chip:hover{filter:brightness(0.96)}
+  .ocr-file-chip.gone{color:var(--muted);background:#f1f5f9;cursor:default}
   .ai-result{background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:16px;margin-top:12px}
   .ai-result dt{font-weight:600;color:var(--text-secondary);font-size:13px;margin-top:10px}
   .ai-result dd{margin-left:0;font-size:14px;color:var(--text);line-height:1.7}
@@ -463,7 +477,7 @@ async function showDetail(id){
 
     // 标签栏
     var tabs = el('div', {class:'tabs'});
-    var tabsDef = [['info','基本信息'],['followups','跟进记录 ('+r.followups.length+')'],['products','产品额度'],['gifts','伴手礼 ('+r.gifts.length+')'],['photos','照片/附件 ('+r.photos.length+')'],['ai','AI 建议']];
+    var tabsDef = [['info','基本信息'],['followups','跟进记录 ('+r.followups.length+')'],['products','产品额度'],['gifts','伴手礼 ('+r.gifts.length+')'],['photos','照片/附件 ('+r.photos.length+')'],['ocr','OCR 记录'],['ai','AI 建议']];
     tabsDef.forEach(function(t){
       var tab = el('div', {class:'tab'+(detailState.tab===t[0]?' active':''), onclick:function(){ detailState.tab=t[0]; showDetail(id); }}, t[1]);
       tabs.appendChild(tab);
@@ -477,6 +491,7 @@ async function showDetail(id){
       case 'products': content.appendChild(renderProducts(id, r.products)); break;
       case 'gifts': content.appendChild(renderGifts(id, r.gifts)); break;
       case 'photos': content.appendChild(renderPhotos(id, r.photos)); break;
+      case 'ocr': content.appendChild(await renderOcrRecords(id)); break;
       case 'ai': content.appendChild(await renderAi(id, r.recommendations)); break;
     }
     card.appendChild(content);
@@ -756,6 +771,153 @@ function renderPhotoItem(cid, p){
   notesEl.appendChild(actions);
   item.appendChild(notesEl);
   return item;
+}
+
+// ---------- OCR 记录（AI 解析识别结果，关联 photos 文件） ----------
+function parseJsonArr(s){
+  try { var v = JSON.parse(s || '[]'); return Array.isArray(v) ? v : []; } catch(e){ return []; }
+}
+function fmtOcrTime(s){
+  if(!s) return '';
+  var d = new Date(s);
+  if(isNaN(d.getTime())) return String(s).replace('T',' ').slice(0,16);
+  function p(n){ return (n<10?'0':'')+n; }
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
+}
+
+async function renderOcrRecords(cid){
+  var box = el('div', {});
+  var loading = el('div', {class:'loading'}, '加载中…');
+  box.appendChild(loading);
+  var rows;
+  try {
+    var r = await callFn('ocr_records', {action:'list', customer_id:cid});
+    rows = r.rows || [];
+  } catch(e){ loading.textContent = '加载失败：'+esc(e.message); return box; }
+  loading.remove();
+  if(!rows.length){
+    box.appendChild(el('div', {class:'empty'}, '暂无 OCR 识别记录。使用首页"AI 解析客户资料"上传照片/文件后，识别结果会自动保存到这里。'));
+    return box;
+  }
+  // 关联文件映射（照片/附件元数据来自客户详情已加载的数据）
+  var photosMap = {};
+  ((detailState.data && detailState.data.photos) || []).forEach(function(p){ photosMap[String(p.id)] = p; });
+  rows.forEach(function(rec){
+    box.appendChild(renderOcrItem(cid, rec, photosMap));
+  });
+  return box;
+}
+
+function renderOcrItem(cid, rec, photosMap){
+  var card = el('div', {class:'card ocr-item'});
+  // 头部：时间 + 操作
+  var fileIds = parseJsonArr(rec.file_ids);
+  var fileNames = parseJsonArr(rec.file_names);
+  var hasFiles = fileIds.length > 0;
+  var actions = el('div', {class:'ocr-actions'});
+  actions.appendChild(el('button', {class:'btn btn-ghost', onclick:function(){ openOcrEditModal(cid, rec); }}, '编辑'));
+  var updBtn = el('button', {class:'btn btn-primary btn-sm', onclick:function(){ updateCustomerFromOcr(cid, rec, updBtn); }}, '更新客户信息');
+  actions.appendChild(updBtn);
+  card.appendChild(el('div', {class:'ocr-head'}, [
+    el('span', {class:'ocr-time'}, fmtOcrTime(rec.created_at) + (rec.updated_at ? '（已修订）' : '')),
+    actions,
+  ]));
+  // 摘要（附加信息提炼结果）
+  var summaryText = rec.summary || '';
+  if(summaryText){
+    card.appendChild(el('div', {class:'ocr-block'}, [
+      el('div', {class:'ocr-block-label'}, '识别摘要（已入附加信息）'),
+      el('div', {class:'ocr-summary'}, summaryText),
+    ]));
+  }
+  // 识别原文（默认折叠）
+  if(rec.raw_text){
+    card.appendChild(el('details', {class:'ocr-raw'}, [
+      el('summary', {}, '识别原文'),
+      el('div', {class:'ocr-raw-text'}, rec.raw_text),
+    ]));
+  }
+  // 关联文件（点击查看图片 / 下载附件）
+  if(hasFiles){
+    var filesRow = el('div', {class:'ocr-files'});
+    filesRow.appendChild(el('div', {class:'ocr-block-label'}, '关联文件（'+fileIds.length+'）'));
+    var chips = el('div', {class:'ocr-file-chips'});
+    fileIds.forEach(function(fid, i){
+      var p = photosMap[String(fid)];
+      var name = (p && p.file_name) || fileNames[i] || ('文件#'+fid);
+      var isGone = !p;
+      var chip = el('button', {class:'ocr-file-chip'+(isGone?' gone':''), title:isGone?'文件已不存在或已删除':'点击查看'},
+        (isGone ? '⚠ ' : (/^image\//.test((p && p.content_type) || '') ? '🖼 ' : '📄 ')) + name);
+      if(!isGone){
+        chip.onclick = async function(){
+          try {
+            var r = await callFn('photos', {action:'get', id:p.id});
+            var url = r.photo && r.photo.photo_url;
+            if(!url){ toast('未取到文件','err'); return; }
+            if(/^image\//.test(p.content_type || '')) showImagePreview(url, p.file_name, p.photo_notes);
+            else {
+              var a = document.createElement('a');
+              a.href = url; a.download = p.file_name || 'attachment';
+              document.body.appendChild(a); a.click(); a.remove();
+            }
+          } catch(e){ toast(e.message,'err'); }
+        };
+      }
+      chips.appendChild(chip);
+    });
+    filesRow.appendChild(chips);
+    card.appendChild(filesRow);
+  }
+  return card;
+}
+
+// 编辑 OCR 记录（摘要 + 识别原文）
+function openOcrEditModal(cid, rec){
+  var overlay = el('div', {class:'modal-overlay'});
+  var m = el('div', {class:'modal'});
+  m.appendChild(el('h3', {}, '编辑 OCR 识别结果'));
+  var summaryTa = el('textarea', {style:'width:100%;min-height:90px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;resize:vertical'}, rec.summary || '');
+  var rawTa = el('textarea', {style:'width:100%;min-height:180px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:Consolas,monospace;resize:vertical'}, rec.raw_text || '');
+  m.appendChild(el('div', {class:'field'}, [el('label', {}, '识别摘要（可作为附加信息合并到客户资料）'), summaryTa]));
+  m.appendChild(el('div', {class:'field'}, [el('label', {}, '识别原文（完整识别文字）'), rawTa]));
+  m.appendChild(el('div', {class:'modal-footer'}, [
+    el('button', {class:'btn', onclick:function(){ overlay.remove(); }}, '取消'),
+    el('button', {class:'btn btn-primary', onclick:async function(){
+      var btn = this; btn.disabled = true;
+      try {
+        await callFn('ocr_records', {action:'update', id:rec.id, data:{summary: summaryTa.value.trim() || null, raw_text: rawTa.value.trim() || null}});
+        toast('OCR 记录已保存');
+        overlay.remove();
+        showDetail(cid);
+      } catch(e){ toast(e.message,'err'); }
+      finally { btn.disabled = false; }
+    }}, '保存'),
+  ]));
+  overlay.appendChild(m);
+  overlay.addEventListener('click', function(e){ if(e.target===overlay) overlay.remove(); });
+  document.getElementById('modal-root').appendChild(overlay);
+}
+
+// 基于 OCR 记录重新 AI 匹配 → 复用对比审核界面，人工确认后更新客户信息
+async function updateCustomerFromOcr(cid, rec, btn){
+  var oldLabel = btn.textContent;
+  btn.disabled = true; btn.textContent = 'AI 匹配中…';
+  try {
+    var text = '';
+    if(rec.summary) text += '【识别摘要】\n' + rec.summary + '\n\n';
+    if(rec.raw_text) text += '【识别原文】\n' + rec.raw_text;
+    if(!text.trim()){ toast('该记录无内容可解析','err'); return; }
+    var r = await callFn('ai_parse', { text: text });
+    if(r.error){ toast(r.error,'err'); return; }
+    var parsed = r.parsed || {};
+    if(Object.prototype.hasOwnProperty.call(parsed,'ocr_text')) delete parsed.ocr_text;
+    if(Array.isArray(parsed.additional_info)) parsed.additional_info = parsed.additional_info.join('\n');
+    // 以当前客户为唯一匹配对象，复用同名对比更新界面（无文件保存）
+    var cur = detailState.data && detailState.data.customer;
+    if(!cur){ toast('客户数据未加载','err'); return; }
+    openMergeCompareModal(parsed, [cur], null, 0, null);
+  } catch(e){ toast(e.message,'err'); }
+  finally { btn.disabled = false; btn.textContent = oldLabel; }
 }
 
 function openPhotoNotesModal(cid, photoId, currentNotes){
@@ -1071,7 +1233,7 @@ function openAiParse(){
         var filesToSave = [];
         imgFiles.forEach(function(f){ filesToSave.push({kind:'photo', file:f}); });
         pdfFiles.concat(txtFiles, attachFiles).forEach(function(f){ filesToSave.push({kind:'attachment', file:f}); });
-        openCustomerFormFromParsed(r.parsed || {}, filesToSave);
+        openCustomerFormFromParsed(r.parsed || {}, filesToSave, textCtx);
       } catch(e){ toast(e.message,'err'); }
       finally { btn.disabled=false; btn.textContent='解析'; }
     }}, '解析'),
@@ -1081,9 +1243,11 @@ function openAiParse(){
   document.getElementById('modal-root').appendChild(overlay);
 }
 
-async function openCustomerFormFromParsed(parsed, filesToSave){
+async function openCustomerFormFromParsed(parsed, filesToSave, ocrRawText){
   // 剔除仅供展示的 OCR 字段，避免污染客户字段
   if(parsed && Object.prototype.hasOwnProperty.call(parsed,'ocr_text')) delete parsed.ocr_text;
+  // AI 有时将 additional_info 输出为数组，统一转为换行分隔的字符串
+  if(parsed && Array.isArray(parsed.additional_info)) parsed.additional_info = parsed.additional_info.join('\n');
   // 按姓名查找已有客户：同名则进入对比更新流程，否则直接新增
   var matches = [];
   var name = (parsed.customer_name || '').trim();
@@ -1094,36 +1258,51 @@ async function openCustomerFormFromParsed(parsed, filesToSave){
       matches = (r.rows || []).filter(function(c){ return (c.customer_name||'').trim().toLowerCase() === kw; });
     } catch(e){ /* 查询失败时不阻塞新增流程 */ }
   }
-  if(matches.length) openMergeCompareModal(parsed, matches, filesToSave, 0);
-  else openNewCustomerModal(parsed, filesToSave);
+  if(matches.length) openMergeCompareModal(parsed, matches, filesToSave, 0, ocrRawText);
+  else openNewCustomerModal(parsed, filesToSave, ocrRawText);
 }
 
-async function saveParsedFiles(customerId, filesToSave){
+// 保存解析选中的文件到 photos（图片→照片，其他→附件），
+// 并将识别摘要与完整原文写入 ocr_records（关联本次保存成功的文件 id）
+async function saveParsedFiles(customerId, filesToSave, ocrRawText, ocrSummary){
   var list = filesToSave || [];
+  var savedIds = [], savedNames = [];
   var okCount=0, failCount=0;
   for(var i=0;i<list.length;i++){
     try {
       var b = await fileToBase64(list[i].file);
-      await callFn('photos', {action:'create', data:{customer_id:customerId, image_base64:b.base64, content_type:b.contentType, file_name:b.fileName, category:list[i].kind}});
+      var r = await callFn('photos', {action:'create', data:{customer_id:customerId, image_base64:b.base64, content_type:b.contentType, file_name:b.fileName, category:list[i].kind}});
+      if(r && r.id){ savedIds.push(r.id); savedNames.push(list[i].file.name); }
       okCount++;
     } catch(e){ failCount++; }
   }
   if(okCount) toast('已保存 '+okCount+' 个文件到该客户');
   if(failCount) toast(failCount+' 个文件保存失败','err');
+  if(ocrRawText && String(ocrRawText).trim()){
+    try {
+      await callFn('ocr_records', {action:'create', data:{
+        customer_id: customerId,
+        summary: ocrSummary || '',
+        raw_text: String(ocrRawText),
+        file_ids: JSON.stringify(savedIds),
+        file_names: JSON.stringify(savedNames),
+      }});
+    } catch(e){ /* OCR 记录保存失败不阻塞主流程 */ }
+  }
 }
 
-function openNewCustomerModal(parsed, filesToSave){
+function openNewCustomerModal(parsed, filesToSave, ocrRawText){
   modal('确认客户信息（AI 解析结果）', CUSTOMER_FIELDS, parsed, async function(data){
     if(!data.customer_name){ toast('姓名必填','err'); return; }
     var r = await callFn('customers', {action:'create', data:data});
     toast('已创建 #'+r.id);
-    await saveParsedFiles(r.id, filesToSave);
+    await saveParsedFiles(r.id, filesToSave, ocrRawText, data.additional_info);
     location.hash = '#/customer/'+r.id;
   });
 }
 
 // 同名客户对比更新：差异表 + 合并预填表单，人工审核修订后提交更新
-function openMergeCompareModal(parsed, matches, filesToSave, selIdx){
+function openMergeCompareModal(parsed, matches, filesToSave, selIdx, ocrRawText){
   var oldC = matches[selIdx || 0];
   var overlay = el('div', {class:'modal-overlay'});
   var m = el('div', {class:'modal'});
@@ -1140,7 +1319,7 @@ function openMergeCompareModal(parsed, matches, filesToSave, selIdx){
     });
     sel.onchange = function(){
       overlay.remove();
-      openMergeCompareModal(parsed, matches, filesToSave, parseInt(sel.value,10));
+      openMergeCompareModal(parsed, matches, filesToSave, parseInt(sel.value,10), ocrRawText);
     };
     m.appendChild(el('div', {class:'field'}, [el('label', {}, '存在多个同名客户，选择要更新的客户'), sel]));
   }
@@ -1199,8 +1378,9 @@ function openMergeCompareModal(parsed, matches, filesToSave, selIdx){
         await callFn('customers', {action:'update', id: oldC.Id, data:data});
         toast('已更新客户 #'+oldC.Id);
         overlay.remove();
-        await saveParsedFiles(oldC.Id, filesToSave);
-        location.hash = '#/customer/'+oldC.Id;
+        await saveParsedFiles(oldC.Id, filesToSave, ocrRawText, data.additional_info);
+        if(location.hash === '#/customer/'+oldC.Id) showDetail(oldC.Id);
+        else location.hash = '#/customer/'+oldC.Id;
       } catch(e){ toast(e.message,'err'); }
       finally { btn.disabled = false; btn.textContent = '确认更新'; }
     }}, '确认更新'),

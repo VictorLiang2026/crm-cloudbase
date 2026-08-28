@@ -10,9 +10,9 @@
  *               hobbies, source, additional_info, ... }
  *   - raw: 模型原始输出文本
  *
- * 解析前的原始内容（用户输入文本 + 各照片识别出的全部文字）统一追加到 parsed.additional_info，
- * 由前端确认表单随结构化字段一起入库。
- * 文件本身不再由本函数保存，由前端在客户创建成功后按 category（photo/attachment）调 photos.create 保存。
+ * additional_info 只输出 AI 提炼的、与客户经营/营销/转介绍/招募相关的结论性摘要，
+ * 不再追加识别原文全文；完整识别原文由前端保存到 ocr_records 表（summary=additional_info 摘要）。
+ * 文件本身不由本函数保存，由前端在客户创建成功后按 category（photo/attachment）调 photos.create 保存。
  */
 'use strict';
 
@@ -30,7 +30,8 @@ const FIELD_SPEC = [
   'customer_stage(客户经营阶段:新认识/关系维护/需求挖掘/方案沟通/成交推进/转介绍经营),',
   'sales_priority(签单优先级:A/B/C/D/E), recruitment_priority(招募优先级:A/B/C/D/E),',
   'referral_priority(转介绍优先级:A/B/C/D/E),',
-  'hobbies(爱好), source(来源), additional_info(其它信息)。',
+  'hobbies(爱好), source(来源),',
+  'additional_info(附加信息：只提炼与客户经营相关的结论性要点，如家庭成员构成、工作单位与职务、收入水平、咨询的问题、对当前职业的满意或不满意及其看法、购买意向、可转介绍的资源、可招募的潜质等；分条简述，不要复述原文全文)。',
   '无法判断的字段设为 null。只输出 JSON，不要解释。',
 ].join('\n');
 
@@ -83,17 +84,6 @@ exports.main = async (event, context) => {
     }
 
     const parsed = extractJson(raw) || {};
-
-    // 解析前的原始内容统一追加到 additional_info（保留 ocr_text 供前端展示，入库前剔除）
-    const origParts = [];
-    if (text) origParts.push('【原始输入】' + text);
-    if (parsed.ocr_text) origParts.push('【照片识别文字】' + parsed.ocr_text);
-    if (origParts.length) {
-      const orig = origParts.join('\n');
-      parsed.additional_info = parsed.additional_info
-        ? (parsed.additional_info + '\n' + orig)
-        : orig;
-    }
 
     return { parsed: parsed, raw: raw };
   } catch (e) {
