@@ -77,6 +77,7 @@
   .attach-name{font-size:12px;color:var(--text-secondary);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .parse-file-list{display:flex;flex-direction:column;gap:2px;margin-top:6px}
   .parse-file-list div{font-size:12px;color:var(--muted)}
+  .parse-progress{margin-top:10px;padding:8px 12px;background:var(--pri-light);color:var(--pri);border-radius:6px;font-size:13px;font-weight:600}
   .diff-tip{font-size:13px;color:var(--text-secondary);margin:10px 0 6px}
   .diff-wrap{max-height:260px;overflow:auto;border:1px solid var(--border-light);border-radius:8px;margin-bottom:12px}
   .diff-table{width:100%;border-collapse:collapse;font-size:13px}
@@ -942,6 +943,50 @@ async function showAiSuggestions(){
 }
 
 // ==================== AI 解析新增 ====================
+// ---- 浏览器本地文字提取（免费方案：Tesseract.js OCR 识别图片 + pdf.js 提取 PDF 文字）----
+var _loadedScripts = {};
+function loadScript(src){
+  if(!_loadedScripts[src]){
+    _loadedScripts[src] = new Promise(function(res, rej){
+      var s = document.createElement('script');
+      s.src = src;
+      s.onload = function(){ res(); };
+      s.onerror = function(){ _loadedScripts[src] = null; rej(new Error('识别组件加载失败，请检查网络后重试')); };
+      document.head.appendChild(s);
+    });
+  }
+  return _loadedScripts[src];
+}
+var _ocrWorker = null, _ocrProgCb = null;
+async function ocrImageByTesseract(file, onProg){
+  await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
+  if(typeof Tesseract === 'undefined') throw new Error('OCR 组件加载失败');
+  if(!_ocrWorker){
+    _ocrWorker = await Tesseract.createWorker('chi_sim+eng', 1, {
+      logger: function(msg){ if(_ocrProgCb && msg.status === 'recognizing text') _ocrProgCb(msg.progress || 0); }
+    });
+  }
+  _ocrProgCb = onProg || null;
+  try {
+    var ret = await _ocrWorker.recognize(file);
+    return (ret && ret.data && ret.data.text) || '';
+  } finally { _ocrProgCb = null; }
+}
+async function extractPdfText(file){
+  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+  if(!window.pdfjsLib) throw new Error('PDF 组件加载失败');
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  var buf = await file.arrayBuffer();
+  var pdf = await window.pdfjsLib.getDocument({data: buf}).promise;
+  var parts = [];
+  for(var i=1;i<=pdf.numPages;i++){
+    var page = await pdf.getPage(i);
+    var content = await page.getTextContent();
+    parts.push(content.items.map(function(it){ return it.str; }).join(' '));
+  }
+  return parts.join('\n');
+}
+
 function openAiParse(){
   var overlay = el('div', {class:'modal-overlay'});
   var m = el('div', {class:'modal'});
@@ -951,8 +996,9 @@ function openAiParse(){
     el('textarea', {name:'text', style:'min-height:180px', placeholder:'例：王五，男，1990年6月15日生，教师，未婚，电话13900000000，喜欢钓鱼'})
   ]));
   var fileListEl = el('div', {class:'parse-file-list'});
+  var progressEl = el('div', {class:'parse-progress', style:'display:none'});
   m.appendChild(el('div', {class:'field'}, [
-    el('label', {}, '选择文件/照片（可多选）：照片将一起交给 AI 识别图中文字；.txt/.md/.csv 等文本文件内容会提供给 AI；其他类型文件（PDF/Word/Excel 等）保存为该客户的附件，仅文件名提供给 AI 参考'),
+    el('label', {}, '选择文件/照片（可多选）：照片与 PDF 将在本地识别/提取其中文字后交给 AI 解析；.txt/.md/.csv 等文本文件内容直接提供给 AI；其他类型文件（Word/Excel 等）保存为该客户的附件，仅文件名提供给 AI 参考'),
     el('input', {type:'file', name:'files', multiple:true, style:'font-size:13px', onchange:function(e){
       fileListEl.innerHTML = '';
       Array.prototype.slice.call(e.target.files||[]).forEach(function(f){
@@ -961,53 +1007,70 @@ function openAiParse(){
     }}),
     fileListEl,
   ]));
+  m.appendChild(progressEl);
   m.appendChild(el('div', {class:'modal-footer'}, [
     el('button', {class:'btn', onclick:function(){ overlay.remove(); }}, '取消'),
     el('button', {class:'btn btn-primary', onclick:async function(){
-      var btn=this; btn.disabled=true; btn.textContent='解析中…';
+      var btn=this; btn.disabled=true;
       var ta = m.querySelector('[name=text]');
       var text = ta.value.trim();
       var fileInput = m.querySelector('[name=files]');
       var files = Array.prototype.slice.call(fileInput.files || []);
-      if(!text && !files.length){ toast('请输入文本或选择文件/照片','err'); btn.disabled=false; btn.textContent='解析'; return; }
-      // 分类：图片 / 文本文件 / 其他附件
-      var imgFiles=[], txtFiles=[], attachFiles=[];
+      if(!text && !files.length){ toast('请输入文本或选择文件/照片','err'); btn.disabled=false; return; }
+      function setProg(s){ progressEl.style.display='block'; progressEl.textContent=s; }
+      // 分类：图片 / PDF / 文本文件 / 其他附件
+      var imgFiles=[], pdfFiles=[], txtFiles=[], attachFiles=[];
       for(var i=0;i<files.length;i++){
         var f = files[i];
-        if(f.size > 4*1024*1024){ toast('“'+f.name+'”过大（>4MB），请压缩后上传','err'); btn.disabled=false; btn.textContent='解析'; return; }
+        if(f.size > 4*1024*1024){ toast('“'+f.name+'”过大（>4MB），请压缩后上传','err'); btn.disabled=false; return; }
         if(/^image\//.test(f.type)) imgFiles.push(f);
+        else if(/\.pdf$/i.test(f.name) || f.type==='application/pdf') pdfFiles.push(f);
         else if(/^text\//.test(f.type) || /\.(txt|md|csv|json|log)$/i.test(f.name)) txtFiles.push(f);
         else attachFiles.push(f);
       }
       try {
-        // 图片 → base64（限制总大小，避免超出云函数调用上限）
-        var images = [], totalB64 = 0;
-        for(var i=0;i<imgFiles.length;i++){
-          var b = await fileToBase64(imgFiles[i]);
-          totalB64 += b.base64.length;
-          if(totalB64 > 4*1024*1024){ toast('所选图片总大小过大，请减少数量或压缩后重试','err'); btn.disabled=false; btn.textContent='解析'; return; }
-          images.push({base64:b.base64, content_type:b.contentType, file_name:b.fileName});
+        // 第一步：浏览器本地提取各文件中的文字（OCR 图片 / PDF 提取 / 文本直读）
+        var extracted = [];
+        var ocrItems = [];
+        imgFiles.forEach(function(f){ ocrItems.push({file:f, kind:'img'}); });
+        pdfFiles.forEach(function(f){ ocrItems.push({file:f, kind:'pdf'}); });
+        var total = ocrItems.length + txtFiles.length;
+        var done = 0;
+        for(var i=0;i<ocrItems.length;i++){
+          var it = ocrItems[i];
+          var kindLabel = it.kind==='img' ? '照片文字识别中' : 'PDF 文字提取中';
+          setProg('（'+(done+1)+'/'+total+'）'+kindLabel+'：'+it.file.name+(it.kind==='img'&&done===0?'（首次使用需下载识别引擎，请稍候）':''));
+          var t = '';
+          if(it.kind==='img'){
+            t = await ocrImageByTesseract(it.file, function(p){ setProg('（'+(done+1)+'/'+total+'）照片文字识别中：'+it.file.name+' '+Math.round((p||0)*100)+'%'); });
+          } else {
+            t = await extractPdfText(it.file);
+          }
+          done++;
+          t = String(t||'').trim();
+          if(t) extracted.push('【' + (it.kind==='img'?'照片':'PDF') + ' ' + it.file.name + ' 识别文字】\n' + t);
         }
-        // 组装文本上下文：原始文本 + 文本文件内容 + 附件文件名
-        var textCtx = text;
         for(var i=0;i<txtFiles.length;i++){
+          setProg('（'+(done+1)+'/'+total+'）读取文本文件：'+txtFiles[i].name);
           var t = await txtFiles[i].text();
-          textCtx += '\n【附件 ' + txtFiles[i].name + ' 内容】\n' + String(t||'').slice(0, 10000);
+          done++;
+          extracted.push('【附件 ' + txtFiles[i].name + ' 内容】\n' + String(t||'').slice(0, 10000));
         }
+        // 第二步：全部文字统一交给 AI 解析
+        var textCtx = text;
+        extracted.forEach(function(t){ textCtx += '\n' + t; });
         for(var i=0;i<attachFiles.length;i++){
           textCtx += '\n【附件】' + attachFiles[i].name + '（已保存为客户附件，未读取内容）';
         }
         if(textCtx.length > 30000) textCtx = textCtx.slice(0, 30000) + '\n（内容过长已截断）';
-        var data = { text: textCtx };
-        if(images.length) data.images = images;
-        var r = await callFn('ai_parse', data);
+        setProg('AI 解析中…');
+        var r = await callFn('ai_parse', { text: textCtx });
         if(r.error){ toast(r.error,'err'); return; }
         overlay.remove();
-        // 解析后的结构化字段经确认表单入库；原始输入与照片识别文字已由云函数追加到 additional_info
-        // 所有选中的文件在客户创建成功后保存：图片→照片，其他→附件
+        // 解析后的结构化字段经确认表单入库；所有选中文件在客户确认后保存：图片→照片，其他→附件
         var filesToSave = [];
         imgFiles.forEach(function(f){ filesToSave.push({kind:'photo', file:f}); });
-        txtFiles.concat(attachFiles).forEach(function(f){ filesToSave.push({kind:'attachment', file:f}); });
+        pdfFiles.concat(txtFiles, attachFiles).forEach(function(f){ filesToSave.push({kind:'attachment', file:f}); });
         openCustomerFormFromParsed(r.parsed || {}, filesToSave);
       } catch(e){ toast(e.message,'err'); }
       finally { btn.disabled=false; btn.textContent='解析'; }
