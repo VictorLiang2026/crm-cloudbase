@@ -19,8 +19,9 @@
 const { rdb, generateText, extractJson, assertOk } = require('./db');
 
 const AI_MODEL = process.env.AI_MODEL || 'hy3';
-// 视觉模型用 hy3-preview（实测支持多模态输入；hy3 会静默忽略图片）
-const VISION_MODEL = process.env.VISION_MODEL || 'hy3-preview';
+// 视觉模型：官方文档确认 hy3/hy3-preview 不支持多模态（图片会被静默忽略），
+// glm-5v-turbo 支持图片 Base64 输入与 PDF/TXT/DOC 文件理解（文件仅限 URL 方式）
+const VISION_MODEL = process.env.VISION_MODEL || 'glm-5v-turbo';
 
 const FIELD_SPEC = [
   'customer_name(姓名), gender(性别:男/女/未知), phone(电话),',
