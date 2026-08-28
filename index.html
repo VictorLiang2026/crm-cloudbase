@@ -77,6 +77,14 @@
   .attach-name{font-size:12px;color:var(--text-secondary);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .parse-file-list{display:flex;flex-direction:column;gap:2px;margin-top:6px}
   .parse-file-list div{font-size:12px;color:var(--muted)}
+  .diff-tip{font-size:13px;color:var(--text-secondary);margin:10px 0 6px}
+  .diff-wrap{max-height:260px;overflow:auto;border:1px solid var(--border-light);border-radius:8px;margin-bottom:12px}
+  .diff-table{width:100%;border-collapse:collapse;font-size:13px}
+  .diff-table th{position:sticky;top:0;background:var(--card);text-align:left;padding:8px 10px;border-bottom:2px solid var(--border-light);color:var(--muted);font-weight:600}
+  .diff-table td{padding:8px 10px;border-bottom:1px solid var(--border-light);vertical-align:top;word-break:break-all}
+  .diff-field{white-space:nowrap;font-weight:600;color:#475569}
+  .diff-old{color:var(--muted)}
+  .diff-new{color:var(--pri);font-weight:600}
   .ai-result{background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:16px;margin-top:12px}
   .ai-result dt{font-weight:600;color:var(--text-secondary);font-size:13px;margin-top:10px}
   .ai-result dd{margin-left:0;font-size:14px;color:var(--text);line-height:1.7}
@@ -1010,27 +1018,133 @@ function openAiParse(){
   document.getElementById('modal-root').appendChild(overlay);
 }
 
-function openCustomerFormFromParsed(parsed, filesToSave){
+async function openCustomerFormFromParsed(parsed, filesToSave){
   // 剔除仅供展示的 OCR 字段，避免污染客户字段
   if(parsed && Object.prototype.hasOwnProperty.call(parsed,'ocr_text')) delete parsed.ocr_text;
+  // 按姓名查找已有客户：同名则进入对比更新流程，否则直接新增
+  var matches = [];
+  var name = (parsed.customer_name || '').trim();
+  if(name){
+    try {
+      var r = await callFn('customers', {action:'list', keyword:name, pageSize:100});
+      var kw = name.toLowerCase();
+      matches = (r.rows || []).filter(function(c){ return (c.customer_name||'').trim().toLowerCase() === kw; });
+    } catch(e){ /* 查询失败时不阻塞新增流程 */ }
+  }
+  if(matches.length) openMergeCompareModal(parsed, matches, filesToSave, 0);
+  else openNewCustomerModal(parsed, filesToSave);
+}
+
+async function saveParsedFiles(customerId, filesToSave){
+  var list = filesToSave || [];
+  var okCount=0, failCount=0;
+  for(var i=0;i<list.length;i++){
+    try {
+      var b = await fileToBase64(list[i].file);
+      await callFn('photos', {action:'create', data:{customer_id:customerId, image_base64:b.base64, content_type:b.contentType, file_name:b.fileName, category:list[i].kind}});
+      okCount++;
+    } catch(e){ failCount++; }
+  }
+  if(okCount) toast('已保存 '+okCount+' 个文件到该客户');
+  if(failCount) toast(failCount+' 个文件保存失败','err');
+}
+
+function openNewCustomerModal(parsed, filesToSave){
   modal('确认客户信息（AI 解析结果）', CUSTOMER_FIELDS, parsed, async function(data){
     if(!data.customer_name){ toast('姓名必填','err'); return; }
     var r = await callFn('customers', {action:'create', data:data});
     toast('已创建 #'+r.id);
-    // 保存 AI 解析时选择的文件（照片 + 附件）
-    var okCount=0, failCount=0;
-    var list = filesToSave || [];
-    for(var i=0;i<list.length;i++){
-      try {
-        var b = await fileToBase64(list[i].file);
-        await callFn('photos', {action:'create', data:{customer_id:r.id, image_base64:b.base64, content_type:b.contentType, file_name:b.fileName, category:list[i].kind}});
-        okCount++;
-      } catch(e){ failCount++; }
-    }
-    if(okCount) toast('已保存 '+okCount+' 个文件到该客户');
-    if(failCount) toast(failCount+' 个文件保存失败','err');
+    await saveParsedFiles(r.id, filesToSave);
     location.hash = '#/customer/'+r.id;
   });
+}
+
+// 同名客户对比更新：差异表 + 合并预填表单，人工审核修订后提交更新
+function openMergeCompareModal(parsed, matches, filesToSave, selIdx){
+  var oldC = matches[selIdx || 0];
+  var overlay = el('div', {class:'modal-overlay'});
+  var m = el('div', {class:'modal'});
+  m.style.maxWidth = '760px';
+  m.appendChild(el('h3', {}, '发现同名客户，请对比确认更新'));
+
+  // 多个同名客户时可切换更新目标
+  if(matches.length > 1){
+    var sel = el('select', {style:'width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px'});
+    matches.forEach(function(c, i){
+      var opt = el('option', {value:String(i)}, '#'+c.Id+' '+c.customer_name+(c.customer_stage?('（'+c.customer_stage+'）'):''));
+      if(i === (selIdx||0)) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.onchange = function(){
+      overlay.remove();
+      openMergeCompareModal(parsed, matches, filesToSave, parseInt(sel.value,10));
+    };
+    m.appendChild(el('div', {class:'field'}, [el('label', {}, '存在多个同名客户，选择要更新的客户'), sel]));
+  }
+
+  // 计算合并值与差异：新值非空则覆盖，附加信息追加
+  var merged = {};
+  var diffRows = [];
+  CUSTOMER_FIELDS.forEach(function(f){
+    var oldV = oldC[f.name] == null ? '' : String(oldC[f.name]);
+    var newV = parsed[f.name] == null ? '' : String(parsed[f.name]);
+    var mergedV;
+    if(f.name === 'additional_info'){
+      mergedV = (oldV && newV) ? (oldV + '\n' + newV) : (newV || oldV);
+    } else {
+      mergedV = (newV !== '') ? newV : oldV;
+    }
+    merged[f.name] = mergedV;
+    if(mergedV !== oldV) diffRows.push([f, oldV, newV, mergedV]);
+  });
+
+  var tipText = diffRows.length
+    ? '以下 '+diffRows.length+' 个字段将被更新（可在下方表单中修订后再提交）：'
+    : 'AI 解析未带来新的字段变化，可在下方表单中补充：';
+  m.appendChild(el('p', {class:'diff-tip'}, tipText));
+  if(diffRows.length){
+    var table = el('table', {class:'diff-table'});
+    table.appendChild(el('thead', {}, el('tr', {}, [el('th', {}, '字段'), el('th', {}, '现有值'), el('th', {}, 'AI 解析新值')])));
+    var tbody = el('tbody', {});
+    diffRows.forEach(function(row){
+      var f=row[0], oldV=row[1], newV=row[2];
+      var showNew = (f.name==='additional_info' && oldV && newV) ? newV+'（将追加到现有内容后）' : (newV === '' ? '（空）' : newV);
+      tbody.appendChild(el('tr', {}, [
+        el('td', {class:'diff-field'}, f.label),
+        el('td', {class:'diff-old'}, oldV === '' ? '（空）' : oldV),
+        el('td', {class:'diff-new'}, showNew),
+      ]));
+    });
+    table.appendChild(tbody);
+    var wrap = el('div', {class:'diff-wrap'});
+    wrap.appendChild(table);
+    m.appendChild(wrap);
+  }
+
+  // 可编辑的合并表单（预填合并结果）
+  var formWrap = el('div', {});
+  CUSTOMER_FIELDS.forEach(function(f){ formWrap.appendChild(makeField(f, merged[f.name])); });
+  m.appendChild(formWrap);
+
+  m.appendChild(el('div', {class:'modal-footer'}, [
+    el('button', {class:'btn', onclick:function(){ overlay.remove(); }}, '取消'),
+    el('button', {class:'btn btn-primary', onclick:async function(){
+      var btn = this; btn.disabled = true; btn.textContent = '提交中…';
+      try {
+        var data = collectForm(m);
+        if(!data.customer_name){ toast('姓名必填','err'); return; }
+        await callFn('customers', {action:'update', id: oldC.Id, data:data});
+        toast('已更新客户 #'+oldC.Id);
+        overlay.remove();
+        await saveParsedFiles(oldC.Id, filesToSave);
+        location.hash = '#/customer/'+oldC.Id;
+      } catch(e){ toast(e.message,'err'); }
+      finally { btn.disabled = false; btn.textContent = '确认更新'; }
+    }}, '确认更新'),
+  ]));
+  overlay.appendChild(m);
+  overlay.addEventListener('click', function(e){ if(e.target===overlay) overlay.remove(); });
+  document.getElementById('modal-root').appendChild(overlay);
 }
 
 // ==================== 工具 ====================
