@@ -101,6 +101,10 @@
   .ocr-file-chip{max-width:100%;font-size:12.5px;color:var(--pri);background:var(--pri-light);border:none;border-radius:14px;padding:4px 12px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .ocr-file-chip:hover{filter:brightness(0.96)}
   .ocr-file-chip.gone{color:var(--muted);background:#f1f5f9;cursor:default}
+  .name-dup-tip{display:none;margin-top:6px;font-size:12.5px;line-height:1.6}
+  .name-dup-alert{color:#e11d48;font-weight:600}
+  .name-dup-link{display:block;color:var(--pri);cursor:pointer;text-decoration:underline;margin-top:2px}
+  .name-dup-more{color:var(--muted);margin-top:2px}
   .ai-result{background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:16px;margin-top:12px}
   .ai-result dt{font-weight:600;color:var(--text-secondary);font-size:13px;margin-top:10px}
   .ai-result dd{margin-left:0;font-size:14px;color:var(--text);line-height:1.7}
@@ -356,7 +360,7 @@ function collectForm(modal){
   return out;
 }
 
-function modal(title, fields, values, onSubmit){
+function modal(title, fields, values, onSubmit, opts){
   var overlay = el('div', {class:'modal-overlay'});
   var form = el('div', {class:'modal'});
   form.appendChild(el('h3', {}, title));
@@ -368,6 +372,7 @@ function modal(title, fields, values, onSubmit){
     }
   });
   form.appendChild(rows);
+  if(opts && opts.nameDupCheck) attachNameDupCheck(form, opts.nameDupExcludeId);
   var footer = el('div', {class:'modal-footer'}, [
     el('button', {class:'btn', onclick:function(){ overlay.remove(); }}, '取消'),
     el('button', {class:'btn btn-primary', onclick:async function(){
@@ -382,6 +387,39 @@ function modal(title, fields, values, onSubmit){
   overlay.addEventListener('click', function(e){ if(e.target===overlay) overlay.remove(); });
   document.getElementById('modal-root').appendChild(overlay);
   return overlay;
+}
+
+// 客户姓名快速查重：失焦后立即搜索同名客户，即时提醒（改名或去编辑已有客户）
+function attachNameDupCheck(container, excludeId){
+  var input = container.querySelector('[name=customer_name]');
+  if(!input) return;
+  var tip = el('div', {class:'name-dup-tip'});
+  input.parentNode.appendChild(tip);
+  function clearTip(){ tip.style.display='none'; tip.innerHTML=''; input.style.borderColor=''; }
+  async function check(){
+    var name = input.value.trim();
+    if(!name){ clearTip(); return; }
+    try {
+      var r = await callFn('customers', {action:'list', keyword:name, pageSize:100});
+      var kw = name.toLowerCase();
+      var dups = (r.rows||[]).filter(function(c){
+        return (c.customer_name||'').trim().toLowerCase()===kw && String(c.Id)!==String(excludeId);
+      });
+      if(!dups.length){ clearTip(); return; }
+      tip.innerHTML = '';
+      tip.appendChild(el('div', {class:'name-dup-alert'}, '⚠ 已存在同名客户，建议修改姓名，或编辑已有客户：'));
+      dups.slice(0,3).forEach(function(c){
+        tip.appendChild(el('a', {class:'name-dup-link', onclick:function(){
+          location.hash = '#/customer/'+c.Id;
+        }}, '#'+c.Id+' '+c.customer_name+(c.customer_stage?('（'+c.customer_stage+'）'):'')+' — 点击查看/编辑'));
+      });
+      if(dups.length>3) tip.appendChild(el('div', {class:'name-dup-more'}, '…共 '+dups.length+' 个同名客户'));
+      tip.style.display='block';
+      input.style.borderColor='#e11d48';
+    } catch(e){ /* 查询失败不打扰输入 */ }
+  }
+  input.addEventListener('blur', check);
+  input.addEventListener('input', clearTip);
 }
 
 // ==================== 路由 ====================
@@ -521,7 +559,7 @@ function openCustomerForm(customer){
       location.hash = '#/customer/'+r.id;
     }
     if(isEdit) showDetail(customer.Id);
-  });
+  }, {nameDupCheck:true, nameDupExcludeId: isEdit?customer.Id:null});
 }
 
 // ==================== 客户详情 ====================
@@ -1368,7 +1406,7 @@ function openNewCustomerModal(parsed, filesToSave, ocrRawText){
     toast('已创建 #'+r.id);
     await saveParsedFiles(r.id, filesToSave, ocrRawText, parsed.additional_info);
     location.hash = '#/customer/'+r.id;
-  });
+  }, {nameDupCheck:true});
 }
 
 // 同名客户对比更新：差异表 + 合并预填表单，人工审核修订后提交更新
@@ -1438,6 +1476,8 @@ function openMergeCompareModal(parsed, matches, filesToSave, selIdx, ocrRawText)
   var formWrap = el('div', {});
   CUSTOMER_FIELDS.forEach(function(f){ formWrap.appendChild(makeField(f, merged[f.name])); });
   m.appendChild(formWrap);
+  // 姓名失焦查重：排除当前正在更新的客户
+  attachNameDupCheck(formWrap, oldC.Id);
 
   m.appendChild(el('div', {class:'modal-footer'}, [
     el('button', {class:'btn', onclick:function(){ overlay.remove(); }}, '取消'),
