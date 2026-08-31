@@ -161,6 +161,32 @@
   }
   /* ===== 手机 iPhone（≤768px，适配 iPhone 15 Pro Max 430×932 含刘海/Home 条安全区）===== */
   @media (max-width:768px){
+    /* --- 首页客户列表：表头短名替换，保持列顺序与排序功能不变 --- */
+    #view > table thead tr th:nth-child(1){font-size:0}
+    #view > table thead tr th:nth-child(1)::before{content:"姓名";font-size:13px}
+    #view > table thead tr th:nth-child(2){font-size:0}
+    #view > table thead tr th:nth-child(2)::before{content:"签单";font-size:13px}
+    #view > table thead tr th:nth-child(3){font-size:0}
+    #view > table thead tr th:nth-child(3)::before{content:"招募";font-size:13px}
+    #view > table thead tr th:nth-child(4){font-size:0}
+    #view > table thead tr th:nth-child(4)::before{content:"转介";font-size:13px}
+    #view > table thead tr th:nth-child(5){font-size:0}
+    #view > table thead tr th:nth-child(5)::before{content:"经营阶段";font-size:13px}
+    #view > table thead tr th:nth-child(6){font-size:0}
+    #view > table thead tr th:nth-child(6)::before{content:"本次跟进";font-size:13px}
+    #view > table thead tr th:nth-child(7){font-size:0}
+    #view > table thead tr th:nth-child(7)::before{content:"下次跟进";font-size:13px}
+    #view > table thead tr th:nth-child(8){font-size:0}
+    #view > table thead tr th:nth-child(8)::before{content:"编号";font-size:13px}
+    #view > table thead tr th:nth-child(9){font-size:0}
+    #view > table thead tr th:nth-child(9)::before{content:"操作";font-size:13px}
+    /* iPhone 列表紧凑化：badge 与 列间距 */
+    #view > table .badge{padding:2px 6px;font-size:11px}
+    #view > table td:nth-child(2),#view > table th:nth-child(2),
+    #view > table td:nth-child(3),#view > table th:nth-child(3),
+    #view > table td:nth-child(4),#view > table th:nth-child(4){padding-left:6px;padding-right:6px}
+    #view > table td:nth-child(6),#view > table th:nth-child(6),
+    #view > table td:nth-child(7),#view > table th:nth-child(7){white-space:nowrap}
     header{padding:10px max(14px, env(safe-area-inset-right)) 10px max(14px, env(safe-area-inset-left));gap:10px}
     header h1{font-size:16px}
     .brand-badge{width:24px;height:24px;font-size:12px}
