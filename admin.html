@@ -51,6 +51,7 @@
   .field-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   @media(max-width:600px){.field-row{grid-template-columns:1fr}}
   .modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:flex-start;justify-content:center;z-index:1000;padding:48px 16px;overflow:auto;backdrop-filter:blur(4px)}
+  .relogin-overlay{z-index:1500}
   .modal{background:var(--card);border-radius:12px;padding:24px;width:100%;max-width:560px;box-shadow:0 20px 60px rgba(0,0,0,.2)}
   .modal h3{margin-bottom:18px;font-size:17px;font-weight:600}
   .modal-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
@@ -223,8 +224,77 @@ function showLogin(){
   });
 }
 
+// ==================== 会话超时（5 分钟无操作 → 下次操作要求重新登录） ====================
+var SESSION_TIMEOUT = 5 * 60 * 1000;
+var lastActivity = Date.now();
+var sessionLocked = false;          // 过期锁定：锁定期间用户活动不再刷新计时，必须重新登录
+var sessionWaiters = [];            // 等待重新登录完成的挂起操作
+var reloginShowing = false;
+
+// 用户主动操作（点击/键盘/触摸/滚动）视为活动；锁定状态下不刷新计时
+['click','mousedown','keydown','touchstart','wheel'].forEach(function(ev){
+  window.addEventListener(ev, function(){ if(!sessionLocked) lastActivity = Date.now(); }, true);
+});
+
+function ensureSession(){
+  if(!sessionLocked && Date.now() - lastActivity <= SESSION_TIMEOUT){ lastActivity = Date.now(); return Promise.resolve(); }
+  if(!sessionLocked){ sessionLocked = true; }
+  return forceReLogin();
+}
+
+function forceReLogin(){
+  return new Promise(function(resolve){
+    sessionWaiters.push(resolve);
+    if(reloginShowing) return;
+    reloginShowing = true;
+    // 清除本地登录态，重新登录只能使用云开发平台"用户管理"中的账号密码
+    try { if(authInst && authInst.signOut) authInst.signOut().catch(function(){}); } catch(e){}
+    showReLoginOverlay(function(){
+      sessionLocked = false;
+      lastActivity = Date.now();
+      var ws = sessionWaiters; sessionWaiters = []; reloginShowing = false;
+      ws.forEach(function(r){ try { r(); } catch(e){} });
+      route(); // 刷新当前视图
+    });
+  });
+}
+
+function showReLoginOverlay(onOk){
+  var overlay = el('div', {class:'modal-overlay relogin-overlay'});
+  var m = el('div', {class:'modal', style:'max-width:400px'});
+  m.appendChild(el('h3', {}, '会话已超时，请重新登录'));
+  m.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin-bottom:14px'}, '系统超过 5 分钟无操作，为保障数据安全请使用云开发平台账号重新登录。'));
+  var form = el('form');
+  var u = el('input', {type:'text', name:'username', placeholder:'用户名', autocomplete:'username'});
+  var p = el('input', {type:'password', name:'password', placeholder:'密码', autocomplete:'current-password'});
+  var btn = el('button', {type:'submit', class:'btn btn-primary', style:'width:100%'}, '登录');
+  var msg = el('div', {style:'color:#c0392b;margin-top:10px;font-size:13px'});
+  form.onsubmit = async function(ev){
+    ev.preventDefault();
+    if(!u.value.trim() || !p.value){ msg.textContent = '请输入用户名和密码'; return; }
+    btn.disabled = true; btn.textContent = '登录中…'; msg.textContent = '';
+    try {
+      await authInst.signInWithPassword({ username: u.value.trim(), password: p.value });
+      overlay.remove();
+      toast('已重新登录');
+      onOk();
+    } catch(e){
+      msg.textContent = '登录失败：' + (e.message || e);
+      btn.disabled = false; btn.textContent = '登录';
+    }
+  };
+  form.appendChild(el('div', {class:'field'}, [el('label', {}, '用户名'), u]));
+  form.appendChild(el('div', {class:'field'}, [el('label', {}, '密码'), p]));
+  form.appendChild(btn);
+  m.appendChild(form); m.appendChild(msg);
+  overlay.appendChild(m);
+  document.getElementById('modal-root').appendChild(overlay);
+  setTimeout(function(){ u.focus(); }, 50);
+}
+
 // ==================== API 封装 ====================
 async function callFn(name, data){
+  await ensureSession(); // 超过 5 分钟无操作时，先要求重新登录再继续原操作
   var res = await app.callFunction({ name: name, data: data });
   return res.result;
 }
