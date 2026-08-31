@@ -477,7 +477,7 @@ async function showDetail(id){
 
     // 标签栏
     var tabs = el('div', {class:'tabs'});
-    var tabsDef = [['info','基本信息'],['followups','跟进记录 ('+r.followups.length+')'],['products','产品额度'],['gifts','伴手礼 ('+r.gifts.length+')'],['photos','照片/附件 ('+r.photos.length+')'],['ocr','OCR 记录'],['ai','AI 建议']];
+    var tabsDef = [['info','基本信息'],['followups','跟进记录 ('+r.followups.length+')'],['products','产品额度'],['gifts','伴手礼 ('+r.gifts.length+')'],['photos','照片/附件 ('+r.photos.length+')'],['ocr','AI 解析记录'],['ai','AI 建议']];
     tabsDef.forEach(function(t){
       var tab = el('div', {class:'tab'+(detailState.tab===t[0]?' active':''), onclick:function(){ detailState.tab=t[0]; showDetail(id); }}, t[1]);
       tabs.appendChild(tab);
@@ -796,7 +796,7 @@ async function renderOcrRecords(cid){
   } catch(e){ loading.textContent = '加载失败：'+esc(e.message); return box; }
   loading.remove();
   if(!rows.length){
-    box.appendChild(el('div', {class:'empty'}, '暂无 OCR 识别记录。使用首页"AI 解析客户资料"上传照片/文件后，识别结果会自动保存到这里。'));
+    box.appendChild(el('div', {class:'empty'}, '暂无 AI 解析记录。使用首页"AI 解析客户资料"上传照片/文件后，解析汇总与识别内容会自动保存到这里。'));
     return box;
   }
   // 关联文件映射（照片/附件元数据来自客户详情已加载的数据）
@@ -826,7 +826,7 @@ function renderOcrItem(cid, rec, photosMap){
   var summaryText = rec.summary || '';
   if(summaryText){
     card.appendChild(el('div', {class:'ocr-block'}, [
-      el('div', {class:'ocr-block-label'}, '识别摘要（已入附加信息）'),
+      el('div', {class:'ocr-block-label'}, '解析汇总（追加到附加信息）'),
       el('div', {class:'ocr-summary'}, summaryText),
     ]));
   }
@@ -871,14 +871,14 @@ function renderOcrItem(cid, rec, photosMap){
   return card;
 }
 
-// 编辑 OCR 记录（摘要 + 识别原文）
+// 编辑 AI 解析记录（解析汇总 + 识别原文）
 function openOcrEditModal(cid, rec){
   var overlay = el('div', {class:'modal-overlay'});
   var m = el('div', {class:'modal'});
-  m.appendChild(el('h3', {}, '编辑 OCR 识别结果'));
+  m.appendChild(el('h3', {}, '编辑 AI 解析记录'));
   var summaryTa = el('textarea', {style:'width:100%;min-height:90px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;resize:vertical'}, rec.summary || '');
   var rawTa = el('textarea', {style:'width:100%;min-height:180px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:Consolas,monospace;resize:vertical'}, rec.raw_text || '');
-  m.appendChild(el('div', {class:'field'}, [el('label', {}, '识别摘要（可作为附加信息合并到客户资料）'), summaryTa]));
+  m.appendChild(el('div', {class:'field'}, [el('label', {}, '解析汇总（更新客户信息时将以此参与 AI 匹配）'), summaryTa]));
   m.appendChild(el('div', {class:'field'}, [el('label', {}, '识别原文（完整识别文字）'), rawTa]));
   m.appendChild(el('div', {class:'modal-footer'}, [
     el('button', {class:'btn', onclick:function(){ overlay.remove(); }}, '取消'),
@@ -904,7 +904,7 @@ async function updateCustomerFromOcr(cid, rec, btn){
   btn.disabled = true; btn.textContent = 'AI 匹配中…';
   try {
     var text = '';
-    if(rec.summary) text += '【识别摘要】\n' + rec.summary + '\n\n';
+    if(rec.summary) text += '【解析汇总】\n' + rec.summary + '\n\n';
     if(rec.raw_text) text += '【识别原文】\n' + rec.raw_text;
     if(!text.trim()){ toast('该记录无内容可解析','err'); return; }
     var r = await callFn('ai_parse', { text: text });
@@ -1296,7 +1296,7 @@ function openNewCustomerModal(parsed, filesToSave, ocrRawText){
     if(!data.customer_name){ toast('姓名必填','err'); return; }
     var r = await callFn('customers', {action:'create', data:data});
     toast('已创建 #'+r.id);
-    await saveParsedFiles(r.id, filesToSave, ocrRawText, data.additional_info);
+    await saveParsedFiles(r.id, filesToSave, ocrRawText, parsed.additional_info);
     location.hash = '#/customer/'+r.id;
   });
 }
@@ -1332,7 +1332,8 @@ function openMergeCompareModal(parsed, matches, filesToSave, selIdx, ocrRawText)
     var newV = parsed[f.name] == null ? '' : String(parsed[f.name]);
     var mergedV;
     if(f.name === 'additional_info'){
-      mergedV = (oldV && newV) ? (oldV + '\n' + newV) : (newV || oldV);
+      // 追加式合并：原有内容 + ====== 分隔行 + 本次解析汇总，不覆盖历史内容
+      mergedV = (oldV && newV) ? (oldV + '\n======\n' + newV) : (newV || oldV);
     } else {
       mergedV = (newV !== '') ? newV : oldV;
     }
@@ -1350,7 +1351,7 @@ function openMergeCompareModal(parsed, matches, filesToSave, selIdx, ocrRawText)
     var tbody = el('tbody', {});
     diffRows.forEach(function(row){
       var f=row[0], oldV=row[1], newV=row[2];
-      var showNew = (f.name==='additional_info' && oldV && newV) ? newV+'（将追加到现有内容后）' : (newV === '' ? '（空）' : newV);
+      var showNew = (f.name==='additional_info' && oldV && newV) ? newV+'\n（将以 ====== 分隔追加到现有内容后）' : (newV === '' ? '（空）' : newV);
       tbody.appendChild(el('tr', {}, [
         el('td', {class:'diff-field'}, f.label),
         el('td', {class:'diff-old'}, oldV === '' ? '（空）' : oldV),
@@ -1378,7 +1379,7 @@ function openMergeCompareModal(parsed, matches, filesToSave, selIdx, ocrRawText)
         await callFn('customers', {action:'update', id: oldC.Id, data:data});
         toast('已更新客户 #'+oldC.Id);
         overlay.remove();
-        await saveParsedFiles(oldC.Id, filesToSave, ocrRawText, data.additional_info);
+        await saveParsedFiles(oldC.Id, filesToSave, ocrRawText, parsed.additional_info);
         if(location.hash === '#/customer/'+oldC.Id) showDetail(oldC.Id);
         else location.hash = '#/customer/'+oldC.Id;
       } catch(e){ toast(e.message,'err'); }
