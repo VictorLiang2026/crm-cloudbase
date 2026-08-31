@@ -143,6 +143,45 @@
   .stat-item .label{font-size:13px;color:var(--muted);margin-bottom:6px}
   .stat-item .value{font-size:22px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
   .stat-item .sub{font-size:12px;color:var(--ok);margin-top:4px}
+  /* ===== 平板 iPad（769px–1366px）：宽屏舒适布局 ===== */
+  @media (min-width:769px) and (max-width:1366px){
+    main{max-width:1400px;padding:28px}
+    .card{padding:22px}
+    th,td{padding:12px 14px}
+    .modal{max-width:640px}
+    .stat-item{padding:16px 18px}
+    .photo-item img{height:160px}
+  }
+  /* ===== 手机 iPhone（≤768px）：瀑布流式单手操作 ===== */
+  @media (max-width:768px){
+    header{padding:10px 14px;gap:10px}
+    header h1{font-size:16px}
+    .brand-badge{width:24px;height:24px;font-size:12px}
+    main{padding:12px}
+    h2{font-size:18px;margin-bottom:12px}
+    .card{padding:14px;overflow-x:auto}
+    .toolbar{gap:8px}
+    .btn{padding:10px 16px}
+    .btn-sm{padding:8px 12px}
+    input[type=text],input[type=number],input[type=date],input[type=search],select,textarea{font-size:16px;padding:10px 12px}
+    .stat-bar{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .stat-item{min-width:0}
+    .stat-item .value{font-size:20px}
+    .tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap;scrollbar-width:none}
+    .tabs::-webkit-scrollbar{display:none}
+    .tab{padding:11px 14px;white-space:nowrap;flex-shrink:0}
+    table{font-size:13px}
+    th,td{padding:9px 8px}
+    .modal-overlay{padding:0;align-items:stretch}
+    .modal{max-width:100%;width:100%;min-height:100%;border-radius:0;padding:16px}
+    .modal-footer{flex-wrap:wrap}
+    .modal-footer .btn{flex:1;justify-content:center}
+    .photo-grid{grid-template-columns:repeat(2,1fr);gap:10px}
+    .photo-item img{height:120px}
+    .product-grid{grid-template-columns:1fr 1fr;gap:10px}
+    .info-row-label{min-width:88px}
+    .toast{width:calc(100% - 32px);text-align:center}
+  }
 </style>
 </head>
 <body>
