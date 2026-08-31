@@ -33,7 +33,7 @@
   .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
   input[type=text],input[type=number],input[type=date],input[type=search],select,textarea{border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:14px;background:#fff;color:var(--text);transition:border-color .2s,box-shadow .2s}
   input:focus,select:focus,textarea:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
-  textarea{width:100%;min-height:80px;resize:vertical}
+  textarea{width:100%;min-height:140px;resize:vertical;line-height:1.7}
   .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:14px;cursor:pointer;white-space:nowrap;transition:all .2s;font-weight:500}
   .btn:hover{background:#f8fafc;border-color:#cbd5e1;transform:translateY(-1px);box-shadow:0 2px 6px rgba(15,23,42,.08)}
   .btn:active{transform:translateY(0);box-shadow:none}
@@ -380,7 +380,7 @@ function collectForm(modal){
 
 function modal(title, fields, values, onSubmit, opts){
   var overlay = el('div', {class:'modal-overlay'});
-  var form = el('div', {class:'modal'});
+  var form = el('div', {class:'modal', style:(opts && opts.wide)?'max-width:760px':''});
   form.appendChild(el('h3', {}, title));
   var rows = el('div', {});
   fields.forEach(function(f, i){
@@ -577,7 +577,7 @@ function openCustomerForm(customer){
       location.hash = '#/customer/'+r.id;
     }
     if(isEdit) showDetail(customer.Id);
-  }, {nameDupCheck:true, nameDupExcludeId: isEdit?customer.Id:null});
+  }, {wide:true, nameDupCheck:true, nameDupExcludeId: isEdit?customer.Id:null});
 }
 
 // ==================== 客户详情 ====================
@@ -699,7 +699,7 @@ function openFollowupForm(cid, fol, customerName){
       toast('已添加');
     }
     showDetail(cid);
-  });
+  }, {wide:true});
 }
 
 // ---------- 产品额度 ----------
@@ -1000,10 +1000,10 @@ function renderOcrItem(cid, rec, photosMap){
 // 编辑 AI 解析记录（解析汇总 + 识别原文）
 function openOcrEditModal(cid, rec){
   var overlay = el('div', {class:'modal-overlay'});
-  var m = el('div', {class:'modal'});
+  var m = el('div', {class:'modal', style:'max-width:720px'});
   m.appendChild(el('h3', {}, '编辑 AI 解析记录'));
-  var summaryTa = el('textarea', {style:'width:100%;min-height:90px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;resize:vertical'}, rec.summary || '');
-  var rawTa = el('textarea', {style:'width:100%;min-height:180px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:Consolas,monospace;resize:vertical'}, rec.raw_text || '');
+  var summaryTa = el('textarea', {style:'width:100%;min-height:150px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;resize:vertical'}, rec.summary || '');
+  var rawTa = el('textarea', {style:'width:100%;min-height:300px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:Consolas,monospace;resize:vertical'}, rec.raw_text || '');
   m.appendChild(el('div', {class:'field'}, [el('label', {}, '解析汇总（更新客户信息时将以此参与 AI 匹配）'), summaryTa]));
   m.appendChild(el('div', {class:'field'}, [el('label', {}, '识别原文（完整识别文字）'), rawTa]));
   m.appendChild(el('div', {class:'modal-footer'}, [
