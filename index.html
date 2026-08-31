@@ -136,7 +136,7 @@
 <main id="view"><div class="loading">初始化中…</div></main>
 <div id="modal-root"></div>
 <div id="toast-root"></div>
-<script>window.APP_CONFIG = { envId: 'crm-d1gkae8ddc930d151' };</script>
+<script>window.APP_CONFIG = { envId: 'crm-d1gkae8ddc930d151', operator: { name: 'Victor', gender: '男', birthday: '1976-10' } };</script>
 <script src="https://static.cloudbase.net/cloudbase-js-sdk/latest/cloudbase.full.js"></script>
 <script>
 (function(){
@@ -1096,7 +1096,7 @@ async function renderAi(cid, recommendations){
   box.appendChild(el('div', {style:'margin-bottom:12px'}, el('button', {class:'btn btn-primary btn-sm', onclick:async function(){
     var btn=this; btn.disabled=true; btn.textContent='生成中（约 1-2 分钟）…';
     try {
-      var r = await callFn('ai_recommend', {customer_id:cid});
+      var r = await callFn('ai_recommend', {customer_id:cid, operator: CONFIG.operator || null});
       if(r.error){ toast(r.error,'err'); return; }
       toast('建议已生成');
       showDetail(cid);
