@@ -1113,7 +1113,7 @@ async function renderAi(cid, recommendations){
         rec.suggested_followup_date ? el('span', {class:'badge stage'}, '建议跟进：'+String(rec.suggested_followup_date).slice(0,10)) : null,
       ]));
       if(rec.suggested_message) card.appendChild(el('p', {}, rec.suggested_message));
-      if(rec.suggested_strategy) card.appendChild(el('p', {style:'color:var(--muted);font-size:13px'}, '策略：'+esc(rec.suggested_strategy)));
+      if(rec.suggested_strategy) card.appendChild(el('p', {style:'color:#0f172a;font-size:13px;line-height:1.7;background:#f0f6ff;border-left:3px solid var(--pri);padding:10px 12px;border-radius:0 8px 8px 0;margin-top:8px'}, '策略：'+esc(rec.suggested_strategy)));
       if(rec.suggested_customer_stage||rec.suggested_followup_goal){
         var tags = el('div', {style:'margin-top:6px'});
         if(rec.suggested_customer_stage) tags.appendChild(el('span',{class:'badge stage',style:'margin-right:6px'}, '阶段：'+rec.suggested_customer_stage));
