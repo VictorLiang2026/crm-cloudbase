@@ -279,6 +279,15 @@ async function initSdk(){
   document.getElementById('env-label').textContent = 'env: ' + CONFIG.envId;
   app = cloudbase.init({ env: CONFIG.envId });
   authInst = app.auth({persistence:'local'});
+  // 跨刷新/后台回收的超时检查：距上次活动超过 5 分钟则清除登录态，要求重新登录（iOS Safari 回收页面场景）
+  try {
+    var _stored = parseInt(localStorage.getItem('crm_last_activity')||'0',10);
+    if(_stored && Date.now() - _stored > SESSION_TIMEOUT){
+      try { if(authInst.signOut) authInst.signOut().catch(function(){}); } catch(e2){}
+      await showLogin();
+      return true;
+    }
+  } catch(e0){ console.warn(e0); }
   // 已有登录态（本地持久化）则直接进入
   try { if(authInst.hasLoginState && authInst.hasLoginState()) return true; } catch(e){ console.warn(e); }
   await showLogin();
@@ -304,6 +313,7 @@ function showLogin(){
       btn.disabled = true; btn.textContent = '登录中…'; msg.textContent = '';
       try {
         await authInst.signInWithPassword({ username: u.value.trim(), password: p.value });
+        lastActivity = Date.now(); persistActivity(true);
         resolve();
       } catch(e){
         msg.textContent = '登录失败：' + (e.message || e);
@@ -325,13 +335,24 @@ var sessionLocked = false;          // 过期锁定：锁定期间用户活动�
 var sessionWaiters = [];            // 等待重新登录完成的挂起操作
 var reloginShowing = false;
 
+// 活动时间戳持久化：iOS Safari 后台回收/刷新页面后仍能判断超时（iPhone/iPad/电脑通用）
+function persistActivity(force){
+  try {
+    var now = Date.now();
+    if(!force && now - (persistActivity.t||0) < 15000) return; // 节流：15 秒最多写一次
+    persistActivity.t = now;
+    localStorage.setItem('crm_last_activity', String(now));
+  } catch(e){}
+}
+try { var _sa = parseInt(localStorage.getItem('crm_last_activity')||'0',10); if(_sa) lastActivity = _sa; } catch(e){}
+
 // 用户主动操作（点击/键盘/触摸/滚动）视为活动；锁定状态下不刷新计时
 ['click','mousedown','keydown','touchstart','wheel'].forEach(function(ev){
-  window.addEventListener(ev, function(){ if(!sessionLocked) lastActivity = Date.now(); }, true);
+  window.addEventListener(ev, function(){ if(!sessionLocked){ lastActivity = Date.now(); persistActivity(false); } }, true);
 });
 
 function ensureSession(){
-  if(!sessionLocked && Date.now() - lastActivity <= SESSION_TIMEOUT){ lastActivity = Date.now(); return Promise.resolve(); }
+  if(!sessionLocked && Date.now() - lastActivity <= SESSION_TIMEOUT){ lastActivity = Date.now(); persistActivity(true); return Promise.resolve(); }
   if(!sessionLocked){ sessionLocked = true; }
   return forceReLogin();
 }
@@ -346,6 +367,7 @@ function forceReLogin(){
     showReLoginOverlay(function(){
       sessionLocked = false;
       lastActivity = Date.now();
+      persistActivity(true);
       var ws = sessionWaiters; sessionWaiters = []; reloginShowing = false;
       ws.forEach(function(r){ try { r(); } catch(e){} });
       route(); // 刷新当前视图
