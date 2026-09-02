@@ -39,7 +39,7 @@ exports.main = async (event, context) => {
 
 async function list(event) {
   const page = Math.max(1, parseInt(event.page || 1, 10));
-  const pageSize = Math.min(100, Math.max(1, parseInt(event.pageSize || 20, 10)));
+  const pageSize = Math.min(1000, Math.max(1, parseInt(event.pageSize || 20, 10)));
   const keyword = (event.keyword || '').trim();
   const sortField = event.sortField || 'Id';
   const sortDir = event.sortDir || 'desc';

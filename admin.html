@@ -143,6 +143,43 @@
   .stat-item .label{font-size:13px;color:var(--muted);margin-bottom:6px}
   .stat-item .value{font-size:22px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
   .stat-item .sub{font-size:12px;color:var(--ok);margin-top:4px}
+  .stat-item.stat-danger .value{color:var(--err)}
+  .stat-item.stat-warn .value{color:var(--warn)}
+  /* ===== 今日工作台 ===== */
+  .dash-date{font-size:13px;color:var(--muted);font-weight:400;margin-left:10px}
+  .dash-section{margin-bottom:22px}
+  .dash-section:last-child{margin-bottom:0}
+  .dash-section-title{font-size:15px;font-weight:600;color:var(--text);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+  .dash-section-title::before{content:'';display:inline-block;width:3px;height:16px;background:var(--pri);border-radius:2px}
+  .dash-section-title.tone-danger{color:var(--err)}
+  .dash-section-title.tone-danger::before{background:var(--err)}
+  .dash-section-title.tone-warn{color:#b45309}
+  .dash-section-title.tone-warn::before{background:var(--warn)}
+  .dash-section-title .count{font-size:12px;font-weight:600;background:var(--pri-light);color:var(--pri);border-radius:10px;padding:1px 9px}
+  .dash-section-title.tone-danger .count{background:#fee2e2;color:#991b1b}
+  .dash-section-title.tone-warn .count{background:#fef3c7;color:#92400e}
+  .dash-list{display:flex;flex-direction:column;gap:8px}
+  .task-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;background:#fff;border:1px solid var(--border);border-left:3px solid var(--pri);border-radius:10px;cursor:pointer;transition:box-shadow .2s,transform .2s}
+  .task-card:hover{box-shadow:0 3px 10px rgba(15,23,42,.08);transform:translateY(-1px)}
+  .task-card-main{min-width:0;flex:1}
+  .task-card-name{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:14px}
+  .task-card-name strong{font-size:14px}
+  .task-card-sub{font-size:12.5px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .task-card-date{flex-shrink:0;text-align:right;font-size:13px;font-weight:600;white-space:nowrap;line-height:1.5}
+  .task-card-date small{display:block;font-weight:400;color:var(--muted);font-size:12px}
+  .task-card.tc-overdue{border-left-color:var(--err);background:#fef2f2}
+  .task-card.tc-overdue .task-card-date{color:var(--err)}
+  .task-card.tc-today{border-left-color:var(--pri);background:#eff6ff}
+  .task-card.tc-today .task-card-date{color:var(--pri)}
+  .task-card.tc-week{border-left-color:#0ea5e9;background:#f0f9ff}
+  .task-card.tc-week .task-card-date{color:#0369a1}
+  .task-card.tc-stale90{border-left-color:var(--err);background:#fef2f2}
+  .task-card.tc-stale90 .task-card-date{color:var(--err)}
+  .task-card.tc-stale60{border-left-color:var(--warn);background:#fffbeb}
+  .task-card.tc-stale60 .task-card-date{color:#b45309}
+  .task-card.tc-stale30{border-left-color:#fbbf24;background:#fffdf2}
+  .task-card.tc-stale30 .task-card-date{color:#b45309}
+  .dash-all-clear{padding:28px;text-align:center;color:var(--muted);font-size:14px;background:#f8fafc;border:1px dashed var(--border);border-radius:10px}
   /* ===== 平板 iPad（769px–1366px，覆盖 iPad Pro 12.9" 竖屏 1024 / 横屏 1366）：宽屏舒适布局 + 触控友好 ===== */
   @media (min-width:769px) and (max-width:1366px){
     main{max-width:1400px;padding:32px}
@@ -540,7 +577,151 @@ function route(){
   var m = hash.match(/^#\/customer\/(\d+)$/);
   if(m) return showDetail(parseInt(m[1],10));
   if(hash === '#/ai-suggestions') return showAiSuggestions();
-  showList();
+  if(hash === '#/customers') return showList();
+  showDashboard();
+}
+
+// ==================== 今日工作台（首页） ====================
+function dayStr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function diffDaysTo(dateStr, todayStr){
+  // 返回 dateStr 相对 todayStr 的天数差（正=未来，负=过去），入参 YYYY-MM-DD
+  if(!dateStr) return null;
+  var a = new Date(dateStr.slice(0,10)+'T00:00:00').getTime();
+  var b = new Date(todayStr+'T00:00:00').getTime();
+  return Math.round((a-b)/86400000);
+}
+
+async function showDashboard(){
+  var view = $('view');
+  view.innerHTML = '';
+
+  // 操作栏
+  var toolbar = el('div', {class:'toolbar'}, [
+    el('button', {class:'btn btn-primary', onclick:function(){ openCustomerForm(null); }}, '+ 新增客户'),
+    el('button', {class:'btn', onclick:function(){ openAiParse(); }}, 'AI 解析新增'),
+    el('button', {class:'btn', onclick:function(){ location.hash='#/ai-suggestions'; }}, 'AI 建议'),
+    el('button', {class:'btn', onclick:function(){ location.hash='#/customers'; }, style:'margin-left:auto'}, '全部客户 →'),
+  ]);
+  view.appendChild(toolbar);
+
+  var card = el('div', {class:'card'});
+  card.appendChild(el('div', {class:'loading'}, '加载中…'));
+  view.appendChild(card);
+
+  try {
+    var r = await callFn('customers', {action:'list', page:1, pageSize:1000});
+    var rows = r.rows || [];
+    card.innerHTML = '';
+
+    var todayStr = dayStr(new Date());
+    var overdue = [], todayDue = [], weekDue = [], stale = [];
+
+    rows.forEach(function(c){
+      var nd = c.next_followup_date ? String(c.next_followup_date).slice(0,10) : '';
+      var lastDate = c.latest_followup_date ? String(c.latest_followup_date).slice(0,10)
+        : (c.first_contact_date ? String(c.first_contact_date).slice(0,10)
+        : (c.created_at ? String(c.created_at).slice(0,10) : ''));
+      var ndDiff = nd ? diffDaysTo(nd, todayStr) : null;
+      if(ndDiff !== null && ndDiff < 0){ c._diff = ndDiff; c._lastDate = lastDate; overdue.push(c); return; }
+      if(ndDiff === 0){ c._lastDate = lastDate; todayDue.push(c); return; }
+      if(ndDiff !== null && ndDiff <= 7){ c._diff = ndDiff; c._lastDate = lastDate; weekDue.push(c); return; }
+      // 无近期跟进计划：检查久未联系（孤儿单风险）
+      if(lastDate){
+        var idle = -diffDaysTo(lastDate, todayStr);
+        if(idle >= 30){ c._idle = idle; c._planDate = nd; stale.push(c); }
+      }
+    });
+
+    overdue.sort(function(a,b){ return a._diff - b._diff; });
+    weekDue.sort(function(a,b){ return a._diff - b._diff; });
+    stale.sort(function(a,b){ return b._idle - a._idle; });
+
+    // 标题 + 日期
+    card.appendChild(el('h2', {}, [
+      document.createTextNode('今日工作台'),
+      el('span', {class:'dash-date'}, todayStr + ' 星期' + '日一二三四五六'[new Date().getDay()]),
+    ]));
+
+    // 统计卡
+    var statBar = el('div', {class:'stat-bar'});
+    function stat(label, value, cls){
+      statBar.appendChild(el('div', {class:'stat-item'+(cls?' '+cls:'')}, [
+        el('div', {class:'label'}, label),
+        el('div', {class:'value'}, String(value)),
+      ]));
+    }
+    stat('客户总数', rows.length, '');
+    stat('今日待跟进', todayDue.length, '');
+    stat('已逾期', overdue.length, overdue.length ? 'stat-danger' : '');
+    stat('未来7天到期', weekDue.length, '');
+    stat('久未联系(30天+)', stale.length, stale.length ? 'stat-warn' : '');
+    card.appendChild(statBar);
+
+    // 任务卡
+    function taskCard(c, kind){
+      var nameLine = el('div', {class:'task-card-name'}, [
+        el('strong', {}, c.customer_name || '(未命名)'),
+        c.customer_stage ? el('span', {class:'badge stage'}, c.customer_stage) : null,
+        c.sales_priority ? el('span', {class:'badge pri-'+c.sales_priority}, '签'+c.sales_priority) : null,
+        c.recruitment_priority ? el('span', {class:'badge pri-'+c.recruitment_priority}, '招'+c.recruitment_priority) : null,
+        c.referral_priority ? el('span', {class:'badge pri-'+c.referral_priority}, '转'+c.referral_priority) : null,
+      ]);
+      var subParts = [];
+      if(c.phone) subParts.push(c.phone);
+      if(c.occupation) subParts.push(c.occupation);
+      if(kind === 'overdue') subParts.push('上次跟进：' + (c._lastDate || '无记录'));
+      if(kind.indexOf('stale') === 0){
+        if(c._planDate) subParts.push('计划跟进：' + c._planDate);
+        else subParts.push('无跟进计划');
+      }
+      var main = el('div', {class:'task-card-main'}, [
+        nameLine,
+        subParts.length ? el('div', {class:'task-card-sub'}, subParts.join(' · ')) : null,
+      ]);
+      var dateRight, dateSmall = '';
+      if(kind === 'overdue'){ dateRight = '逾期 ' + (-c._diff) + ' 天'; dateSmall = '计划 ' + String(c.next_followup_date).slice(0,10); }
+      else if(kind === 'today'){ dateRight = '今天跟进'; }
+      else if(kind === 'week'){ dateRight = c._diff === 1 ? '明天' : (c._diff + ' 天后'); dateSmall = String(c.next_followup_date).slice(0,10); }
+      else { dateRight = c._idle + ' 天未联系'; dateSmall = '上次 ' + (c.latest_followup_date ? String(c.latest_followup_date).slice(0,10) : (c.first_contact_date ? String(c.first_contact_date).slice(0,10) : '建档')); }
+      var right = el('div', {class:'task-card-date'}, [
+        document.createTextNode(dateRight),
+        dateSmall ? el('small', {}, dateSmall) : null,
+      ]);
+      var tone = kind === 'stale90' ? 'tc-stale90' : kind === 'stale60' ? 'tc-stale60' : kind === 'stale30' ? 'tc-stale30' : 'tc-'+kind;
+      var tc = el('div', {class:'task-card '+tone, onclick:function(){ location.hash = '#/customer/'+c.Id; }}, [main, right]);
+      return tc;
+    }
+
+    function section(icon, title, list, tone, kindOf){
+      var sec = el('div', {class:'dash-section'});
+      sec.appendChild(el('div', {class:'dash-section-title'+(tone?' '+tone:'')}, [
+        document.createTextNode(icon + ' ' + title),
+        el('span', {class:'count'}, String(list.length)),
+      ]));
+      var wrap = el('div', {class:'dash-list'});
+      list.forEach(function(c){
+        var kind = kindOf(c);
+        wrap.appendChild(taskCard(c, kind));
+      });
+      sec.appendChild(wrap);
+      card.appendChild(sec);
+    }
+
+    var hasAny = overdue.length || todayDue.length || weekDue.length || stale.length;
+    if(!hasAny){
+      card.appendChild(el('div', {class:'dash-all-clear'}, '今日暂无待跟进事项，所有客户都在有序跟进中。'));
+    } else {
+      if(overdue.length) section('⚠', '已逾期 · 请立即跟进', overdue, 'tone-danger', function(){ return 'overdue'; });
+      if(todayDue.length) section('📅', '今日待跟进', todayDue, '', function(){ return 'today'; });
+      if(weekDue.length) section('📆', '未来 7 天到期', weekDue, '', function(){ return 'week'; });
+      if(stale.length) section('⏰', '久未联系 · 孤儿单风险', stale, 'tone-warn', function(c){
+        return c._idle >= 90 ? 'stale90' : c._idle >= 60 ? 'stale60' : 'stale30';
+      });
+    }
+  } catch(e){
+    card.innerHTML = '';
+    card.appendChild(el('div', {class:'empty'}, '加载失败：' + esc(e.message)));
+  }
 }
 
 // ==================== 客户列表 ====================
@@ -582,6 +763,7 @@ async function showList(){
     }
   });
   var toolbar = el('div', {class:'toolbar'});
+  toolbar.appendChild(el('button', {class:'btn', onclick:function(){ location.hash='#/'; }}, '← 工作台'));
   toolbar.appendChild(searchInput);
   toolbar.appendChild(el('button', {class:'btn', onclick:function(){
     listState.keyword = searchInput.value;
@@ -682,7 +864,8 @@ async function showDetail(id){
   var view = $('view');
   view.innerHTML = '';
   view.appendChild(el('div', {class:'toolbar'}, [
-    el('a', {onclick:function(){ location.hash='#/'; }}, '← 返回列表'),
+    el('a', {onclick:function(){ location.hash='#/'; }}, '← 工作台'),
+    el('a', {onclick:function(){ location.hash='#/customers'; }, style:'margin-left:14px'}, '客户列表'),
   ]));
   var card = el('div', {class:'card'});
   card.appendChild(el('div', {class:'loading'}, '加载中…'));
@@ -1254,7 +1437,7 @@ async function showAiSuggestions(){
   var view = $('view');
   view.innerHTML = '';
   view.appendChild(el('div', {class:'toolbar'}, [
-    el('a', {onclick:function(){ location.hash='#/'; }}, '← 返回客户列表'),
+    el('a', {onclick:function(){ location.hash='#/'; }}, '← 返回工作台'),
     el('span', {style:'color:var(--muted);font-size:13px'}, '点击表头可排序（正序/倒序），点击客户姓名查看详情'),
   ]));
   var card = el('div', {class:'card'});
