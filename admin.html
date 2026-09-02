@@ -180,6 +180,17 @@
   .task-card.tc-stale30{border-left-color:#fbbf24;background:#fffdf2}
   .task-card.tc-stale30 .task-card-date{color:#b45309}
   .dash-all-clear{padding:28px;text-align:center;color:var(--muted);font-size:14px;background:#f8fafc;border:1px dashed var(--border);border-radius:10px}
+  /* 工作台状态徽章（表格内） */
+  .wb{display:inline-block;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600;white-space:nowrap}
+  .wb-overdue{background:#fee2e2;color:#991b1b}
+  .wb-today{background:#dbeafe;color:#1e40af}
+  .wb-week{background:#e0f2fe;color:#0369a1}
+  .wb-stale{background:#fef3c7;color:#92400e}
+  .wb-normal{color:var(--muted);font-weight:400}
+  /* 统计卡可点击筛选 */
+  .stat-item.clickable{cursor:pointer}
+  .stat-item.stat-active{border-color:var(--pri);box-shadow:0 0 0 2px rgba(37,99,235,.18)}
+  .stat-item.clickable:hover{border-color:var(--pri)}
   /* ===== 平板 iPad（769px–1366px，覆盖 iPad Pro 12.9" 竖屏 1024 / 横屏 1366）：宽屏舒适布局 + 触控友好 ===== */
   @media (min-width:769px) and (max-width:1366px){
     main{max-width:1400px;padding:32px}
@@ -214,11 +225,14 @@
     #view .card > table thead tr th:nth-child(7){font-size:0}
     #view .card > table thead tr th:nth-child(7)::before{content:"下次跟进";font-size:13px}
     #view .card > table thead tr th:nth-child(8){font-size:0}
-    #view .card > table thead tr th:nth-child(8)::before{content:"编号";font-size:13px}
+    #view .card > table thead tr th:nth-child(8)::before{content:"状态";font-size:13px}
     #view .card > table thead tr th:nth-child(9){font-size:0}
-    #view .card > table thead tr th:nth-child(9)::before{content:"操作";font-size:13px}
-    /* iPhone 列表紧凑化：badge 与 列间距 */
+    #view .card > table thead tr th:nth-child(9)::before{content:"编号";font-size:13px}
+    #view .card > table thead tr th:nth-child(10){font-size:0}
+    #view .card > table thead tr th:nth-child(10)::before{content:"操作";font-size:13px}
+    /* iPhone 列表紧凑化：badge / 工作台状态徽章 与 列间距 */
     #view .card > table .badge{padding:2px 6px;font-size:11px}
+    #view .card > table .wb{padding:2px 6px;font-size:11px}
     #view .card > table td:nth-child(2),#view .card > table th:nth-child(2),
     #view .card > table td:nth-child(3),#view .card > table th:nth-child(3),
     #view .card > table td:nth-child(4),#view .card > table th:nth-child(4){padding-left:6px;padding-right:6px}
@@ -591,6 +605,134 @@ function diffDaysTo(dateStr, todayStr){
   return Math.round((a-b)/86400000);
 }
 
+// ==================== 工作台状态（工作台与客户列表共享） ====================
+// 按当天日期计算每个客户的工作台状态：
+// overdue 已逾期 / today 今天跟进 / week 未来7天到期 / stale 久未联系(30天+) / normal 正常
+function computeWbStatus(c, todayStr){
+  var nd = c.next_followup_date ? String(c.next_followup_date).slice(0,10) : '';
+  var lastDate = c.latest_followup_date ? String(c.latest_followup_date).slice(0,10)
+    : (c.first_contact_date ? String(c.first_contact_date).slice(0,10)
+    : (c.created_at ? String(c.created_at).slice(0,10) : ''));
+  var ndDiff = nd ? diffDaysTo(nd, todayStr) : null;
+  if(ndDiff !== null && ndDiff < 0){
+    var d = -ndDiff;
+    return {key:'overdue', days:d, label:'逾期 '+d+' 天', badge:'wb wb-overdue'};
+  }
+  if(ndDiff === 0) return {key:'today', days:0, label:'今天跟进', badge:'wb wb-today'};
+  if(ndDiff !== null && ndDiff <= 7){
+    return {key:'week', days:ndDiff, label:(ndDiff===1 ? '明天到期' : ndDiff+' 天后到期'), badge:'wb wb-week'};
+  }
+  // 无近期跟进计划：检查久未联系（孤儿单风险）
+  if(lastDate){
+    var idle = -diffDaysTo(lastDate, todayStr);
+    if(idle >= 30) return {key:'stale', days:idle, label:idle+' 天未联系', badge:'wb wb-stale'};
+  }
+  if(ndDiff !== null) return {key:'normal', days:ndDiff, label:ndDiff+' 天后跟进', badge:'wb wb-normal'};
+  return {key:'normal', days:0, label:'正常跟进', badge:'wb wb-normal'};
+}
+// 状态排序值：紧急度从高到低（逾期最久 > 今天跟进 > 7天内最近到期 > 久未联系最久 > 正常）
+function wbSortVal(c){
+  var s = c._wb, d = s.days || 0;
+  if(s.key === 'overdue') return 100000 - d;
+  if(s.key === 'today')   return 200000;
+  if(s.key === 'week')    return 300000 + d;
+  if(s.key === 'stale')   return 400000 - d;
+  return 500000 + d;
+}
+
+// 客户列表缓存：工作台与全部客户列表共用；客户/跟进等数据变更后调用 invalidateCustomers()
+var customersCache = null;
+async function loadCustomers(force){
+  if(customersCache && !force) return customersCache;
+  var r = await callFn('customers', {action:'list', page:1, pageSize:1000});
+  var todayStr = dayStr(new Date());
+  var rows = (r.rows || []).map(function(c){
+    c._wb = computeWbStatus(c, todayStr);
+    return c;
+  });
+  customersCache = rows;
+  return rows;
+}
+function invalidateCustomers(){ customersCache = null; }
+
+// 客户端排序比较（口径与云函数一致，另支持工作台状态 wb_status）
+function cmpCustomerRows(a, b, field, asc){
+  var va, vb;
+  if(field === 'wb_status'){ va = wbSortVal(a); vb = wbSortVal(b); }
+  else { va = a[field]; vb = b[field]; }
+  if(va == null && vb == null) return a.Id - b.Id;
+  if(va == null) return 1;
+  if(vb == null) return -1;
+  if(typeof va === 'string') va = va.toLowerCase();
+  if(typeof vb === 'string') vb = vb.toLowerCase();
+  if(va < vb) return asc ? -1 : 1;
+  if(va > vb) return asc ? 1 : -1;
+  return a.Id - b.Id;
+}
+
+var LIST_PAGE_SIZE = 50; // 列表每页最多 50 行
+// 共享客户表格：10 列（含工作台状态），表头可点击排序，每页 50 行分页
+function renderCustomerTable(card, rows, state, rerender, emptyText){
+  card.innerHTML = '';
+  if(!rows.length){
+    card.appendChild(el('div', {class:'empty'}, emptyText || '暂无客户'));
+    return;
+  }
+  var asc = state.sortDir !== 'desc';
+  var sorted = rows.slice().sort(function(a,b){ return cmpCustomerRows(a, b, state.sortField, asc); });
+  var total = sorted.length;
+  var pages = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
+  if(state.page > pages) state.page = pages;
+  if(state.page < 1) state.page = 1;
+  var start = (state.page - 1) * LIST_PAGE_SIZE;
+  var pageRows = sorted.slice(start, start + LIST_PAGE_SIZE);
+
+  var table = el('table');
+  var thead = el('thead');
+  var htr = el('tr');
+  htr.appendChild(el('th', {}, '姓名'));
+  htr.appendChild(makeSortHeader('sales_priority', '签单优先级', state, rerender));
+  htr.appendChild(makeSortHeader('recruitment_priority', '招募优先级', state, rerender));
+  htr.appendChild(makeSortHeader('referral_priority', '转介绍优先级', state, rerender));
+  htr.appendChild(el('th', {}, '客户经营阶段'));
+  htr.appendChild(makeSortHeader('latest_followup_date', '本次跟进日期', state, rerender));
+  htr.appendChild(makeSortHeader('next_followup_date', '下次跟进日期', state, rerender));
+  htr.appendChild(makeSortHeader('wb_status', '工作台状态', state, rerender));
+  htr.appendChild(makeSortHeader('Id', '编号', state, rerender));
+  htr.appendChild(el('th', {}, '操作'));
+  thead.appendChild(htr);
+  table.appendChild(thead);
+
+  var tbody = el('tbody');
+  pageRows.forEach(function(c){
+    var s = c._wb;
+    tbody.appendChild(el('tr', {}, [
+      el('td', {}, el('a', {onclick:function(){ location.hash='#/customer/'+c.Id; }}, c.customer_name)),
+      el('td', {}, c.sales_priority ? el('span',{class:'badge pri-'+c.sales_priority}, c.sales_priority) : '-'),
+      el('td', {}, c.recruitment_priority ? el('span',{class:'badge pri-'+c.recruitment_priority}, c.recruitment_priority) : '-'),
+      el('td', {}, c.referral_priority ? el('span',{class:'badge pri-'+c.referral_priority}, c.referral_priority) : '-'),
+      el('td', {}, c.customer_stage ? el('span',{class:'badge stage'}, c.customer_stage) : '-'),
+      el('td', {}, c.latest_followup_date ? String(c.latest_followup_date).slice(0,10) : '-'),
+      el('td', {}, c.next_followup_date ? String(c.next_followup_date).slice(0,10) : '-'),
+      el('td', {}, el('span', {class:s.badge}, s.label)),
+      el('td', {}, String(c.Id)),
+      el('td', {}, el('a', {onclick:function(){ location.hash='#/customer/'+c.Id; }}, '详情')),
+    ]));
+  });
+  table.appendChild(tbody);
+  card.appendChild(table);
+
+  // 分页（每页最多 50 行）
+  var pager = el('div', {class:'pager'});
+  pager.appendChild(el('button', {class:'btn btn-sm', disabled:state.page<=1, onclick:function(){ if(state.page>1){ state.page--; rerender(); } }}, '上一页'));
+  pager.appendChild(el('span', {}, state.page+' / '+pages+'（共'+total+'）'));
+  pager.appendChild(el('button', {class:'btn btn-sm', disabled:state.page>=pages, onclick:function(){ if(state.page<pages){ state.page++; rerender(); } }}, '下一页'));
+  card.appendChild(pager);
+}
+
+// ==================== 今日工作台（首页） ====================
+var dashState = { page:1, sortField:'wb_status', sortDir:'asc', filter:'' };
+
 async function showDashboard(){
   var view = $('view');
   view.innerHTML = '';
@@ -609,115 +751,59 @@ async function showDashboard(){
   view.appendChild(card);
 
   try {
-    var r = await callFn('customers', {action:'list', page:1, pageSize:1000});
-    var rows = r.rows || [];
+    var rows = await loadCustomers();
     card.innerHTML = '';
 
     var todayStr = dayStr(new Date());
-    var overdue = [], todayDue = [], weekDue = [], stale = [];
-
-    rows.forEach(function(c){
-      var nd = c.next_followup_date ? String(c.next_followup_date).slice(0,10) : '';
-      var lastDate = c.latest_followup_date ? String(c.latest_followup_date).slice(0,10)
-        : (c.first_contact_date ? String(c.first_contact_date).slice(0,10)
-        : (c.created_at ? String(c.created_at).slice(0,10) : ''));
-      var ndDiff = nd ? diffDaysTo(nd, todayStr) : null;
-      if(ndDiff !== null && ndDiff < 0){ c._diff = ndDiff; c._lastDate = lastDate; overdue.push(c); return; }
-      if(ndDiff === 0){ c._lastDate = lastDate; todayDue.push(c); return; }
-      if(ndDiff !== null && ndDiff <= 7){ c._diff = ndDiff; c._lastDate = lastDate; weekDue.push(c); return; }
-      // 无近期跟进计划：检查久未联系（孤儿单风险）
-      if(lastDate){
-        var idle = -diffDaysTo(lastDate, todayStr);
-        if(idle >= 30){ c._idle = idle; c._planDate = nd; stale.push(c); }
-      }
-    });
-
-    overdue.sort(function(a,b){ return a._diff - b._diff; });
-    weekDue.sort(function(a,b){ return a._diff - b._diff; });
-    stale.sort(function(a,b){ return b._idle - a._idle; });
-
-    // 标题 + 日期
     card.appendChild(el('h2', {}, [
       document.createTextNode('今日工作台'),
       el('span', {class:'dash-date'}, todayStr + ' 星期' + '日一二三四五六'[new Date().getDay()]),
     ]));
 
-    // 统计卡
+    // 分类统计
+    var counts = {all:rows.length, today:0, overdue:0, week:0, stale:0};
+    rows.forEach(function(c){
+      if(counts[c._wb.key] != null) counts[c._wb.key]++;
+    });
+
+    // 统计卡：点击即筛选下方表格，再点一次取消筛选
     var statBar = el('div', {class:'stat-bar'});
-    function stat(label, value, cls){
-      statBar.appendChild(el('div', {class:'stat-item'+(cls?' '+cls:'')}, [
+    card.appendChild(statBar);
+    function statCard(label, value, key, cls){
+      var active = dashState.filter === key;
+      var item = el('div', {class:'stat-item clickable'+(cls?' '+cls:'')+(active?' stat-active':'')}, [
         el('div', {class:'label'}, label),
         el('div', {class:'value'}, String(value)),
-      ]));
-    }
-    stat('客户总数', rows.length, '');
-    stat('今日待跟进', todayDue.length, '');
-    stat('已逾期', overdue.length, overdue.length ? 'stat-danger' : '');
-    stat('未来7天到期', weekDue.length, '');
-    stat('久未联系(30天+)', stale.length, stale.length ? 'stat-warn' : '');
-    card.appendChild(statBar);
-
-    // 任务卡
-    function taskCard(c, kind){
-      var nameLine = el('div', {class:'task-card-name'}, [
-        el('strong', {}, c.customer_name || '(未命名)'),
-        c.customer_stage ? el('span', {class:'badge stage'}, c.customer_stage) : null,
-        c.sales_priority ? el('span', {class:'badge pri-'+c.sales_priority}, '签'+c.sales_priority) : null,
-        c.recruitment_priority ? el('span', {class:'badge pri-'+c.recruitment_priority}, '招'+c.recruitment_priority) : null,
-        c.referral_priority ? el('span', {class:'badge pri-'+c.referral_priority}, '转'+c.referral_priority) : null,
       ]);
-      var subParts = [];
-      if(c.phone) subParts.push(c.phone);
-      if(c.occupation) subParts.push(c.occupation);
-      if(kind === 'overdue') subParts.push('上次跟进：' + (c._lastDate || '无记录'));
-      if(kind.indexOf('stale') === 0){
-        if(c._planDate) subParts.push('计划跟进：' + c._planDate);
-        else subParts.push('无跟进计划');
-      }
-      var main = el('div', {class:'task-card-main'}, [
-        nameLine,
-        subParts.length ? el('div', {class:'task-card-sub'}, subParts.join(' · ')) : null,
-      ]);
-      var dateRight, dateSmall = '';
-      if(kind === 'overdue'){ dateRight = '逾期 ' + (-c._diff) + ' 天'; dateSmall = '计划 ' + String(c.next_followup_date).slice(0,10); }
-      else if(kind === 'today'){ dateRight = '今天跟进'; }
-      else if(kind === 'week'){ dateRight = c._diff === 1 ? '明天' : (c._diff + ' 天后'); dateSmall = String(c.next_followup_date).slice(0,10); }
-      else { dateRight = c._idle + ' 天未联系'; dateSmall = '上次 ' + (c.latest_followup_date ? String(c.latest_followup_date).slice(0,10) : (c.first_contact_date ? String(c.first_contact_date).slice(0,10) : '建档')); }
-      var right = el('div', {class:'task-card-date'}, [
-        document.createTextNode(dateRight),
-        dateSmall ? el('small', {}, dateSmall) : null,
-      ]);
-      var tone = kind === 'stale90' ? 'tc-stale90' : kind === 'stale60' ? 'tc-stale60' : kind === 'stale30' ? 'tc-stale30' : 'tc-'+kind;
-      var tc = el('div', {class:'task-card '+tone, onclick:function(){ location.hash = '#/customer/'+c.Id; }}, [main, right]);
-      return tc;
+      item.onclick = function(){
+        dashState.filter = (dashState.filter === key ? '' : key);
+        dashState.page = 1;
+        renderStats();
+        renderTable();
+      };
+      statBar.appendChild(item);
     }
+    function renderStats(){
+      statBar.innerHTML = '';
+      statCard('客户总数', counts.all, '', '');
+      statCard('今日待跟进', counts.today, 'today', '');
+      statCard('已逾期', counts.overdue, 'overdue', counts.overdue ? 'stat-danger' : '');
+      statCard('未来7天到期', counts.week, 'week', '');
+      statCard('久未联系(30天+)', counts.stale, 'stale', counts.stale ? 'stat-warn' : '');
+    }
+    renderStats();
 
-    function section(icon, title, list, tone, kindOf){
-      var sec = el('div', {class:'dash-section'});
-      sec.appendChild(el('div', {class:'dash-section-title'+(tone?' '+tone:'')}, [
-        document.createTextNode(icon + ' ' + title),
-        el('span', {class:'count'}, String(list.length)),
-      ]));
-      var wrap = el('div', {class:'dash-list'});
-      list.forEach(function(c){
-        var kind = kindOf(c);
-        wrap.appendChild(taskCard(c, kind));
-      });
-      sec.appendChild(wrap);
-      card.appendChild(sec);
+    // 下方客户表格（与客户列表完全一致，随统计卡筛选联动）
+    var tableCard = el('div', {class:'card', style:'padding:0;border:none;box-shadow:none;background:transparent;margin-bottom:0'});
+    card.appendChild(tableCard);
+    function renderTable(){
+      var filtered = dashState.filter
+        ? rows.filter(function(c){ return c._wb.key === dashState.filter; })
+        : rows;
+      renderCustomerTable(tableCard, filtered, dashState, renderTable,
+        dashState.filter ? '该分类下暂无客户' : '暂无客户');
     }
-
-    var hasAny = overdue.length || todayDue.length || weekDue.length || stale.length;
-    if(!hasAny){
-      card.appendChild(el('div', {class:'dash-all-clear'}, '今日暂无待跟进事项，所有客户都在有序跟进中。'));
-    } else {
-      if(overdue.length) section('⚠', '已逾期 · 请立即跟进', overdue, 'tone-danger', function(){ return 'overdue'; });
-      if(todayDue.length) section('📅', '今日待跟进', todayDue, '', function(){ return 'today'; });
-      if(weekDue.length) section('📆', '未来 7 天到期', weekDue, '', function(){ return 'week'; });
-      if(stale.length) section('⏰', '久未联系 · 孤儿单风险', stale, 'tone-warn', function(c){
-        return c._idle >= 90 ? 'stale90' : c._idle >= 60 ? 'stale60' : 'stale30';
-      });
-    }
+    renderTable();
   } catch(e){
     card.innerHTML = '';
     card.appendChild(el('div', {class:'empty'}, '加载失败：' + esc(e.message)));
@@ -725,7 +811,7 @@ async function showDashboard(){
 }
 
 // ==================== 客户列表 ====================
-var listState = { page:1, pageSize:20, keyword:'', sortField:'Id', sortDir:'desc' };
+var listState = { page:1, pageSize:LIST_PAGE_SIZE, keyword:'', sortField:'Id', sortDir:'desc' };
 
 function makeSortHeader(field, label, state, rerender){
   var st = state || listState;
@@ -755,21 +841,18 @@ async function showList(){
 
   // 搜索框：回车触发 + 搜索按钮
   var searchInput = el('input', {type:'search', placeholder:'搜索姓名/电话/职业', value:listState.keyword});
+  function doSearch(){
+    listState.keyword = searchInput.value;
+    listState.page = 1;
+    showList();
+  }
   searchInput.addEventListener('keydown', function(e){
-    if(e.key === 'Enter'){
-      listState.keyword = searchInput.value;
-      listState.page = 1;
-      showList();
-    }
+    if(e.key === 'Enter') doSearch();
   });
   var toolbar = el('div', {class:'toolbar'});
   toolbar.appendChild(el('button', {class:'btn', onclick:function(){ location.hash='#/'; }}, '← 工作台'));
   toolbar.appendChild(searchInput);
-  toolbar.appendChild(el('button', {class:'btn', onclick:function(){
-    listState.keyword = searchInput.value;
-    listState.page = 1;
-    showList();
-  }}, '搜索'));
+  toolbar.appendChild(el('button', {class:'btn', onclick:doSearch}, '搜索'));
   toolbar.appendChild(el('button', {class:'btn btn-primary', onclick:function(){ openCustomerForm(null); }}, '+ 新增客户'));
   toolbar.appendChild(el('button', {class:'btn', onclick:function(){ openAiParse(); }}, 'AI 解析新增'));
   toolbar.appendChild(el('button', {class:'btn', onclick:function(){ location.hash='#/ai-suggestions'; }}, 'AI 建议'));
@@ -780,59 +863,16 @@ async function showList(){
   view.appendChild(card);
 
   try {
-    var r = await callFn('customers', {
-      action:'list', page:listState.page, pageSize:listState.pageSize,
-      keyword:listState.keyword, sortField:listState.sortField, sortDir:listState.sortDir
-    });
-    card.innerHTML = '';
-    if(!r.rows || !r.rows.length){
-      card.appendChild(el('div', {class:'empty'}, '暂无客户'));
-      return;
-    }
-    var table = el('table');
-
-    // 表头（可排序列点击切换）
-    var thead = el('thead');
-    var htr = el('tr');
-    htr.appendChild(el('th', {}, '姓名'));
-    htr.appendChild(makeSortHeader('sales_priority', '签单优先级'));
-    htr.appendChild(makeSortHeader('recruitment_priority', '招募优先级'));
-    htr.appendChild(makeSortHeader('referral_priority', '转介绍优先级'));
-    htr.appendChild(el('th', {}, '客户经营阶段'));
-    htr.appendChild(makeSortHeader('latest_followup_date', '本次跟进日期'));
-    htr.appendChild(makeSortHeader('next_followup_date', '下次跟进日期'));
-    htr.appendChild(makeSortHeader('Id', '编号'));
-    htr.appendChild(el('th', {}, '操作'));
-    thead.appendChild(htr);
-    table.appendChild(thead);
-
-    var tbody = el('tbody');
-    r.rows.forEach(function(c){
-      var tr = el('tr', {}, [
-        el('td', {}, el('a', {onclick:function(){ location.hash='#/customer/'+c.Id; }}, c.customer_name)),
-        el('td', {}, c.sales_priority ? el('span',{class:'badge pri-'+c.sales_priority}, c.sales_priority) : '-'),
-        el('td', {}, c.recruitment_priority ? el('span',{class:'badge pri-'+c.recruitment_priority}, c.recruitment_priority) : '-'),
-        el('td', {}, c.referral_priority ? el('span',{class:'badge pri-'+c.referral_priority}, c.referral_priority) : '-'),
-        el('td', {}, c.customer_stage ? el('span',{class:'badge stage'}, c.customer_stage) : '-'),
-        el('td', {}, c.latest_followup_date ? String(c.latest_followup_date).slice(0,10) : '-'),
-        el('td', {}, c.next_followup_date ? String(c.next_followup_date).slice(0,10) : '-'),
-        el('td', {}, String(c.Id)),
-        el('td', {}, el('a', {onclick:function(){ location.hash='#/customer/'+c.Id; }}, '详情')),
-      ]);
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody);
-    card.appendChild(table);
-
-    // 分页
-    var total = r.total||0, pages = Math.ceil(total/listState.pageSize);
-    if(pages>1){
-      var pager = el('div', {class:'pager'});
-      pager.appendChild(el('button', {class:'btn btn-sm', disabled:listState.page<=1, onclick:function(){ if(listState.page>1){listState.page--;showList();} }}, '上一页'));
-      pager.appendChild(el('span', {}, listState.page+' / '+pages+'（共'+total+'）'));
-      pager.appendChild(el('button', {class:'btn btn-sm', disabled:listState.page>=pages, onclick:function(){ if(listState.page<pages){listState.page++;showList();} }}, '下一页'));
-      card.appendChild(pager);
-    }
+    // 全量拉取（与工作台共用缓存），客户端搜索 / 排序 / 分页（每页 50 行）
+    var rows = await loadCustomers();
+    var kw = listState.keyword.trim().toLowerCase();
+    var filtered = kw ? rows.filter(function(c){
+      return (c.customer_name && c.customer_name.toLowerCase().indexOf(kw) !== -1) ||
+             (c.phone && String(c.phone).indexOf(kw) !== -1) ||
+             (c.occupation && c.occupation.toLowerCase().indexOf(kw) !== -1);
+    }) : rows;
+    renderCustomerTable(card, filtered, listState, showList,
+      kw ? '没有找到匹配的客户' : '暂无客户');
   } catch(e){
     card.innerHTML = '';
     card.appendChild(el('div', {class:'empty'}, '加载失败：'+esc(e.message)));
@@ -852,6 +892,7 @@ function openCustomerForm(customer){
       toast('已创建 #'+r.id);
       location.hash = '#/customer/'+r.id;
     }
+    invalidateCustomers();
     if(isEdit) showDetail(customer.Id);
   }, {wide:true, nameDupCheck:true, nameDupExcludeId: isEdit?customer.Id:null});
 }
@@ -944,7 +985,7 @@ function renderFollowups(cid, rows){
         el('a', {class:'btn-sm btn-danger', onclick:async function(){
           if(!confirm('删除该跟进？')) return;
           await callFn('followups', {action:'remove', id:f.Id});
-          toast('已删除'); showDetail(cid);
+          toast('已删除'); invalidateCustomers(); showDetail(cid);
         }}, '删除'),
       ]),
     ]));
@@ -1785,6 +1826,7 @@ function openMergeCompareModal(parsed, matches, filesToSave, selIdx, ocrRawText)
         toast('已更新客户 #'+oldC.Id);
         overlay.remove();
         await saveParsedFiles(oldC.Id, filesToSave, ocrRawText, parsed.additional_info);
+        invalidateCustomers();
         if(location.hash === '#/customer/'+oldC.Id) showDetail(oldC.Id);
         else location.hash = '#/customer/'+oldC.Id;
       } catch(e){ toast(e.message,'err'); }
