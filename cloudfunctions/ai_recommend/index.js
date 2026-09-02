@@ -109,10 +109,14 @@ exports.main = async (event, context) => {
         return { date: f.followup_date, notes: f.followup_notes, next_date: f.next_followup_date, next_goal: f.next_followup_goal };
       }),
       products: prodRows.map(function (p) {
+        // items 为 11 个险种类别的二维明细 JSON（保额/年缴保费/交费年限/已交几年/更新日期）
+        var items = null;
+        if (p.items) { try { items = JSON.parse(p.items); } catch (e) { items = null; } }
         return {
           ap_term: p.ap_term, ap_wl: p.ap_wl, ap_ann: p.ap_ann, ap_all: p.ap_all,
-          ap_ipa: p.ap_ipa, ap_ltc: p.ap_ltc, ap_life: p.ap_life,
+          ap_ipa: p.ap_ipa, ap_ppa: p.ap_ppa, ap_ltc: p.ap_ltc, ap_life: p.ap_life,
           ap_pa: p.ap_pa, ap_ci: p.ap_ci, ap_hi: p.ap_hi,
+          items_detail: items,
         };
       }),
       recent_gifts: gifRows.map(function (g) {

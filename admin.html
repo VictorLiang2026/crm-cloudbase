@@ -89,6 +89,11 @@
   .product-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px 16px}
   .product-grid .field{margin-bottom:0}
   .product-grid input[type=number]{width:100%}
+  /* 产品额度二维表：一行一个险种类别，5 个字段列 */
+  .prod-table th,.prod-table td{white-space:nowrap}
+  .prod-table th{font-size:13px}
+  .prod-table input{width:100%;min-width:96px;padding:7px 10px}
+  .prod-table .prod-cat{font-weight:600;color:var(--text);background:#f8fafc}
   .parse-file-list{display:flex;flex-direction:column;gap:2px;margin-top:6px}
   .parse-file-list div{font-size:12px;color:var(--muted)}
   .parse-progress{margin-top:10px;padding:8px 12px;background:var(--pri-light);color:var(--pri);border-radius:6px;font-size:13px;font-weight:600}
@@ -184,7 +189,7 @@
   .wb{display:inline-block;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600;white-space:nowrap}
   .wb-overdue{background:#fee2e2;color:#991b1b}
   .wb-today{background:#dbeafe;color:#1e40af}
-  .wb-week{background:#e0f2fe;color:#0369a1}
+  .wb-month{background:#e0f2fe;color:#0369a1}
   .wb-stale{background:#fef3c7;color:#92400e}
   .wb-normal{color:var(--muted);font-weight:400}
   /* 统计卡可点击筛选 */
@@ -312,12 +317,27 @@ var CUSTOMER_FIELDS = [
   {name:'additional_info',label:'附加信息',type:'textarea'},
 ];
 
-var PRODUCT_FIELDS = [
-  {name:'ap_ipa',label:'重疾(IPA)'},{name:'ap_ltc',label:'长期护理(LTC)'},
-  {name:'ap_ann',label:'年金(ANN)'},{name:'ap_life',label:'终身寿险(LIFE)'},
-  {name:'ap_term',label:'定期寿险(TERM)'},{name:'ap_wl',label:'万能险(WL)'},
-  {name:'ap_pa',label:'意外(PA)'},{name:'ap_ci',label:'医疗(CI)'},
-  {name:'ap_hi',label:'健康(HI)'},{name:'ap_all',label:'总保额(ALL)'},
+// 产品额度：11 个险种类别（个人养老金 PPA 排在长期护理 LTC 之前）
+var PRODUCT_CATEGORIES = [
+  {key:'ap_ipa', label:'重疾(IPA)'},
+  {key:'ap_ppa', label:'个人养老金(PPA)'},
+  {key:'ap_ltc', label:'长期护理(LTC)'},
+  {key:'ap_ann', label:'年金(ANN)'},
+  {key:'ap_life', label:'终身寿险(LIFE)'},
+  {key:'ap_term', label:'定期寿险(TERM)'},
+  {key:'ap_wl', label:'万能险(WL)'},
+  {key:'ap_pa', label:'意外(PA)'},
+  {key:'ap_ci', label:'医疗(CI)'},
+  {key:'ap_hi', label:'健康(HI)'},
+  {key:'ap_all', label:'总保额(ALL)'},
+];
+// 每个险种类别的 5 个字段：保额 / 年缴保费 / 交费年限 / 已交几年 / 更新日期
+var PRODUCT_ITEM_FIELDS = [
+  {name:'amount', label:'保额', type:'number'},
+  {name:'premium', label:'年缴保费', type:'number'},
+  {name:'pay_years', label:'交费年限', type:'number'},
+  {name:'paid_years', label:'已交几年', type:'number'},
+  {name:'update_date', label:'更新日期', type:'date'},
 ];
 
 // ==================== SDK 初始化 ====================
@@ -607,7 +627,7 @@ function diffDaysTo(dateStr, todayStr){
 
 // ==================== 工作台状态（工作台与客户列表共享） ====================
 // 按当天日期计算每个客户的工作台状态：
-// overdue 已逾期 / today 今天跟进 / week 未来7天到期 / stale 久未联系(30天+) / normal 正常
+// overdue 已逾期 / today 今天跟进 / month 未来30天到期 / stale 久未联系(超过30天) / normal 正常
 function computeWbStatus(c, todayStr){
   var nd = c.next_followup_date ? String(c.next_followup_date).slice(0,10) : '';
   var lastDate = c.latest_followup_date ? String(c.latest_followup_date).slice(0,10)
@@ -619,10 +639,10 @@ function computeWbStatus(c, todayStr){
     return {key:'overdue', days:d, label:'逾期 '+d+' 天', badge:'wb wb-overdue'};
   }
   if(ndDiff === 0) return {key:'today', days:0, label:'今天跟进', badge:'wb wb-today'};
-  if(ndDiff !== null && ndDiff <= 7){
-    return {key:'week', days:ndDiff, label:(ndDiff===1 ? '明天到期' : ndDiff+' 天后到期'), badge:'wb wb-week'};
+  if(ndDiff !== null && ndDiff <= 30){
+    return {key:'month', days:ndDiff, label:(ndDiff===1 ? '明天到期' : ndDiff+' 天后到期'), badge:'wb wb-month'};
   }
-  // 无近期跟进计划：检查久未联系（孤儿单风险）
+  // 30 天外或无跟进计划：检查久未联系（超过 30 天，孤儿单风险）
   if(lastDate){
     var idle = -diffDaysTo(lastDate, todayStr);
     if(idle >= 30) return {key:'stale', days:idle, label:idle+' 天未联系', badge:'wb wb-stale'};
@@ -630,12 +650,12 @@ function computeWbStatus(c, todayStr){
   if(ndDiff !== null) return {key:'normal', days:ndDiff, label:ndDiff+' 天后跟进', badge:'wb wb-normal'};
   return {key:'normal', days:0, label:'正常跟进', badge:'wb wb-normal'};
 }
-// 状态排序值：紧急度从高到低（逾期最久 > 今天跟进 > 7天内最近到期 > 久未联系最久 > 正常）
+// 状态排序值：紧急度从高到低（逾期最久 > 今天跟进 > 30天内最近到期 > 久未联系最久 > 正常）
 function wbSortVal(c){
   var s = c._wb, d = s.days || 0;
   if(s.key === 'overdue') return 100000 - d;
   if(s.key === 'today')   return 200000;
-  if(s.key === 'week')    return 300000 + d;
+  if(s.key === 'month')   return 300000 + d;
   if(s.key === 'stale')   return 400000 - d;
   return 500000 + d;
 }
@@ -690,7 +710,7 @@ function renderCustomerTable(card, rows, state, rerender, emptyText){
   var table = el('table');
   var thead = el('thead');
   var htr = el('tr');
-  htr.appendChild(el('th', {}, '姓名'));
+  htr.appendChild(makeSortHeader('customer_name', '姓名', state, rerender));
   htr.appendChild(makeSortHeader('sales_priority', '签单优先级', state, rerender));
   htr.appendChild(makeSortHeader('recruitment_priority', '招募优先级', state, rerender));
   htr.appendChild(makeSortHeader('referral_priority', '转介绍优先级', state, rerender));
@@ -731,14 +751,42 @@ function renderCustomerTable(card, rows, state, rerender, emptyText){
 }
 
 // ==================== 今日工作台（首页） ====================
-var dashState = { page:1, sortField:'wb_status', sortDir:'asc', filter:'' };
+var dashState = { page:1, sortField:'wb_status', sortDir:'asc', filter:'', keyword:'' };
 
 async function showDashboard(){
   var view = $('view');
   view.innerHTML = '';
 
+  // 全量客户与表格容器先在函数作用域声明，供操作栏事件与渲染共用
+  var rows = [];
+  var tableCard = el('div', {class:'card', style:'padding:0;border:none;box-shadow:none;background:transparent;margin-bottom:0'});
+  // 表格渲染：统计卡筛选 + 关键词搜索叠加过滤
+  function renderTable(){
+    var kw = dashState.keyword.trim().toLowerCase();
+    var filtered = rows;
+    if(dashState.filter) filtered = filtered.filter(function(c){ return c._wb.key === dashState.filter; });
+    if(kw) filtered = filtered.filter(function(c){
+      return (c.customer_name && c.customer_name.toLowerCase().indexOf(kw) !== -1) ||
+             (c.phone && String(c.phone).indexOf(kw) !== -1) ||
+             (c.occupation && c.occupation.toLowerCase().indexOf(kw) !== -1);
+    });
+    var empty = (dashState.filter || kw) ? '没有符合条件的客户' : '暂无客户';
+    renderCustomerTable(tableCard, filtered, dashState, renderTable, empty);
+  }
+
+  // 搜索框：与"全部客户"一致（姓名/电话/职业，回车或点按钮触发）
+  var searchInput = el('input', {type:'search', placeholder:'搜索姓名/电话/职业', value:dashState.keyword});
+  function doSearch(){
+    dashState.keyword = searchInput.value;
+    dashState.page = 1;
+    renderTable();
+  }
+  searchInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') doSearch(); });
+
   // 操作栏
   var toolbar = el('div', {class:'toolbar'}, [
+    searchInput,
+    el('button', {class:'btn', onclick:doSearch}, '搜索'),
     el('button', {class:'btn btn-primary', onclick:function(){ openCustomerForm(null); }}, '+ 新增客户'),
     el('button', {class:'btn', onclick:function(){ openAiParse(); }}, 'AI 解析新增'),
     el('button', {class:'btn', onclick:function(){ location.hash='#/ai-suggestions'; }}, 'AI 建议'),
@@ -751,7 +799,7 @@ async function showDashboard(){
   view.appendChild(card);
 
   try {
-    var rows = await loadCustomers();
+    rows = await loadCustomers();
     card.innerHTML = '';
 
     var todayStr = dayStr(new Date());
@@ -761,7 +809,7 @@ async function showDashboard(){
     ]));
 
     // 分类统计
-    var counts = {all:rows.length, today:0, overdue:0, week:0, stale:0};
+    var counts = {all:rows.length, today:0, overdue:0, month:0, stale:0};
     rows.forEach(function(c){
       if(counts[c._wb.key] != null) counts[c._wb.key]++;
     });
@@ -788,21 +836,13 @@ async function showDashboard(){
       statCard('客户总数', counts.all, '', '');
       statCard('今日待跟进', counts.today, 'today', '');
       statCard('已逾期', counts.overdue, 'overdue', counts.overdue ? 'stat-danger' : '');
-      statCard('未来7天到期', counts.week, 'week', '');
+      statCard('未来30天到期', counts.month, 'month', '');
       statCard('久未联系(30天+)', counts.stale, 'stale', counts.stale ? 'stat-warn' : '');
     }
     renderStats();
 
-    // 下方客户表格（与客户列表完全一致，随统计卡筛选联动）
-    var tableCard = el('div', {class:'card', style:'padding:0;border:none;box-shadow:none;background:transparent;margin-bottom:0'});
+    // 下方客户表格（与客户列表完全一致，随统计卡筛选 + 搜索联动）
     card.appendChild(tableCard);
-    function renderTable(){
-      var filtered = dashState.filter
-        ? rows.filter(function(c){ return c._wb.key === dashState.filter; })
-        : rows;
-      renderCustomerTable(tableCard, filtered, dashState, renderTable,
-        dashState.filter ? '该分类下暂无客户' : '暂无客户');
-    }
     renderTable();
   } catch(e){
     card.innerHTML = '';
@@ -1020,30 +1060,68 @@ function openFollowupForm(cid, fol, customerName){
   }, {wide:true});
 }
 
-// ---------- 产品额度 ----------
+// ---------- 产品额度（11 个险种类别 × 5 个字段的二维短列表） ----------
 function renderProducts(cid, rows){
   var box = el('div', {});
   var existing = rows[0] || null;
-  var form = el('div', {class:'product-grid'});
-  var inputs = {};
-  PRODUCT_FIELDS.forEach(function(f){
-    var row = el('div', {class:'field'}, [
-      el('label', {}, f.label),
-    ]);
-    var inp = el('input', {type:'number', name:f.name, placeholder:'0'});
-    if(existing && existing[f.name]!=null) inp.value = existing[f.name];
-    inputs[f.name] = inp;
-    row.appendChild(inp);
-    form.appendChild(row);
+
+  // 读取已保存的二维明细 items JSON；旧数据（只有扁平 ap_* 保额）自动兼容回填
+  var itemMap = {};
+  if(existing && existing.items){
+    try {
+      var arr = JSON.parse(existing.items);
+      (arr || []).forEach(function(it){ if(it && it.key) itemMap[it.key] = it; });
+    } catch(e){ itemMap = {}; }
+  }
+  var inputs = {}; // inputs[类别key][字段名] = input 元素
+  PRODUCT_CATEGORIES.forEach(function(cat){
+    inputs[cat.key] = {};
+    var old = itemMap[cat.key] || {};
+    PRODUCT_ITEM_FIELDS.forEach(function(f){
+      var v;
+      if(old[f.name] != null && old[f.name] !== '') v = old[f.name];
+      else if(f.name === 'amount' && existing && existing[cat.key] != null) v = existing[cat.key]; // 旧扁平保额回填
+      else v = '';
+      var inp = el('input', {type:f.type, name:cat.key+'_'+f.name, placeholder:f.type === 'date' ? '' : '0'});
+      if(v !== '' && v != null) inp.value = v;
+      inputs[cat.key][f.name] = inp;
+    });
   });
-  box.appendChild(form);
+
+  // 表格：一行一个险种类别，列为 保额 / 年缴保费 / 交费年限 / 已交几年 / 更新日期
+  var table = el('table', {class:'prod-table'});
+  var thead = el('thead');
+  var htr = el('tr');
+  htr.appendChild(el('th', {}, '保险类别'));
+  PRODUCT_ITEM_FIELDS.forEach(function(f){ htr.appendChild(el('th', {}, f.label)); });
+  thead.appendChild(htr);
+  table.appendChild(thead);
+  var tbody = el('tbody');
+  PRODUCT_CATEGORIES.forEach(function(cat){
+    var tr = el('tr');
+    tr.appendChild(el('td', {class:'prod-cat'}, cat.label));
+    PRODUCT_ITEM_FIELDS.forEach(function(f){
+      tr.appendChild(el('td', {}, inputs[cat.key][f.name]));
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  box.appendChild(table);
+
   box.appendChild(el('div', {style:'margin-top:12px'}, el('button', {class:'btn btn-primary btn-sm', onclick:async function(){
     var btn=this; btn.disabled=true; btn.textContent='保存中…';
     try {
-      var data = {customer_id:cid};
-      PRODUCT_FIELDS.forEach(function(f){ data[f.name] = inputs[f.name].value; });
+      var items = PRODUCT_CATEGORIES.map(function(cat){
+        var it = {key:cat.key, label:cat.label};
+        PRODUCT_ITEM_FIELDS.forEach(function(f){ it[f.name] = inputs[cat.key][f.name].value; });
+        return it;
+      });
+      var data = {customer_id:cid, items: JSON.stringify(items)};
+      // 同步扁平保额列 ap_*（含新增 ap_ppa），供 AI 建议等既有逻辑继续使用
+      PRODUCT_CATEGORIES.forEach(function(cat){ data[cat.key] = inputs[cat.key].amount.value; });
       await callFn('products', {action:'upsert', data:data});
-      toast('额度已保存');
+      toast('产品额度已保存');
+      showDetail(cid);
     } catch(e){ toast(e.message,'err'); }
     finally { btn.disabled=false; btn.textContent='保存'; }
   }}, '保存')));

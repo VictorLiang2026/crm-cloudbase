@@ -1,0 +1,2 @@
+ALTER TABLE products ADD COLUMN IF NOT EXISTS items text;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS ap_ppa bigint;
