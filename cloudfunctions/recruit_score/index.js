@@ -26,7 +26,7 @@ function buildScoringPrompt(c) {
     '{ "score": 0-100整数, "reason": "三大理由（60字内）", "risks": "三大风险点（60字内）" }',
     '只输出 JSON，不要解释。',
     '【候选人资料】',
-    '姓名：' + c.name,
+    '姓名：' + (c.customer_name || c.name || '未知'),
     '性别：' + (c.gender || '未知'),
     '出生：' + (c.birthday || '未知'),
     '现职/行业：' + (c.occupation || '未知'),
@@ -36,6 +36,10 @@ function buildScoringPrompt(c) {
     '求职动机：' + (c.motivation || '未知'),
     '顾虑点：' + (c.concerns || '未知'),
     '来源：' + (c.source || '未知'),
+    '工作经历：' + (c.work_experience || '无'),
+    '家庭情况：' + (c.family_situation || '无'),
+    '性格标签：' + (c.personality_tags || '无'),
+    '职业规划：' + (c.career_plan || '无'),
   ].join('\n');
 }
 
@@ -44,8 +48,8 @@ exports.main = async (event, context) => {
     const candidateId = parseInt(event && event.candidate_id, 10);
     if (!candidateId) return { error: 'candidate_id required' };
 
-    const c = assertOk(await rdb.from('recruit_candidates')
-      .select('*').eq('id', candidateId).is('deleted_at', null).maybeSingle());
+    const c = assertOk(await rdb.from('v_recruit_candidates')
+      .select('*').eq('candidate_id', candidateId).maybeSingle());
     if (!c.data) return { error: 'candidate not found' };
     const candidate = c.data;
 

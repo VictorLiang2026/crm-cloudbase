@@ -1,22 +1,28 @@
 /**
  * recruit_candidates — 增员候选人 CRUD（事件云函数，rdb() 版）
+ * 20260905 重构：候选人不存基础信息（归 customers），只存增员专属字段
+ *   customer_id NOT NULL：增员对象必须先是客户对象
+ *   list/get 查询走视图 v_recruit_candidates（JOIN customers）
+ *
  * 入参 event: { action, ... }
  *   list:    { action:'list', keyword?, stage?, page?, pageSize? } → { rows, total, page, pageSize }
  *   get:     { action:'get', id } → { candidate, milestones }
- *   create:  { action:'create', data:{...} } → { id }
+ *   create:  { action:'create', data:{customer_id, ...} } → { id }
  *   update:  { action:'update', id, data:{...} } → { ok }
  *   remove:  { action:'remove', id } → { ok }（软删除 deleted_at）
- *   funnel:  { action:'funnel' } → { funnel, total }（各阶段人数统计）
+ *   funnel:  { action:'funnel' } → { funnel, total }
  */
 'use strict';
 
 const { rdb, nowIso, normFields, assertOk } = require('./db');
 
+// recruit_candidates 表只保留增员专属字段（基础信息在 customers 表）
 const FIELDS = [
-  'customer_id', 'name', 'gender', 'birthday', 'phone', 'wechat',
-  'occupation', 'annual_income', 'education', 'mbti', 'motivation',
-  'concerns', 'source', 'recommender_id', 'stage', 'stage_changed_at',
-  'potential_score', 'potential_reason', 'notes', 'operator',
+  'customer_id', 'recommender_id', 'stage', 'stage_changed_at',
+  'potential_score', 'potential_reason', 'motivation', 'concerns',
+  'work_experience', 'family_situation', 'personality_tags',
+  'career_plan', 'next_action_date', 'next_action', 'activity_history',
+  'operator',
 ];
 
 exports.main = async (event, context) => {
@@ -36,27 +42,27 @@ exports.main = async (event, context) => {
   }
 };
 
+// list 走视图 v_recruit_candidates（已 JOIN customers，含基础信息+idle_days）
 async function list(event) {
   const page = Math.max(1, parseInt(event.page || 1, 10));
   const pageSize = Math.min(1000, Math.max(1, parseInt(event.pageSize || 1000, 10)));
   const keyword = (event.keyword || '').trim();
   const stage = (event.stage || '').trim();
 
-  const res = assertOk(await rdb.from('recruit_candidates')
+  const res = assertOk(await rdb.from('v_recruit_candidates')
     .select('*')
-    .is('deleted_at', null)
     .order('updated_at', { ascending: false, nullsFirst: false })
-    .order('id', { ascending: false }));
+    .order('candidate_id', { ascending: false }));
   let rows = res.data || [];
 
   // 阶段过滤
   if (stage) rows = rows.filter(r => r.stage === stage);
 
-  // 关键词过滤（姓名/电话/职业/现职，不区分大小写）
+  // 关键词过滤（姓名/电话/职业/来源，不区分大小写）
   if (keyword) {
     const kw = keyword.toLowerCase();
     rows = rows.filter(r =>
-      (r.name && r.name.toLowerCase().indexOf(kw) !== -1) ||
+      (r.customer_name && r.customer_name.toLowerCase().indexOf(kw) !== -1) ||
       (r.phone && String(r.phone).indexOf(kw) !== -1) ||
       (r.occupation && r.occupation.toLowerCase().indexOf(kw) !== -1) ||
       (r.source && r.source.toLowerCase().indexOf(kw) !== -1)
@@ -70,12 +76,16 @@ async function list(event) {
   return { rows: pageRows, total, page, pageSize };
 }
 
+// get 走视图获取候选人完整信息 + 里程碑
 async function get(event) {
   const id = parseInt(event.id, 10);
   if (!id) return { error: 'id required' };
-  const c = assertOk(await rdb.from('recruit_candidates')
-    .select('*').eq('id', id).is('deleted_at', null).maybeSingle());
+
+  // 从视图查（含 customers 基础信息）
+  const c = assertOk(await rdb.from('v_recruit_candidates')
+    .select('*').eq('candidate_id', id).maybeSingle());
   if (!c.data) return { error: 'not found' };
+
   const m = assertOk(await rdb.from('recruit_milestones')
     .select('*').eq('candidate_id', id).order('happened_at', { ascending: false, nullsFirst: false })
     .order('id', { ascending: false }));
@@ -84,7 +94,7 @@ async function get(event) {
 
 async function create(event) {
   const data = event.data || {};
-  if (!data.name) return { error: 'name required' };
+  if (!data.customer_id) return { error: 'customer_id required（增员对象必须先是客户）' };
   const payload = normFields(data, FIELDS);
   const ts = nowIso();
   payload.created_at = ts;
@@ -120,7 +130,6 @@ async function update(event) {
     }
   }
 
-  // 若是 AI 评分回写，potential_score 更新也走这里
   const r = assertOk(await rdb.from('recruit_candidates').update(payload).eq('id', id).select('id'));
   const n = (r.data || []).length;
   return { ok: n === 1, updated: n };

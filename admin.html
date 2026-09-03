@@ -2324,6 +2324,9 @@ async function showRecruit(){
   var view = $('view');
   view.innerHTML = '';
 
+  // 确保客户缓存已加载（新增候选人时需要搜索客户列表）
+  if(!customersCache) { try { await loadCustomers(); } catch(e){} }
+
   var searchInput = el('input', {type:'search', placeholder:'搜索姓名/电话/职业/来源', value:rcState.keyword});
   function doSearch(){
     rcState.keyword = searchInput.value;
@@ -2401,20 +2404,19 @@ function rcRenderTable(card, rows){
   table.appendChild(thead);
 
   var tbody = el('tbody');
-  var todayStr = dayStr(new Date());
   rows.forEach(function(c){
-    var idleDays = c.stage_changed_at ? Math.floor((new Date(todayStr+'T00:00:00') - new Date(String(c.stage_changed_at).slice(0,10)+'T00:00:00')) / 86400000) : 0;
+    var idleDays = c.idle_days != null ? c.idle_days : 0;
     var scoreColor = c.potential_score == null ? 'var(--muted)' : (c.potential_score >= 70 ? '#16a34a' : (c.potential_score >= 40 ? '#d97706' : '#dc2626'));
     var tr = el('tr', {style:'border-bottom:1px solid var(--border)'}, [
-      el('td', {style:'padding:8px 10px'}, el('a', {onclick:function(){ location.hash='#/recruit/'+c.id; }}, c.name)),
+      el('td', {style:'padding:8px 10px'}, el('a', {onclick:function(){ location.hash='#/recruit/'+c.candidate_id; }}, c.customer_name || ('#'+c.customer_id))),
       el('td', {style:'padding:8px 10px'}, el('span', {class:'badge badge-info'}, c.stage)),
       el('td', {style:'padding:8px 10px;font-size:13px'}, esc(c.occupation || '-')),
       el('td', {style:'padding:8px 10px;font-size:13px'}, esc(c.mbti || '-')),
       el('td', {style:'padding:8px 10px;font-weight:600;color:'+scoreColor}, c.potential_score != null ? String(c.potential_score) : '-'),
       el('td', {style:'padding:8px 10px;font-size:13px'}, esc(c.source || '-')),
       el('td', {style:'padding:8px 10px;font-size:13px;color:' + (idleDays > 14 ? '#dc2626' : 'var(--text-secondary)')}, String(idleDays) + '天'),
-      el('td', {style:'padding:8px 10px;font-size:12px;color:var(--muted)'}, String(c.id)),
-      el('td', {style:'padding:8px 10px'}, el('a', {onclick:function(){ location.hash='#/recruit/'+c.id; }}, '详情')),
+      el('td', {style:'padding:8px 10px;font-size:12px;color:var(--muted)'}, String(c.candidate_id)),
+      el('td', {style:'padding:8px 10px'}, el('a', {onclick:function(){ location.hash='#/recruit/'+c.candidate_id; }}, '详情')),
     ]);
     tbody.appendChild(tr);
   });
@@ -2441,12 +2443,21 @@ async function showCandidateDetail(id){
       el('button', {class:'btn', onclick:function(){ openCandidateForm(id); }}, '编辑'),
       el('button', {class:'btn', onclick:function(){ genRecruitScore(id); }}, 'AI 高潜评分'),
       el('button', {class:'btn btn-primary', onclick:function(){ genRecruitRecommend(id); }}, 'AI 增员话术'),
+      el('button', {class:'btn btn-danger', style:'margin-left:auto', onclick:async function(){
+        if(!confirm('确认删除该候选人？客户记录保留，仅移除增员信息。')) return;
+        try {
+          var dr = await callFn('recruit_candidates', {action:'remove', id:id});
+          if(dr.error){ toast(dr.error, 'error'); return; }
+          toast('已删除');
+          location.hash = '#/recruit';
+        } catch(e){ toast(e.message, 'error'); }
+      }}, '删除'),
     ]));
 
     // 基本信息卡片
     var infoCard = el('div', {class:'card'});
     var scoreColor = c.potential_score == null ? 'var(--muted)' : (c.potential_score >= 70 ? '#16a34a' : (c.potential_score >= 40 ? '#d97706' : '#dc2626'));
-    infoCard.appendChild(el('h2', {}, c.name));
+    infoCard.appendChild(el('h2', {}, c.customer_name || ('客户#'+c.customer_id)));
     if(c.potential_score != null){
       infoCard.appendChild(el('div', {style:'margin-bottom:12px'}, [
         el('span', {style:'font-size:28px;font-weight:700;color:'+scoreColor}, String(c.potential_score)),
@@ -2454,19 +2465,43 @@ async function showCandidateDetail(id){
         c.potential_reason ? el('span', {style:'font-size:13px;color:var(--text-secondary);margin-left:12px'}, esc(c.potential_reason)) : null,
       ]));
     }
-    var fields = [
-      ['阶段', c.stage], ['性别', c.gender], ['出生', c.birthday], ['电话', c.phone], ['微信', c.wechat],
+    // 客户基础信息（来自 customers 表，通过视图 JOIN）
+    var basicFields = [
+      ['阶段', c.stage], ['性别', c.gender], ['出生', c.birthday], ['电话', c.phone], ['微信', c.wx_account],
       ['现职/行业', c.occupation], ['年收入', c.annual_income], ['学历', c.education], ['MBTI', c.mbti],
-      ['求职动机', c.motivation], ['顾虑点', c.concerns], ['来源', c.source], ['备注', c.notes],
+      ['来源', c.source], ['婚况', c.marital_status], ['爱好', c.hobbies],
     ];
-    var grid = el('div', {style:'display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:14px'});
-    fields.forEach(function(f){
-      grid.appendChild(el('div', {}, [
+    infoCard.appendChild(el('h3', {style:'margin:8px 0 4px;font-size:14px;color:var(--muted)'}, '客户基础信息'));
+    var basicGrid = el('div', {style:'display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:14px'});
+    basicFields.forEach(function(f){
+      basicGrid.appendChild(el('div', {}, [
         el('span', {style:'color:var(--muted);margin-right:6px'}, f[0] + '：'),
         el('span', {}, esc(f[1] || '-')),
       ]));
     });
-    infoCard.appendChild(grid);
+    infoCard.appendChild(basicGrid);
+
+    // 增员专属信息
+    infoCard.appendChild(el('h3', {style:'margin:12px 0 4px;font-size:14px;color:var(--muted)'}, '增员专属信息'));
+    var recruitFields = [
+      ['求职动机', c.motivation], ['顾虑点', c.concerns], ['工作经历', c.work_experience],
+      ['家庭情况', c.family_situation], ['性格标签', c.personality_tags], ['职业规划', c.career_plan],
+      ['下次行动日期', c.next_action_date], ['下次行动', c.next_action],
+    ];
+    var recruitGrid = el('div', {style:'display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:14px'});
+    recruitFields.forEach(function(f){
+      recruitGrid.appendChild(el('div', {}, [
+        el('span', {style:'color:var(--muted);margin-right:6px'}, f[0] + '：'),
+        el('span', {}, esc(f[1] || '-')),
+      ]));
+    });
+    infoCard.appendChild(recruitGrid);
+
+    // 跳转客户详情链接
+    infoCard.appendChild(el('div', {style:'margin-top:12px'}, el('a', {
+      class:'btn btn-sm btn-ghost',
+      onclick:function(){ location.hash='#/customer/'+c.customer_id; }
+    }, '查看客户详情 →')));
     view.appendChild(infoCard);
 
     // 里程碑时间线
@@ -2558,26 +2593,59 @@ function openCandidateForm(id){
 
   var form = el('div');
   var inputs = {};
+
+  // 新增时需要选择客户（增员对象必须先是客户）；编辑时 customer_id 不可改
+  if(isNew){
+    var custRow = el('div', {style:'margin-bottom:8px'});
+    custRow.appendChild(el('label', {style:'display:block;font-size:13px;color:var(--muted);margin-bottom:2px'}, '关联客户 *'));
+    var custInput = el('input', {type:'text', placeholder:'搜索客户姓名…', style:'width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:14px'});
+    var custList = el('div', {style:'max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;margin-top:4px;display:none'});
+    var selectedCustId = null;
+    custInput.addEventListener('input', function(){
+      var kw = custInput.value.trim().toLowerCase();
+      if(!kw){ custList.style.display='none'; return; }
+      var matches = (customersCache || []).filter(function(c){
+        return (c.customer_name || '').toLowerCase().indexOf(kw) !== -1;
+      }).slice(0, 10);
+      custList.innerHTML = '';
+      if(matches.length){
+        custList.style.display = 'block';
+        matches.forEach(function(c){
+          var item = el('div', {style:'padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px'}, c.customer_name + ' (' + (c.phone || '无电话') + ')');
+          item.onclick = function(){
+            selectedCustId = c.Id;
+            custInput.value = c.customer_name;
+            custList.style.display = 'none';
+          };
+          custList.appendChild(item);
+        });
+      } else {
+        custList.style.display = 'block';
+        custList.appendChild(el('div', {style:'padding:6px 10px;color:var(--muted);font-size:13px'}, '未找到客户，请先在客户管理中创建'));
+      }
+    });
+    custRow.appendChild(custInput);
+    custRow.appendChild(custList);
+    form.appendChild(custRow);
+    inputs._customer_id = { value: '', _getCustId: function(){ return selectedCustId; } };
+  }
+
+  // 增员专属字段（基础信息在客户表，这里只管增员属性）
   var fields = [
-    {name:'name', label:'姓名', type:'text', req:true},
-    {name:'gender', label:'性别', type:'select', options:['男','女']},
-    {name:'birthday', label:'出生(YYYY-MM)', type:'text'},
-    {name:'phone', label:'电话', type:'text'},
-    {name:'wechat', label:'微信', type:'text'},
-    {name:'occupation', label:'现职/行业', type:'text'},
-    {name:'annual_income', label:'年收入', type:'text'},
-    {name:'education', label:'学历', type:'select', options:RC_EDUCATION},
-    {name:'mbti', label:'MBTI', type:'select', options:[''].concat(RC_MBTI)},
-    {name:'source', label:'来源', type:'select', options:[''].concat(RC_SOURCES)},
     {name:'stage', label:'阶段', type:'select', options:RC_STAGES},
     {name:'motivation', label:'求职动机', type:'textarea'},
     {name:'concerns', label:'顾虑点', type:'textarea'},
-    {name:'notes', label:'备注', type:'textarea'},
+    {name:'work_experience', label:'工作经历', type:'textarea'},
+    {name:'family_situation', label:'家庭情况', type:'textarea'},
+    {name:'personality_tags', label:'性格标签', type:'text', placeholder:'逗号分隔，如: 外向,抗压,学习力强'},
+    {name:'career_plan', label:'职业规划', type:'textarea'},
+    {name:'next_action_date', label:'下次行动日期', type:'date'},
+    {name:'next_action', label:'下次行动', type:'text'},
   ];
 
   fields.forEach(function(f){
     var row = el('div', {style:'margin-bottom:8px'});
-    row.appendChild(el('label', {style:'display:block;font-size:13px;color:var(--muted);margin-bottom:2px'}, f.label + (f.req ? ' *' : '')));
+    row.appendChild(el('label', {style:'display:block;font-size:13px;color:var(--muted);margin-bottom:2px'}, f.label));
     var input;
     if(f.type === 'select'){
       input = el('select', {style:'width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:14px'});
@@ -2585,7 +2653,8 @@ function openCandidateForm(id){
     } else if(f.type === 'textarea'){
       input = el('textarea', {style:'width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:14px;min-height:50px;resize:vertical'});
     } else {
-      input = el('input', {type:'text', style:'width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:14px'});
+      input = el('input', {type:f.type === 'date' ? 'date' : 'text', style:'width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:14px'});
+      if(f.placeholder) input.placeholder = f.placeholder;
     }
     input.name = f.name;
     inputs[f.name] = input;
@@ -2616,6 +2685,7 @@ function openCandidateForm(id){
       if(r.candidate){
         var c = r.candidate;
         for(var k in inputs){
+          if(k === '_customer_id') continue;
           if(c[k] != null) inputs[k].value = c[k];
         }
       }
@@ -2624,8 +2694,15 @@ function openCandidateForm(id){
 
   saveBtn.onclick = async function(){
     var data = {};
-    for(var k in inputs){ data[k] = inputs[k].value.trim(); }
-    if(!data.name){ toast('姓名必填', 'error'); return; }
+    for(var k in inputs){
+      if(k === '_customer_id') continue;
+      data[k] = inputs[k].value.trim();
+    }
+    if(isNew){
+      var cid = inputs._customer_id._getCustId();
+      if(!cid){ toast('请选择关联客户', 'error'); return; }
+      data.customer_id = cid;
+    }
     data.operator = (CONFIG.operator && CONFIG.operator.name) || 'Victor';
     saveBtn.disabled = true; saveBtn.textContent = '保存中…';
     try {
