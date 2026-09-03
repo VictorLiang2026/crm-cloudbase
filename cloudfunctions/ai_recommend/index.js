@@ -2,7 +2,10 @@
  * ai_recommend — AI 跟进建议生成（事件云函数，超时 120s，rdb() 版）
  * 入参 event: { customer_id, operator? }
  *   - operator: { name, gender, birthday } 操作员信息（前端传入，用于称呼规则与长幼判断）
- * 流程：拉取客户 + 最近跟进 + 产品额度 + 礼品 → 构建 prompt → hy3 生成 → 解析 JSON → 写 ai_recommendations
+ * 流程：拉取客户 + 最近跟进 + 保单(products) + 礼品 + 历史AI建议 + 照片 + 最近保单检视报告
+ *        → 构建 prompt（含保险金字塔/双十原则/普尔象限等资产配置方法论）
+ *        → hy3 生成 → 解析 JSON → 写 ai_recommendations
+ *        → 若该客户有历史保单检视报告，必须纳入 gaps/recommendations/asset_allocation 分析，体现递进诊断
  * 出参: { id, recommendation, raw }
  *   - id: ai_recommendations.id
  *   - recommendation: { suggested_message, suggested_strategy, suggested_followup_date,
@@ -29,16 +32,24 @@ function buildSystem(op) {
     '4. 不知道年龄也无学校信息：男称"姓+先生"、女称"姓+女士"。',
     '5. 不确定客户性别：禁止使用性别化称呼，用"您"或客户姓名。',
     '6. 严禁性别错称（如女性客户称"师兄/先生"，男性客户称"师姐/女士"）。',
-    '【保险综合方案要求】',
-    '- 从人寿保险全产品线综合考虑：定期寿险、终身寿险、年金、重大疾病、医疗、意外、长期护理、健康管理等；',
-    '- 结合跟进记录中已沟通的内容、客户附加信息中的家庭成员/职业/收入/咨询问题/购买意向/对职业的满意度等，给出有针对性的综合保障方案思路（如保障缺口分析、产品组合建议、家庭保单检视、预算与缴费建议）；',
+    '【家庭保单检视与资产配置方法论（必须体现在 suggested_strategy 中）】',
+    '① 保险需求金字塔优先级（先保障后理财）：定期寿险→重疾险→医疗险→意外险→长期护理险→健康管理→终身寿险→年金险→万能险→个人养老金PPA。缺少底层保障不得优先推荐上层理财。',
+    '② 双十原则：合理总保额≈家庭年收入×10倍；合理总年交保费≈家庭年收入×10%（允许波动8%~15%，超20%提示保费压力）。',
+    '③ 家庭责任期：到最小子女独立/房贷还清/父母赡养结束的年数，对应定期寿险与意外险的保额倍数建议。',
+    '④ 标准普尔家庭资产象限图：现金账户(10%, 3-6个月支出)、保障账户(20%, 保费杠杆)、投资账户(30%, 风险增值)、保本账户(40%, 年金/终身寿/养老金长期安全)。',
+    '⑤ 险种结构健康度：保障型保额(定期寿+重疾+医疗+意外+长护)占总保额比例应≥70%，低于则提示「偏理财、轻保障」风险。',
+    '⑥ 家庭成员覆盖：若客户信息显示有配偶/子女，必须提示「家庭支柱是否裸奔、配偶子女保障是否齐全」的检查项。',
+    '【保单检视报告处理规则】',
+    '• 当客户信息中提供了历史保单检视报告(policy_reviews 数组)时：必须逐份引用其中的 gaps_found(缺口)、recommendations(建议)、asset_allocation(资产配置建议)，在 suggested_strategy 中体现递进诊断——已填补的缺口给予正向肯定并进入下一层配置，未填补的要说明原因并给出更务实的替代方案；客户若从未做过保单检视，suggested_strategy 中必须首先建议「安排一次家庭保单检视会面」，话术与约访方式纳入 suggested_message。',
+    '【保险综合方案与转介绍/招募】',
+    '- 结合跟进记录、附加信息中的家庭成员/职业/收入/咨询问题/购买意向/对职业满意度，给出针对性综合保障方案思路（缺口分析、产品组合、家庭保单检视步骤、预算与缴费建议）。',
     '- 同时评估转介绍与招募机会，给出可执行的话术与步骤。',
     '输出 JSON，字段：',
     'suggested_message(建议发送的问候/沟通信息，50-150字，称呼正确),',
-    'suggested_strategy(跟进策略要点，含综合保障方案思路),',
+    'suggested_strategy(跟进策略要点，含综合保障方案思路，必须引用保单检视方法论与历史报告),',
     'suggested_followup_date(建议跟进日期 YYYY-MM-DD),',
     'suggested_customer_stage(建议客户经营阶段:新认识/关系维护/需求挖掘/方案沟通/成交推进/转介绍经营),',
-    'suggested_followup_goal(建议跟进目标:建立联系/约见面/邀请活动/获取家庭信息/推进签单/推进招募/推进转介绍)。',
+    'suggested_followup_goal(建议跟进目标:建立联系/约见面/邀请活动/获取家庭信息/推进签单/推进招募/推进转介绍/安排家庭保单检视)。',
     '只输出 JSON，不要解释。',
   ].join('\n');
 }
@@ -57,7 +68,7 @@ exports.main = async (event, context) => {
     if (!c.data) return { error: 'customer not found' };
     const customer = c.data;
 
-    const [fol, prod, gif, hist, photos] = await Promise.all([
+    const [fol, prod, gif, hist, photos, prr] = await Promise.all([
       rdb.from('followups').select().eq('customer_id', customerId)
         .order('followup_date', { ascending: false, nullsFirst: false })
         .order('Id', { ascending: false })
@@ -79,12 +90,21 @@ exports.main = async (event, context) => {
         .order('created_at', { ascending: false, nullsFirst: false })
         .order('id', { ascending: false })
         .limit(5),
+      // 保单检视报告（最近 3 条，按报告日期倒序）：必须纳入诊断
+      rdb.from('policy_review_reports').select(
+        'id,report_date,report_type,summary,gaps_found,recommendations,asset_allocation,next_action,' +
+        'edited_summary,edited_gaps,edited_recommendations,edited_asset_allocation,edited_next_action'
+      ).eq('customer_id', customerId)
+        .order('report_date', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: false })
+        .limit(3),
     ]);
     const folRows = assertOk(fol).data || [];
     const prodRows = assertOk(prod).data || [];
     const gifRows = assertOk(gif).data || [];
     const histRows = assertOk(hist).data || [];
     const photoRows = assertOk(photos).data || [];
+    const prrRows  = assertOk(prr).data  || [];
 
     // 操作员信息（前端传入，用于称呼规则）
     const opIn = (event && event.operator) || {};
@@ -94,6 +114,12 @@ exports.main = async (event, context) => {
       birthday: opIn.birthday || OPERATOR_DEFAULT.birthday,
     };
 
+    // 优先展示 edited_*，否则原始生成字段（与前端渲染保持一致）
+    function disp(report, field) {
+      const e = report['edited_' + field];
+      return (e != null && e !== '') ? e : report[field];
+    }
+
     const ctx = {
       today: new Date().toISOString().slice(0, 10),
       operator: operator,
@@ -101,8 +127,10 @@ exports.main = async (event, context) => {
         name: customer.customer_name, gender: customer.gender, birthday: customer.birthday,
         stage: customer.customer_stage, priority: customer.sales_priority,
         recruitment_priority: customer.recruitment_priority, referral_priority: customer.referral_priority,
-        occupation: customer.occupation, hobbies: customer.hobbies,
-        marital: customer.marital_status, phone: customer.phone,
+        occupation: customer.occupation, annual_income: customer.annual_income,
+        household_income: customer.household_income, hobbies: customer.hobbies,
+        marital: customer.marital_status, children: customer.children_info,
+        properties: customer.properties_info, phone: customer.phone,
         info: customer.additional_info,
       },
       recent_followups: folRows.map(function (f) {
@@ -136,6 +164,18 @@ exports.main = async (event, context) => {
           goal: r.suggested_followup_goal,
         };
       }),
+      // 保单检视报告（关键输入）：优先编辑后版本
+      policy_reviews: prrRows.length ? prrRows.map(function (r) {
+        return {
+          date: r.report_date,
+          type: r.report_type || '保单年度检视',
+          summary: disp(r, 'summary'),
+          gaps_found: disp(r, 'gaps'),
+          recommendations: disp(r, 'recommendations'),
+          asset_allocation: disp(r, 'asset_allocation'),
+          next_action: disp(r, 'next_action'),
+        };
+      }) : null,
     };
 
     // 拼接 user 消息：客户资料 + 历史建议参考

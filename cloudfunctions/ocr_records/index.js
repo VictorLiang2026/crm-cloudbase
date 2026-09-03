@@ -2,9 +2,11 @@
  * ocr_records — 客户 OCR 识别记录（事件云函数，rdb() 版）
  * 入参 event: { action, ... }
  *   list:   { action:'list', customer_id } → { rows }（按 created_at 倒序，不含大文本截断）
- *   create: { action:'create', data:{ customer_id, summary?, raw_text?, file_ids?, file_names? } } → { id }
+ *   create: { action:'create', data:{ customer_id, summary?, raw_text?, file_ids?, file_names?, customer_snapshot? } } → { id }
  *           file_ids / file_names 为 JSON 数组字符串（关联 photos 表 id 与原始文件名）
+ *           customer_snapshot 为 AI 解析前客户信息快照（JSON 字符串），删除本记录时可据此恢复
  *   update: { action:'update', id, data:{ summary?, raw_text? } } → { ok }（同时刷新 updated_at）
+ *   remove: { action:'remove', id } → { ok, snapshot }（返回 customer_snapshot 供前端恢复）
  *
  * 用途：AI 解析客户资料时，前端本地识别出的完整文字与本函数无关；
  * 前端在客户确认并保存文件到 photos 后，将识别摘要与原文、关联文件 id 一次性写入本表，
@@ -21,6 +23,7 @@ exports.main = async (event, context) => {
       case 'list':   return await list(event);
       case 'create': return await create(event);
       case 'update': return await update(event);
+      case 'remove': return await remove(event);
       default: return { error: 'unknown action: ' + action };
     }
   } catch (e) {
@@ -49,6 +52,7 @@ async function create(event) {
     raw_text: data.raw_text || null,
     file_ids: data.file_ids || null,
     file_names: data.file_names || null,
+    customer_snapshot: data.customer_snapshot || null,
   };
   const r = assertOk(await rdb.from('ocr_records').insert(payload).select('id'));
   if (r.data && r.data[0]) return { id: r.data[0].id };
@@ -64,4 +68,16 @@ async function update(event) {
   if (Object.prototype.hasOwnProperty.call(data, 'raw_text')) payload.raw_text = data.raw_text || null;
   const r = assertOk(await rdb.from('ocr_records').update(payload).eq('id', id).select('id'));
   return { ok: (r.data || []).length === 1 };
+}
+
+async function remove(event) {
+  const id = parseInt(event.id, 10);
+  if (!id) return { error: 'id required' };
+  // 删除前先取 customer_snapshot，供前端恢复客户信息
+  const fetched = assertOk(await rdb.from('ocr_records')
+    .select('id, customer_snapshot')
+    .eq('id', id));
+  const snapshot = (fetched.data && fetched.data[0]) ? fetched.data[0].customer_snapshot : null;
+  const r = assertOk(await rdb.from('ocr_records').delete().eq('id', id));
+  return { ok: (r.data || []).length === 1, customer_snapshot: snapshot };
 }

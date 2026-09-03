@@ -1,12 +1,11 @@
 /**
- * products — 保险额度（每客户一行，upsert）（事件云函数，rdb() 版）
+ * products — 保单检视 · 保单明细（每客户一行，upsert）（事件云函数，rdb() 版）
  * 入参 event: { action, ... }
  *   list:   { action:'list', customer_id } → { rows }（通常 0 或 1 行）
  *   upsert: { action:'upsert', data:{ customer_id, customer_name?, items?, ap_ipa, ap_ppa, ap_ltc, ap_ann, ap_life, ap_term, ap_wl, ap_pa, ap_ci, ap_hi, ap_all } } → { id }
  *   remove: { action:'remove', id } → { ok }（硬删除）
- * ap_* 均为 bigint，空串转 null；items 为 text（11 个险种类别的二维明细 JSON：
- *   [{key,label,amount,premium,pay_years,paid_years,update_date}, ...]），
- *   ap_* 扁平保额列与 items.amount 保持同步，供 AI 建议等旧逻辑继续使用。
+ * 说明：表名保留 products（生产兼容），11 个 ap_* 扁平列与 items.amount 保持同步，
+ *       前端 UI、Tab、文案已更名为「保单检视」。后端不做破坏性改名。
  */
 'use strict';
 

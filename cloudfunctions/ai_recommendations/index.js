@@ -1,14 +1,17 @@
 /**
- * ai_recommendations — AI 建议列表（只读，事件云函数，rdb() 版）
+ * ai_recommendations — AI 建议（事件云函数，rdb() 版）
  * 入参 event: { action, ... }
  *   list:    { action:'list', customer_id } → { rows }（单客户历史建议）
  *   listAll: { action:'listAll', page?, pageSize?, sortField?, sortDir? } → { rows, total }
  *            （全量建议，JS 端排序（null 排后）+ 分页，仿 customers list 模式）
- * 建议记录由 ai_recommend 函数写入，本函数仅读取。
+ *   get:     { action:'get', id } → { recommendation }（单条完整字段）
+ *   update:  { action:'update', id, data:{ suggested_message?, suggested_strategy?, suggested_followup_date?, suggested_customer_stage?, suggested_followup_goal? } }
+ *            → { ok }（人工编辑保存；空串转 null，按 id 增量更新）
+ * 建议记录由 ai_recommend 函数写入，本函数读取 + 增量编辑。
  */
 'use strict';
 
-const { rdb, assertOk } = require('./db');
+const { rdb, normFields, assertOk, nowIso } = require('./db');
 
 const SORTABLE = {
   id: 'id',
@@ -19,13 +22,20 @@ const SORTABLE = {
   suggested_followup_goal: 'suggested_followup_goal',
 };
 
+// 允许人工编辑覆盖的字段（不含 id/customer_id/customer_name/recommendation_date/created_at 元数据）
+const EDIT_FIELDS = [
+  'suggested_message', 'suggested_strategy', 'suggested_followup_date',
+  'suggested_customer_stage', 'suggested_followup_goal',
+];
+
 exports.main = async (event, context) => {
   try {
     const action = (event && event.action) || '';
     switch (action) {
-      case 'list': return await list(event);
+      case 'list':    return await list(event);
       case 'listAll': return await listAll(event);
-      case 'get': return await get(event);
+      case 'get':     return await get(event);
+      case 'update':  return await update(event);
       default: return { error: 'unknown action: ' + action };
     }
   } catch (e) {
@@ -69,11 +79,21 @@ async function listAll(event) {
   return { rows: rows.slice(start, start + pageSize), total: total, page: page, pages: pages };
 }
 
-// 按 id 查询单条 AI 建议（完整字段，供详情页使用）
 async function get(event) {
   const id = parseInt(event.id, 10);
   if (!id) return { error: 'id required' };
   const r = assertOk(await rdb.from('ai_recommendations').select().eq('id', id).maybeSingle());
   if (!r.data) return { error: 'not found' };
   return { recommendation: r.data };
+}
+
+// 增量更新：仅写入 EDIT_FIELDS 内的非 undefined 字段；自动更新 updated_at
+async function update(event) {
+  const id = parseInt(event.id, 10);
+  if (!id) return { error: 'id required' };
+  const payload = normFields(Object.assign({}, event.data || {}), EDIT_FIELDS);
+  payload.updated_at = nowIso();
+  if (!Object.keys(payload).length) return { error: 'no valid fields' };
+  assertOk(await rdb.from('ai_recommendations').update(payload).eq('id', id).select('id'));
+  return { ok: true };
 }

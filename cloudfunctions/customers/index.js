@@ -2,7 +2,8 @@
  * customers — 客户 CRUD（事件云函数，rdb() 版）
  * 入参 event: { action, ... }
  *   list:   { action:'list', page?, pageSize?, keyword? } → { rows, total, page, pageSize }
- *   get:    { action:'get', id } → { customer, followups, products, gifts, photos, recommendations }
+ *   get:    { action:'get', id } → { customer, followups, products, gifts, photos, recommendations, reports }
+ *           reports = 保单检视报告最近 10 条（按 report_date DESC, id DESC）
  *   create: { action:'create', data:{...} } → { id }
  *   update: { action:'update', id, data:{...} } → { ok }
  *   remove: { action:'remove', id } → { ok }（软删除 deleted_at）
@@ -19,7 +20,9 @@ const FIELDS = [
   'first_contact_date', 'birthday', 'customer_stage', 'phone',
 ];
 
-const LIST_COLS = 'Id, customer_name, phone, occupation, customer_stage, sales_priority, recruitment_priority, referral_priority, birthday, first_contact_date, created_at, updated_at';
+// 列表接口也返回所有客户字段（source/annual_income/additional_info 等），
+// 因为 AI 解析同名匹配时前端用 list 返回的对象作为 oldC，缺字段会导致合并时清空原值
+const LIST_COLS = 'Id, customer_name, phone, occupation, customer_stage, sales_priority, recruitment_priority, referral_priority, birthday, first_contact_date, gender, marital_status, hobbies, source, tags, annual_income, household_income, properties_info, additional_info, created_at, updated_at';
 
 exports.main = async (event, context) => {
   try {
@@ -109,7 +112,7 @@ async function get(event) {
   if (!id) return { error: 'id required' };
   const c = assertOk(await rdb.from('customers').select().eq('Id', id).is('deleted_at', null).maybeSingle());
   if (!c.data) return { error: 'not found' };
-  const [fol, prod, gif, pho, ai] = await Promise.all([
+  const [fol, prod, gif, pho, ai, rpt] = await Promise.all([
     rdb.from('followups').select().eq('customer_id', id)
       .order('followup_date', { ascending: false, nullsFirst: false })
       .order('Id', { ascending: false }),
@@ -124,6 +127,13 @@ async function get(event) {
     rdb.from('ai_recommendations').select().eq('customer_id', id)
       .order('created_at', { ascending: false })
       .limit(10),
+    // 保单检视报告：最近 10 条，按报告日期倒序
+    rdb.from('policy_review_reports')
+      .select('id, customer_id, customer_name, report_date, report_type, summary, gaps_found, recommendations, asset_allocation, next_action, edited_summary, edited_gaps, edited_recommendations, edited_asset_allocation, edited_next_action, created_at, updated_at')
+      .eq('customer_id', id)
+      .order('report_date', { ascending: false, nullsFirst: false })
+      .order('id', { ascending: false })
+      .limit(10),
   ]);
   return {
     customer: c.data,
@@ -132,6 +142,7 @@ async function get(event) {
     gifts: assertOk(gif).data || [],
     photos: assertOk(pho).data || [],
     recommendations: assertOk(ai).data || [],
+    reports: assertOk(rpt).data || [],
   };
 }
 

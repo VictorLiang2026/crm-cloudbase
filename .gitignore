@@ -20,6 +20,14 @@ admin - 副本.html
 *.swp
 *~
 
+# ===== 本地完整备份 =====
+# git bundle / 整仓库打包 (仅本机留存, 不得上传到公开仓库)
+_backups/
+*.bundle
+
+# 本地从线上拉取的参考副本(不提交)
+_online_*.html
+
 # ===== 依赖 =====
 node_modules/
 package-lock.json
