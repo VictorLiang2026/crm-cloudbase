@@ -99,7 +99,7 @@ async function create(event) {
   const ts = nowIso();
   payload.created_at = ts;
   payload.updated_at = ts;
-  if (!payload.stage) payload.stage = '名单';
+  if (!payload.stage) payload.stage = '新增人才';
   payload.stage_changed_at = ts;
   const r = assertOk(await rdb.from('recruit_candidates').insert(payload).select('id').single());
   // 记录首个里程碑

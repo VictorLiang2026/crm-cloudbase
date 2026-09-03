@@ -2312,7 +2312,7 @@ function debounce(fn, ms){
 }
 
 // ==================== 增员候选人模块 ====================
-var RC_STAGES = ['名单','接触','面谈1','面谈2','创说会','报考','入司','转正','流失'];
+var RC_STAGES = ['新增人才','接触中','初步面谈','详细面谈','线下活动','入职申请','签约入司'];
 var RC_SOURCES = ['转介绍','客户转化','招聘平台','社区活动','校友会','亲属','其他'];
 var RC_EDUCATION = ['高中','大专','本科','硕士','博士','其他'];
 var RC_MBTI = ['INTJ','INTP','ENTJ','ENTP','INFJ','INFP','ENFJ','ENFP','ISTJ','ISFJ','ESTJ','ESFJ','ISTP','ISFP','ESTP','ESFP'];
@@ -2594,40 +2594,64 @@ function openCandidateForm(id){
   var form = el('div');
   var inputs = {};
 
-  // 新增时需要选择客户（增员对象必须先是客户）；编辑时 customer_id 不可改
+  // 新增时：输入客户姓名，失焦搜索客户表；找到则带出信息只读展示（修改需去客户管理），未找到提示先建客户
   if(isNew){
     var custRow = el('div', {style:'margin-bottom:8px'});
-    custRow.appendChild(el('label', {style:'display:block;font-size:13px;color:var(--muted);margin-bottom:2px'}, '关联客户 *'));
-    var custInput = el('input', {type:'text', placeholder:'搜索客户姓名…', style:'width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:14px'});
-    var custList = el('div', {style:'max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;margin-top:4px;display:none'});
-    var selectedCustId = null;
-    custInput.addEventListener('input', function(){
+    custRow.appendChild(el('label', {style:'display:block;font-size:13px;color:var(--muted);margin-bottom:2px'}, '客户姓名 *（输入后离开输入框自动搜索）'));
+    var custInput = el('input', {type:'text', placeholder:'输入客户姓名…', style:'width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:14px'});
+    var custResult = el('div', {style:'display:none;margin-top:6px'});
+    var selectedCust = null;
+
+    function showCustInfo(c){
+      custResult.innerHTML = '';
+      custResult.style.display = 'block';
+      var box = el('div', {style:'border:1px solid var(--border);border-radius:6px;padding:8px 10px;background:#f8fafc'});
+      box.appendChild(el('div', {style:'font-size:13px;font-weight:600;margin-bottom:4px'}, '✓ 已关联客户：' + (c.customer_name || '')));
+      var grid = el('div', {style:'display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:12px;color:var(--text-secondary)'});
+      [['性别', c.gender], ['电话', c.phone], ['微信', c.wx_account], ['职业', c.occupation], ['年收入', c.annual_income], ['学历', c.education], ['MBTI', c.mbti], ['来源', c.source]].forEach(function(f){
+        grid.appendChild(el('div', {}, f[0] + '：' + (f[1] != null && f[1] !== '' ? String(f[1]) : '-')));
+      });
+      box.appendChild(grid);
+      box.appendChild(el('div', {style:'font-size:11px;color:var(--muted);margin-top:4px'}, '客户基础信息只读，如需修改请到客户管理中编辑'));
+      custResult.appendChild(box);
+    }
+
+    custInput.addEventListener('blur', function(){
       var kw = custInput.value.trim().toLowerCase();
-      if(!kw){ custList.style.display='none'; return; }
-      var matches = (customersCache || []).filter(function(c){
-        return (c.customer_name || '').toLowerCase().indexOf(kw) !== -1;
-      }).slice(0, 10);
-      custList.innerHTML = '';
-      if(matches.length){
-        custList.style.display = 'block';
-        matches.forEach(function(c){
-          var item = el('div', {style:'padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px'}, c.customer_name + ' (' + (c.phone || '无电话') + ')');
+      selectedCust = null;
+      custResult.innerHTML = '';
+      if(!kw){ custResult.style.display = 'none'; return; }
+      var all = customersCache || [];
+      var matches = all.filter(function(c){ return (c.customer_name || '').toLowerCase() === kw; });
+      if(!matches.length){
+        matches = all.filter(function(c){ return (c.customer_name || '').toLowerCase().indexOf(kw) !== -1; });
+      }
+      if(matches.length === 1){
+        selectedCust = matches[0];
+        custInput.value = matches[0].customer_name;
+        showCustInfo(matches[0]);
+      } else if(matches.length > 1){
+        custResult.style.display = 'block';
+        custResult.appendChild(el('div', {style:'font-size:13px;color:#d97706;margin-bottom:4px'}, '找到 ' + matches.length + ' 位相似客户，请点击选择：'));
+        matches.slice(0, 8).forEach(function(c){
+          var item = el('div', {style:'padding:6px 10px;cursor:pointer;border:1px solid var(--border);border-radius:4px;margin-bottom:4px;font-size:13px'}, (c.customer_name || '') + '（' + (c.phone || '无电话') + '）');
+          item.onmousedown = function(e){ e.preventDefault(); }; // 防止 blur 抢先触发导致列表重建
           item.onclick = function(){
-            selectedCustId = c.Id;
+            selectedCust = c;
             custInput.value = c.customer_name;
-            custList.style.display = 'none';
+            showCustInfo(c);
           };
-          custList.appendChild(item);
+          custResult.appendChild(item);
         });
       } else {
-        custList.style.display = 'block';
-        custList.appendChild(el('div', {style:'padding:6px 10px;color:var(--muted);font-size:13px'}, '未找到客户，请先在客户管理中创建'));
+        custResult.style.display = 'block';
+        custResult.appendChild(el('div', {style:'font-size:13px;color:#dc2626;padding:4px 0'}, '未找到对应客户，请先在客户管理中创建该客户，再来新增候选人。'));
       }
     });
     custRow.appendChild(custInput);
-    custRow.appendChild(custList);
+    custRow.appendChild(custResult);
     form.appendChild(custRow);
-    inputs._customer_id = { value: '', _getCustId: function(){ return selectedCustId; } };
+    inputs._customer_id = { _getCustId: function(){ return selectedCust ? selectedCust.Id : null; } };
   }
 
   // 增员专属字段（基础信息在客户表，这里只管增员属性）
@@ -2700,7 +2724,7 @@ function openCandidateForm(id){
     }
     if(isNew){
       var cid = inputs._customer_id._getCustId();
-      if(!cid){ toast('请选择关联客户', 'error'); return; }
+      if(!cid){ toast('请先输入客户姓名并匹配到客户', 'error'); return; }
       data.customer_id = cid;
     }
     data.operator = (CONFIG.operator && CONFIG.operator.name) || 'Victor';
