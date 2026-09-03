@@ -2497,6 +2497,11 @@ async function showCandidateDetail(id){
     });
     infoCard.appendChild(recruitGrid);
 
+    // 评估附件：竞争力评估雷达图（图片）+ 天生赢家报告（文档），存云存储
+    var attachWrap = el('div', {style:'margin-top:12px'});
+    renderCandidateAttachments(attachWrap, c);
+    infoCard.appendChild(attachWrap);
+
     // 跳转客户详情链接
     infoCard.appendChild(el('div', {style:'margin-top:12px'}, el('a', {
       class:'btn btn-sm btn-ghost',
@@ -2573,6 +2578,119 @@ async function genRecruitScore(candidateId){
     if(area){ area.innerHTML = ''; area.appendChild(el('div', {class:'error'}, '评分失败：' + esc(e.message))); }
     toast(e.message, 'error');
   }
+}
+
+// ==================== 候选人附件（PG 云存储 pgstore） ====================
+// bucket: recruit（私有，RLS 仅 authenticated 可读写）
+// 对象路径：candidate_{id}/radar_*.{ext} | candidate_{id}/winner_report_*.{ext}
+// 表中存对象路径 + 原文件名，展示/下载用 createSignedUrl 临时签名链接
+var RC_BUCKET = 'recruit';
+var RC_FILE_KINDS = {
+  radar:  { fileId: 'radar_image_file_id',   name: 'radar_image_name',   label: '竞争力评估雷达图', prefix: 'radar',         accept: 'image/*' },
+  report: { fileId: 'winner_report_file_id', name: 'winner_report_name', label: '天生赢家报告',     prefix: 'winner_report', accept: '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.jpg,.png' },
+};
+
+async function rcGetTempUrl(storedPath){
+  var res = await app.storage.from(RC_BUCKET).createSignedUrl(storedPath, 3600);
+  if(res.error) throw new Error(res.error.message || '获取链接失败');
+  var d = res.data;
+  var url = (typeof d === 'string') ? d : (d && (d.signedUrl || d.fullUrl || d.url));
+  if(!url) throw new Error('获取文件链接失败');
+  return url;
+}
+
+async function rcUploadFile(candidateId, kind, file){
+  var cfg = RC_FILE_KINDS[kind];
+  var ext = (file.name.split('.').pop() || 'bin').toLowerCase();
+  var objectPath = 'candidate_' + candidateId + '/' + cfg.prefix + '_' + Date.now() + '.' + ext;
+  var res = await app.storage.from(RC_BUCKET).upload(objectPath, file, {
+    contentType: file.type || 'application/octet-stream',
+    upsert: true,
+  });
+  if(res.error) throw new Error(res.error.message || '上传失败');
+  var storedPath = (res.data && (res.data.id || res.data.path)) || objectPath;
+  var data = {};
+  data[cfg.fileId] = storedPath;
+  data[cfg.name] = file.name;
+  var r = await callFn('recruit_candidates', { action:'update', id: candidateId, data: data });
+  if(r.error) throw new Error(r.error);
+}
+
+async function rcDeleteFile(candidateId, kind){
+  var cfg = RC_FILE_KINDS[kind];
+  var r0 = await callFn('recruit_candidates', { action:'get', id: candidateId });
+  var storedPath = r0.candidate && r0.candidate[cfg.fileId];
+  var data = {};
+  data[cfg.fileId] = '';
+  data[cfg.name] = '';
+  var r = await callFn('recruit_candidates', { action:'update', id: candidateId, data: data });
+  if(r.error) throw new Error(r.error);
+  if(storedPath){
+    try{ await app.storage.from(RC_BUCKET).remove([storedPath]); }catch(e2){ console.warn(e2); }
+  }
+}
+
+function renderCandidateAttachments(container, c){
+  container.innerHTML = '';
+  container.appendChild(el('h3', {style:'margin:12px 0 4px;font-size:14px;color:var(--muted)'}, '评估附件'));
+  Object.keys(RC_FILE_KINDS).forEach(function(kind){
+    var cfg = RC_FILE_KINDS[kind];
+    var fileId = c[cfg.fileId], fileName = c[cfg.name];
+    var row = el('div', {style:'display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-bottom:1px dashed var(--border)'});
+    row.appendChild(el('span', {style:'font-size:13px;font-weight:600;min-width:118px'}, cfg.label));
+    row.appendChild(el('span', {style:'font-size:12px;color:var(--text-secondary);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'}, fileId ? esc(fileName || '已上传') : '未上传'));
+
+    if(fileId){
+      row.appendChild(el('button', {class:'btn btn-sm', onclick:async function(){
+        var btn = this;
+        try{ btn.textContent='获取链接…'; btn.disabled=true;
+          var url = await rcGetTempUrl(fileId);
+          window.open(url, '_blank');
+        }catch(e){ toast(e.message,'error'); }
+        btn.textContent='下载'; btn.disabled=false;
+      }}, '下载'));
+      row.appendChild(el('button', {class:'btn btn-sm', onclick:function(){
+        if(!confirm('确认删除该' + cfg.label + '记录？')) return;
+        rcDeleteFile(c.candidate_id, kind).then(function(){
+          toast('已删除'); showCandidateDetail(c.candidate_id);
+        }).catch(function(e){ toast(e.message,'error'); });
+      }}, '删除'));
+    }
+
+    var fileInput = el('input', {type:'file', accept:cfg.accept, style:'display:none'});
+    var upBtn = el('button', {class:'btn btn-sm btn-primary'}, fileId ? '替换' : '上传');
+    upBtn.onclick = function(){ fileInput.click(); };
+    fileInput.onchange = async function(){
+      var f = fileInput.files && fileInput.files[0];
+      if(!f) return;
+      if(kind==='radar' && f.type && f.type.indexOf('image/')!==0){ toast('请选择图片文件','error'); return; }
+      upBtn.textContent='上传中…'; upBtn.disabled=true;
+      try{
+        await rcUploadFile(c.candidate_id, kind, f);
+        toast('上传成功'); showCandidateDetail(c.candidate_id);
+      }catch(e){
+        toast(e.message,'error'); upBtn.textContent= fileId?'替换':'上传'; upBtn.disabled=false;
+      }
+      fileInput.value = '';
+    };
+    row.appendChild(upBtn);
+    row.appendChild(fileInput);
+    container.appendChild(row);
+
+    // 雷达图内嵌预览（点击放大）
+    if(kind==='radar' && fileId){
+      var preview = el('div', {style:'padding:6px 0'});
+      preview.appendChild(el('div', {class:'loading'}, '图片加载中…'));
+      container.appendChild(preview);
+      rcGetTempUrl(fileId).then(function(url){
+        preview.innerHTML='';
+        preview.appendChild(el('img', {src:url, style:'max-width:100%;max-height:360px;border:1px solid var(--border);border-radius:6px;cursor:zoom-in', onclick:function(){ window.open(url,'_blank'); }}));
+      }).catch(function(e){
+        preview.innerHTML='';
+        preview.appendChild(el('div', {style:'font-size:12px;color:#dc2626'}, '图片加载失败：'+esc(e.message)));
+      });
+    }
+  });
 }
 
 function rcInfoRow(label, value){

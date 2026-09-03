@@ -22,6 +22,8 @@ const FIELDS = [
   'potential_score', 'potential_reason', 'motivation', 'concerns',
   'work_experience', 'family_situation', 'personality_tags',
   'career_plan', 'next_action_date', 'next_action', 'activity_history',
+  'radar_image_file_id', 'radar_image_name',
+  'winner_report_file_id', 'winner_report_name',
   'operator',
 ];
 
