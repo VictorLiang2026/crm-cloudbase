@@ -3,6 +3,8 @@
 .env
 .env.local
 .env.*.local
+# Git bundle 完整备份(本地保留,不入仓库)
+backups/
 # PG 凭证、数据库信息(SPEC 硬约束:不入仓库)
 数据库信息.txt
 *.secret
