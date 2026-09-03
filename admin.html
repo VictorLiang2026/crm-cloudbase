@@ -649,6 +649,9 @@ function route(){
   var hash = location.hash || '#/';
   var m = hash.match(/^#\/customer\/(\d+)$/);
   if(m) return showDetail(parseInt(m[1],10));
+  var rc = hash.match(/^#\/recruit\/(\d+)$/);
+  if(rc) return showCandidateDetail(parseInt(rc[1],10));
+  if(hash === '#/recruit') return showRecruit();
   if(hash === '#/ai-suggestions') return showAiSuggestions();
   if(hash === '#/customers') return showList();
   showDashboard();
