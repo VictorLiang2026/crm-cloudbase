@@ -241,12 +241,8 @@
     .section-title{font-size:16px}
     .info-row{padding:13px 0}
   }
-  /* ===== 增员详情页：跟进记录 + AI话术 并排布局 ===== */
-  .rc-bottom-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
-
   /* ===== 手机 iPhone（≤768px，适配 iPhone 15 Pro Max 430×932 含刘海/Home 条安全区）===== */
   @media (max-width:768px){
-    .rc-bottom-row{grid-template-columns:1fr}
     /* --- 首页客户列表：表头短名替换，保持列顺序与排序功能不变 --- */
     #view .card > table thead tr th:nth-child(1){font-size:0}
     #view .card > table thead tr th:nth-child(1)::before{content:"姓名";font-size:13px}
@@ -2428,8 +2424,12 @@ function rcRenderTable(card, rows){
   card.appendChild(table);
 }
 
-// 候选人详情页
-async function showCandidateDetail(id){
+// 候选人详情页（tab 切换模式，与客户详情页风格一致）
+var rcDetailState = { id:null, tab:'info', data:null };
+
+async function showCandidateDetail(id, tab){
+  rcDetailState.id = id;
+  if(tab) rcDetailState.tab = tab;
   var view = $('view');
   view.innerHTML = '';
   view.appendChild(el('div', {class:'loading'}, '加载中…'));
@@ -2442,6 +2442,7 @@ async function showCandidateDetail(id){
     // 加载增员跟进记录
     var fr = await callFn('recruit_followups', {action:'list', candidate_id:id});
     var followups = (fr && fr.rows) || [];
+    rcDetailState.data = { candidate:c, milestones:milestones, followups:followups };
     view.innerHTML = '';
 
     // 工具栏
@@ -2449,7 +2450,6 @@ async function showCandidateDetail(id){
       el('button', {class:'btn', onclick:function(){ location.hash='#/recruit'; }}, '← 增员列表'),
       el('button', {class:'btn', onclick:function(){ openCandidateForm(id); }}, '编辑'),
       el('button', {class:'btn', onclick:function(){ genRecruitScore(id); }}, 'AI 高潜评分'),
-      el('button', {class:'btn btn-primary', onclick:function(){ genRecruitRecommend(id); }}, 'AI 增员话术'),
       el('button', {class:'btn btn-danger', style:'margin-left:auto', onclick:async function(){
         if(!confirm('确认删除该候选人？客户记录保留，仅移除增员信息。')) return;
         try {
@@ -2461,94 +2461,118 @@ async function showCandidateDetail(id){
       }}, '删除'),
     ]));
 
-    // 基本信息卡片
-    var infoCard = el('div', {class:'card'});
+    // 主卡片：标题 + 标签栏 + 内容区
+    var card = el('div', {class:'card'});
     var scoreColor = c.potential_score == null ? 'var(--muted)' : (c.potential_score >= 70 ? '#16a34a' : (c.potential_score >= 40 ? '#d97706' : '#dc2626'));
-    infoCard.appendChild(el('h2', {}, c.customer_name || ('客户#'+c.customer_id)));
+    card.appendChild(el('h2', {}, c.customer_name || ('客户#'+c.customer_id)));
     if(c.potential_score != null){
-      infoCard.appendChild(el('div', {style:'margin-bottom:12px'}, [
+      card.appendChild(el('div', {style:'margin-bottom:12px'}, [
         el('span', {style:'font-size:28px;font-weight:700;color:'+scoreColor}, String(c.potential_score)),
         el('span', {style:'font-size:13px;color:var(--muted);margin-left:6px'}, '分'),
         c.potential_reason ? el('span', {style:'font-size:13px;color:var(--text-secondary);margin-left:12px'}, esc(c.potential_reason)) : null,
       ]));
     }
-    // 客户基础信息（来自 customers 表，通过视图 JOIN）
-    var basicFields = [
-      ['阶段', c.stage], ['性别', c.gender], ['出生', c.birthday], ['电话', c.phone], ['微信', c.wx_account],
-      ['现职/行业', c.occupation], ['年收入', c.annual_income], ['学历', c.education], ['MBTI', c.mbti],
-      ['来源', c.source], ['婚况', c.marital_status], ['爱好', c.hobbies],
+
+    // 标签栏（与客户详情页一致的风格）
+    var tabs = el('div', {class:'tabs'});
+    var tabsDef = [
+      ['info','基本信息'],
+      ['followups','跟进记录 ('+followups.length+')'],
+      ['ai','AI 增员话术'],
+      ['milestones','阶段时间线'],
     ];
-    infoCard.appendChild(el('h3', {style:'margin:8px 0 4px;font-size:14px;color:var(--muted)'}, '客户基础信息'));
-    var basicGrid = el('div', {style:'display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:14px'});
-    basicFields.forEach(function(f){
-      basicGrid.appendChild(el('div', {}, [
-        el('span', {style:'color:var(--muted);margin-right:6px'}, f[0] + '：'),
-        el('span', {}, esc(f[1] || '-')),
-      ]));
+    tabsDef.forEach(function(t){
+      var tabEl = el('div', {class:'tab'+(rcDetailState.tab===t[0]?' active':''), onclick:function(){ rcDetailState.tab=t[0]; showCandidateDetail(id, t[0]); }}, t[1]);
+      tabs.appendChild(tabEl);
     });
-    infoCard.appendChild(basicGrid);
+    card.appendChild(tabs);
 
-    // 增员专属信息
-    infoCard.appendChild(el('h3', {style:'margin:12px 0 4px;font-size:14px;color:var(--muted)'}, '增员专属信息'));
-    var recruitFields = [
-      ['求职动机', c.motivation], ['顾虑点', c.concerns], ['工作经历', c.work_experience],
-      ['家庭情况', c.family_situation], ['性格标签', c.personality_tags], ['职业规划', c.career_plan],
-      ['下次行动日期', c.next_action_date], ['下次行动', c.next_action],
-    ];
-    var recruitGrid = el('div', {style:'display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:14px'});
-    recruitFields.forEach(function(f){
-      recruitGrid.appendChild(el('div', {}, [
-        el('span', {style:'color:var(--muted);margin-right:6px'}, f[0] + '：'),
-        el('span', {}, esc(f[1] || '-')),
-      ]));
-    });
-    infoCard.appendChild(recruitGrid);
-
-    // 评估附件：竞争力评估雷达图（图片）+ 天生赢家报告（文档），存云存储
-    var attachWrap = el('div', {style:'margin-top:12px'});
-    renderCandidateAttachments(attachWrap, c);
-    infoCard.appendChild(attachWrap);
-
-    // 跳转客户详情链接
-    infoCard.appendChild(el('div', {style:'margin-top:12px'}, el('a', {
-      class:'btn btn-sm btn-ghost',
-      onclick:function(){ location.hash='#/customer/'+c.customer_id; }
-    }, '查看客户详情 →')));
-    view.appendChild(infoCard);
-
-    // 里程碑时间线
-    var msCard = el('div', {class:'card'});
-    msCard.appendChild(el('h3', {style:'margin-bottom:8px'}, '阶段时间线'));
-    if(milestones.length){
-      milestones.forEach(function(m){
-        msCard.appendChild(el('div', {style:'padding:6px 0;border-bottom:1px solid var(--border);font-size:13px'}, [
-          el('span', {style:'color:var(--muted);margin-right:8px'}, String((m.happened_at || '').slice(0,10))),
-          el('span', {style:'font-weight:600;margin-right:6px'}, (m.from_stage || '创建') + ' → ' + m.to_stage),
-          m.note ? el('span', {style:'color:var(--text-secondary)'}, esc(m.note)) : null,
-        ]));
-      });
-    } else {
-      msCard.appendChild(el('div', {class:'empty'}, '暂无里程碑记录'));
+    // 内容区
+    var content = el('div', {});
+    switch(rcDetailState.tab){
+      case 'info': content.appendChild(renderCandidateInfo(c)); break;
+      case 'followups': content.appendChild(renderRecruitFollowups(id, followups)); break;
+      case 'ai':
+        var aiArea = el('div', {id:'rc-ai-area'});
+        aiArea.appendChild(el('div', {style:'margin-bottom:12px'}, el('button', {class:'btn btn-primary btn-sm', onclick:function(){ genRecruitRecommend(id); }}, '生成 AI 增员话术')));
+        aiArea.appendChild(el('div', {class:'empty'}, '点击上方按钮生成话术'));
+        content.appendChild(aiArea);
+        break;
+      case 'milestones': content.appendChild(renderCandidateMilestones(milestones)); break;
     }
-    view.appendChild(msCard);
-
-    // 增员专属功能区：跟进记录（左）+ AI增员话术（右）并排，窄屏自动堆叠
-    var bottomRow = el('div', {class:'rc-bottom-row'});
-
-    var fuCard = el('div', {class:'card', style:'max-height:600px;overflow-y:auto'});
-    fuCard.appendChild(el('h3', {style:'margin-bottom:8px'}, '跟进记录 (' + followups.length + ')'));
-    fuCard.appendChild(renderRecruitFollowups(id, followups));
-    bottomRow.appendChild(fuCard);
-
-    var aiCard = el('div', {class:'card', id:'rc-ai-area', style:'max-height:600px;overflow-y:auto'});
-    bottomRow.appendChild(aiCard);
-
-    view.appendChild(bottomRow);
+    card.appendChild(content);
+    view.appendChild(card);
 
   } catch(e){
     view.innerHTML = '';
     view.appendChild(el('div', {class:'error'}, '加载失败：' + esc(e.message)));
   }
+}
+
+// ---------- 候选人基本信息 tab ----------
+function renderCandidateInfo(c){
+  var box = el('div', {});
+
+  // 客户基础信息
+  box.appendChild(el('h3', {style:'margin:8px 0 4px;font-size:14px;color:var(--muted)'}, '客户基础信息'));
+  var basicFields = [
+    ['阶段', c.stage], ['性别', c.gender], ['出生', c.birthday], ['电话', c.phone], ['微信', c.wx_account],
+    ['现职/行业', c.occupation], ['年收入', c.annual_income], ['学历', c.education], ['MBTI', c.mbti],
+    ['来源', c.source], ['婚况', c.marital_status], ['爱好', c.hobbies],
+  ];
+  var basicGrid = el('div', {style:'display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:14px'});
+  basicFields.forEach(function(f){
+    basicGrid.appendChild(el('div', {}, [
+      el('span', {style:'color:var(--muted);margin-right:6px'}, f[0] + '：'),
+      el('span', {}, esc(f[1] || '-')),
+    ]));
+  });
+  box.appendChild(basicGrid);
+
+  // 增员专属信息
+  box.appendChild(el('h3', {style:'margin:12px 0 4px;font-size:14px;color:var(--muted)'}, '增员专属信息'));
+  var recruitFields = [
+    ['求职动机', c.motivation], ['顾虑点', c.concerns], ['工作经历', c.work_experience],
+    ['家庭情况', c.family_situation], ['性格标签', c.personality_tags], ['职业规划', c.career_plan],
+    ['下次行动日期', c.next_action_date], ['下次行动', c.next_action],
+  ];
+  var recruitGrid = el('div', {style:'display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:14px'});
+  recruitFields.forEach(function(f){
+    recruitGrid.appendChild(el('div', {}, [
+      el('span', {style:'color:var(--muted);margin-right:6px'}, f[0] + '：'),
+      el('span', {}, esc(f[1] || '-')),
+    ]));
+  });
+  box.appendChild(recruitGrid);
+
+  // 评估附件
+  var attachWrap = el('div', {style:'margin-top:12px'});
+  renderCandidateAttachments(attachWrap, c);
+  box.appendChild(attachWrap);
+
+  // 跳转客户详情链接
+  box.appendChild(el('div', {style:'margin-top:12px'}, el('a', {
+    class:'btn btn-sm btn-ghost',
+    onclick:function(){ location.hash='#/customer/'+c.customer_id; }
+  }, '查看客户详情 →')));
+  return box;
+}
+
+// ---------- 候选人阶段时间线 tab ----------
+function renderCandidateMilestones(milestones){
+  var box = el('div', {});
+  if(milestones.length){
+    milestones.forEach(function(m){
+      box.appendChild(el('div', {style:'padding:6px 0;border-bottom:1px solid var(--border);font-size:13px'}, [
+        el('span', {style:'color:var(--muted);margin-right:8px'}, String((m.happened_at || '').slice(0,10))),
+        el('span', {style:'font-weight:600;margin-right:6px'}, (m.from_stage || '创建') + ' → ' + m.to_stage),
+        m.note ? el('span', {style:'color:var(--text-secondary)'}, esc(m.note)) : null,
+      ]));
+    });
+  } else {
+    box.appendChild(el('div', {class:'empty'}, '暂无里程碑记录'));
+  }
+  return box;
 }
 
 // ==================== 增员跟进记录（接触日志） ====================
