@@ -14,7 +14,7 @@
 
 const { rdb, nowIso, normFields, assertOk } = require('./db');
 
-const STAGES = ['新增人才','接触中','初步面谈','详细面谈','线下活动','入职申请','签约入司'];
+const STAGES = ['新增人才','互动暖客','初次面谈','增员活动','精准面谈','入职申请','签约入司'];
 
 exports.main = async (event, context) => {
   try {
