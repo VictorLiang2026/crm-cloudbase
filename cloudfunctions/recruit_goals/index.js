@@ -113,7 +113,7 @@ async function getProgress(event) {
   bmRows.forEach(function(b) { bmMap[b.stage_from + '→' + b.stage_to] = b; });
 
   // 4. 按月汇总实际达成
-  var actualByMonth = {}; // { '2026-09': { '新增人才': 5, '接触中': 3, ... } }
+  var actualByMonth = {}; // { '2026-09': { '新增人才': 5, '互动暖客': 3, ... } }
   msRows.forEach(function(m) {
     if (!m.happened_at || !m.to_stage) return;
     var d = m.happened_at.substring(0, 10);
@@ -166,12 +166,16 @@ async function getProgress(event) {
       for (var k = 0; k < months.length; k++) {
         prevActual += (actualByMonth[months[k]] && actualByMonth[months[k]][prevStage]) || 0;
       }
+      // 目标转化率（行业基准均值）：始终返回，与实际数据无关
+      var key = prevStage + '→' + stage;
+      var bm = bmMap[key];
+      if (bm) {
+        convBench = { min: parseFloat(bm.conversion_min), avg: parseFloat(bm.conversion_avg), good: parseFloat(bm.conversion_good) };
+      }
+      // 实际转化率：分母（上一阶段实际人数）为 0 时不计算、不显示
       if (prevActual > 0) {
         convRate = Math.round(totalActual / prevActual * 1000) / 10;
-        var key = prevStage + '→' + stage;
-        var bm = bmMap[key];
-        if (bm) {
-          convBench = { min: parseFloat(bm.conversion_min), avg: parseFloat(bm.conversion_avg), good: parseFloat(bm.conversion_good) };
+        if (convBench) {
           if (convRate < convBench.min) convStatus = 'red';
           else if (convRate < convBench.avg) convStatus = 'yellow';
           else convStatus = 'green';
