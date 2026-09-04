@@ -241,8 +241,12 @@
     .section-title{font-size:16px}
     .info-row{padding:13px 0}
   }
+  /* ===== 增员详情页：跟进记录 + AI话术 并排布局 ===== */
+  .rc-bottom-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+
   /* ===== 手机 iPhone（≤768px，适配 iPhone 15 Pro Max 430×932 含刘海/Home 条安全区）===== */
   @media (max-width:768px){
+    .rc-bottom-row{grid-template-columns:1fr}
     /* --- 首页客户列表：表头短名替换，保持列顺序与排序功能不变 --- */
     #view .card > table thead tr th:nth-child(1){font-size:0}
     #view .card > table thead tr th:nth-child(1)::before{content:"姓名";font-size:13px}
@@ -2528,15 +2532,18 @@ async function showCandidateDetail(id){
     }
     view.appendChild(msCard);
 
-    // 增员跟进记录（接触日志）
-    var fuCard = el('div', {class:'card'});
+    // 增员专属功能区：跟进记录（左）+ AI增员话术（右）并排，窄屏自动堆叠
+    var bottomRow = el('div', {class:'rc-bottom-row'});
+
+    var fuCard = el('div', {class:'card', style:'max-height:600px;overflow-y:auto'});
     fuCard.appendChild(el('h3', {style:'margin-bottom:8px'}, '跟进记录 (' + followups.length + ')'));
     fuCard.appendChild(renderRecruitFollowups(id, followups));
-    view.appendChild(fuCard);
+    bottomRow.appendChild(fuCard);
 
-    // AI 话术展示区（动态填充）
-    var aiCard = el('div', {class:'card', id:'rc-ai-area'});
-    view.appendChild(aiCard);
+    var aiCard = el('div', {class:'card', id:'rc-ai-area', style:'max-height:600px;overflow-y:auto'});
+    bottomRow.appendChild(aiCard);
+
+    view.appendChild(bottomRow);
 
   } catch(e){
     view.innerHTML = '';
