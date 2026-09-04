@@ -2535,25 +2535,84 @@ async function renderRecruitGoalsPage(container, rgState){
     // 表格
     var table = el('table', {style:'width:100%;border-collapse:collapse;font-size:13px'});
     var thead = el('thead');
-    thead.appendChild(el('tr', {}, ['阶段','目标','实际','达成率','转化率'].map(function(h){
-      return el('th', {style:'padding:8px 10px;text-align:left;border-bottom:2px solid var(--border);color:var(--muted);white-space:nowrap'}, h);
-    })));
+    // 第一行表头
+    var tr1 = el('tr', {});
+    tr1.appendChild(el('th', {rowspan:2, style:'padding:8px 10px;text-align:left;border-bottom:2px solid var(--border);color:var(--muted);white-space:nowrap;vertical-align:bottom'}, '指标'));
+    tr1.appendChild(el('th', {rowspan:2, style:'padding:8px 10px;text-align:left;border-bottom:2px solid var(--border);color:var(--muted);white-space:nowrap;vertical-align:bottom'}, '目标'));
+    tr1.appendChild(el('th', {rowspan:2, style:'padding:8px 10px;text-align:left;border-bottom:2px solid var(--border);color:var(--muted);white-space:nowrap;vertical-align:bottom'}, '实际人数'));
+    tr1.appendChild(el('th', {rowspan:2, style:'padding:8px 10px;text-align:left;border-bottom:2px solid var(--border);color:var(--muted);white-space:nowrap;vertical-align:bottom'}, '进度'));
+    tr1.appendChild(el('th', {colspan:2, style:'padding:8px 10px;text-align:center;border-bottom:2px solid var(--border);color:var(--muted);white-space:nowrap'}, '转化率'));
+    tr1.appendChild(el('th', {rowspan:2, style:'padding:8px 10px;text-align:left;border-bottom:2px solid var(--border);color:var(--muted);white-space:nowrap;vertical-align:bottom'}, '提醒'));
+    thead.appendChild(tr1);
+    // 第二行表头（转化率子列）
+    var tr2 = el('tr', {});
+    tr2.appendChild(el('th', {style:'padding:4px 8px;text-align:left;border-bottom:2px solid var(--border);color:var(--muted);font-size:12px;white-space:nowrap'}, '目标转化率'));
+    tr2.appendChild(el('th', {style:'padding:4px 8px;text-align:left;border-bottom:2px solid var(--border);color:var(--muted);font-size:12px;white-space:nowrap'}, '实际转化率'));
+    thead.appendChild(tr2);
     table.appendChild(thead);
 
     var tbody = el('tbody');
     var rows = progRes.rows || [];
-    rows.forEach(function(r){
+    rows.forEach(function(r, idx){
       var achieveColor = r.achieve_rate >= 100 ? '#16a34a' : (r.achieve_rate >= 70 ? '#d97706' : '#dc2626');
-      var convText = r.conv_rate == null ? '—' : r.conv_rate + '%';
-      var convColor = r.conv_status === 'green' ? '#16a34a' : (r.conv_status === 'red' ? '#dc2626' : (r.conv_status === 'yellow' ? '#d97706' : 'var(--text-secondary)'));
-      var convIcon = r.conv_status === 'green' ? ' ✅' : (r.conv_status === 'red' ? ' ⚠️' : (r.conv_status === 'yellow' ? ' ⚠️' : ''));
-      if(r.conv_bench) convText += ' (基准' + r.conv_bench.avg + '%)' + convIcon;
 
       // 进度条
       var barW = Math.min(r.achieve_rate, 100);
-      var bar = el('div', {style:'width:100px;height:8px;background:var(--border);border-radius:4px;overflow:hidden;display:inline-block;vertical-align:middle'}, 
+      var bar = el('div', {style:'width:80px;height:8px;background:var(--border);border-radius:4px;overflow:hidden;display:inline-block;vertical-align:middle'},
         el('div', {style:'width:'+barW+'%;height:100%;background:'+achieveColor+';border-radius:4px'})
       );
+
+      // 目标转化率（行业基准均值）
+      var benchAvg = r.conv_bench ? r.conv_bench.avg + '%' : '—';
+
+      // 实际转化率（下一行实际 ÷ 当前行实际）
+      var actualConv = '—';
+      var actualConvColor = 'var(--text-secondary)';
+      if(r.conv_rate != null && r.conv_rate !== 0){
+        actualConv = r.conv_rate + '%';
+        if(r.conv_status === 'green') actualConvColor = '#16a34a';
+        else if(r.conv_status === 'red') actualConvColor = '#dc2626';
+        else if(r.conv_status === 'yellow') actualConvColor = '#d97706';
+      }
+
+      // AI提醒
+      var reminder = '';
+      var reminderColor = 'var(--muted)';
+      // 进度提醒
+      if(r.target > 0 && r.achieve_rate < 70){
+        reminder = '完成率仅' + r.achieve_rate + '%，需加大力度';
+        reminderColor = '#dc2626';
+      } else if(r.target > 0 && r.achieve_rate >= 100){
+        reminder = '目标已达成 ✅';
+        reminderColor = '#16a34a';
+      }
+      // 转化率提醒（优先级高于进度提醒）
+      if(r.conv_rate != null && r.conv_rate > 0){
+        if(r.conv_status === 'red'){
+          reminder = '转化率' + r.conv_rate + '%低于行业最低' + (r.conv_bench ? r.conv_bench.min : '') + '%，建议加强' + (idx === 0 ? '暖客跟进' : '阶段推进');
+          reminderColor = '#dc2626';
+        } else if(r.conv_status === 'yellow'){
+          reminder = '转化率' + r.conv_rate + '%接近行业均值' + (r.conv_bench ? r.conv_bench.avg : '') + '%，有提升空间';
+          reminderColor = '#d97706';
+        } else if(r.conv_status === 'green' && !reminder){
+          reminder = '转化率优于行业优秀线，保持策略';
+          reminderColor = '#16a34a';
+        }
+      }
+      // 特殊：新增人才无转化率，给目标建议
+      if(idx === 0 && r.target > 0 && r.actual > 0){
+        var signTarget = rows.length > 0 ? rows[rows.length - 1].target : 0;
+        if(signTarget > 0 && r.target > 0){
+          var impliedRate = Math.round(signTarget / r.target * 1000) / 10;
+          if(impliedRate > 5){
+            reminder = '签约目标' + signTarget + '人需新增' + r.target + '人，隐含转化率' + impliedRate + '%高于行业5%，建议上调新增目标';
+            reminderColor = '#d97706';
+          } else if(impliedRate < 1.5 && !reminder){
+            reminder = '隐含整体转化率' + impliedRate + '%，低于行业1.5%，新增目标可能偏高';
+            reminderColor = '#d97706';
+          }
+        }
+      }
 
       tbody.appendChild(el('tr', {style:'border-bottom:1px solid var(--border)'}, [
         el('td', {style:'padding:8px 10px;font-weight:500'}, r.stage),
@@ -2563,7 +2622,9 @@ async function renderRecruitGoalsPage(container, rgState){
           el('span', {style:'color:'+achieveColor+';font-weight:600'}, r.achieve_rate + '%'),
           bar,
         ]),
-        el('td', {style:'padding:8px 10px;color:'+convColor}, convText),
+        el('td', {style:'padding:8px 10px;color:var(--muted);font-size:12px'}, benchAvg),
+        el('td', {style:'padding:8px 10px;color:'+actualConvColor+';font-weight:'+(actualConv !== '—' ? '600' : '400')}, actualConv),
+        el('td', {style:'padding:8px 10px;color:'+reminderColor+';font-size:12px;max-width:200px'}, reminder || '—'),
       ]));
     });
     table.appendChild(tbody);
