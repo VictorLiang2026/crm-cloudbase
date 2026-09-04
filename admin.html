@@ -2630,7 +2630,9 @@ async function rcDeleteFile(candidateId, kind){
   }
 }
 
-function renderCandidateAttachments(container, c){
+function renderCandidateAttachments(container, c, onChanged){
+  // onChanged(candidateId)：上传/删除成功后的刷新回调；不传则默认刷新详情页
+  var afterChange = function(cid){ if(onChanged) onChanged(cid); else showCandidateDetail(cid); };
   container.innerHTML = '';
   container.appendChild(el('h3', {style:'margin:12px 0 4px;font-size:14px;color:var(--muted)'}, '评估附件'));
   Object.keys(RC_FILE_KINDS).forEach(function(kind){
@@ -2652,7 +2654,7 @@ function renderCandidateAttachments(container, c){
       row.appendChild(el('button', {class:'btn btn-sm', onclick:function(){
         if(!confirm('确认删除该' + cfg.label + '记录？')) return;
         rcDeleteFile(c.candidate_id, kind).then(function(){
-          toast('已删除'); showCandidateDetail(c.candidate_id);
+          toast('已删除'); afterChange(c.candidate_id);
         }).catch(function(e){ toast(e.message,'error'); });
       }}, '删除'));
     }
@@ -2667,7 +2669,7 @@ function renderCandidateAttachments(container, c){
       upBtn.textContent='上传中…'; upBtn.disabled=true;
       try{
         await rcUploadFile(c.candidate_id, kind, f);
-        toast('上传成功'); showCandidateDetail(c.candidate_id);
+        toast('上传成功'); afterChange(c.candidate_id);
       }catch(e){
         toast(e.message,'error'); upBtn.textContent= fileId?'替换':'上传'; upBtn.disabled=false;
       }
@@ -2806,6 +2808,31 @@ function openCandidateForm(id){
 
   modal.appendChild(form);
 
+  // 评估附件区（雷达图图片 + 天生赢家报告文档）
+  // 新增态：保存候选人前无 ID，先显示提示；保存成功后在本弹窗内直接可上传
+  // 编辑态：加载完候选人数据后直接渲染上传控件
+  var attachWrap = el('div', {style:'margin-top:8px'});
+  modal.appendChild(attachWrap);
+  var createdId = null;
+
+  function renderAttachHint(){
+    attachWrap.innerHTML = '';
+    var box = el('div', {style:'border:1px dashed var(--border);border-radius:6px;padding:10px;margin-top:8px;background:#f8fafc'});
+    box.appendChild(el('div', {style:'font-size:13px;font-weight:600;margin-bottom:4px'}, '评估附件（竞争力评估雷达图 / 天生赢家报告）'));
+    box.appendChild(el('div', {style:'font-size:12px;color:var(--muted);line-height:1.6'},
+      '文件按候选人归档存储，需先保存候选人。保存成功后本窗口即可直接上传，也可稍后在候选人详情页上传。'));
+    attachWrap.appendChild(box);
+  }
+
+  async function refreshAttach(candidateId){
+    try{
+      var r = await callFn('recruit_candidates', {action:'get', id:candidateId});
+      if(r.candidate) renderCandidateAttachments(attachWrap, r.candidate, refreshAttach);
+    }catch(e){ toast('附件区加载失败：' + e.message, 'error'); }
+  }
+
+  if(isNew) renderAttachHint();
+
   var btnRow = el('div', {style:'display:flex;gap:8px;margin-top:12px'});
   var saveBtn = el('button', {class:'btn btn-primary'}, '保存');
   var cancelBtn = el('button', {class:'btn'}, '取消');
@@ -2830,11 +2857,18 @@ function openCandidateForm(id){
           if(k === '_customer_id') continue;
           if(c[k] != null) inputs[k].value = c[k];
         }
+        renderCandidateAttachments(attachWrap, c, refreshAttach);
       }
     });
   }
 
   saveBtn.onclick = async function(){
+    // 新增保存成功后的「完成」状态：关闭弹窗并进入候选人详情页
+    if(createdId){
+      overlay.remove();
+      location.hash = '#/recruit/' + createdId;
+      return;
+    }
     var data = {};
     for(var k in inputs){
       if(k === '_customer_id') continue;
@@ -2851,9 +2885,16 @@ function openCandidateForm(id){
       if(isNew){
         var r = await callFn('recruit_candidates', {action:'create', data:data});
         if(r.error){ toast(r.error, 'error'); saveBtn.disabled = false; saveBtn.textContent = '保存'; return; }
-        overlay.remove();
-        location.hash = '#/recruit/' + r.id;
-        toast('创建成功');
+        createdId = r.id;
+        toast('创建成功，可继续上传评估附件');
+        // 切换为「已创建-上传附件」状态：表单区收起，附件区激活
+        form.style.display = 'none';
+        cancelBtn.style.display = 'none';
+        var banner = el('div', {style:'border:1px solid #16a34a;background:#f0fdf4;color:#15803d;border-radius:6px;padding:8px 10px;font-size:13px;margin-bottom:8px'},
+          '✓ 候选人已创建。可在下方直接上传竞争力评估雷达图和天生赢家报告，传完点「完成」进入详情页。');
+        modal.insertBefore(banner, attachWrap);
+        saveBtn.disabled = false; saveBtn.textContent = '完成';
+        refreshAttach(r.id);
       } else {
         var r = await callFn('recruit_candidates', {action:'update', id:id, data:data});
         if(r.error){ toast(r.error, 'error'); saveBtn.disabled = false; saveBtn.textContent = '保存'; return; }
@@ -2863,7 +2904,7 @@ function openCandidateForm(id){
       }
     } catch(e){
       toast(e.message, 'error');
-      saveBtn.disabled = false; saveBtn.textContent = '保存';
+      saveBtn.disabled = false; saveBtn.textContent = createdId ? '完成' : '保存';
     }
   };
 }
