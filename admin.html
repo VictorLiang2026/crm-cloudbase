@@ -2435,6 +2435,9 @@ async function showCandidateDetail(id){
     if(r.error){ view.innerHTML = ''; view.appendChild(el('div', {class:'error'}, r.error)); return; }
     var c = r.candidate;
     var milestones = r.milestones || [];
+    // 加载增员跟进记录
+    var fr = await callFn('recruit_followups', {action:'list', candidate_id:id});
+    var followups = (fr && fr.rows) || [];
     view.innerHTML = '';
 
     // 工具栏
@@ -2525,6 +2528,12 @@ async function showCandidateDetail(id){
     }
     view.appendChild(msCard);
 
+    // 增员跟进记录（接触日志）
+    var fuCard = el('div', {class:'card'});
+    fuCard.appendChild(el('h3', {style:'margin-bottom:8px'}, '跟进记录 (' + followups.length + ')'));
+    fuCard.appendChild(renderRecruitFollowups(id, followups));
+    view.appendChild(fuCard);
+
     // AI 话术展示区（动态填充）
     var aiCard = el('div', {class:'card', id:'rc-ai-area'});
     view.appendChild(aiCard);
@@ -2533,6 +2542,116 @@ async function showCandidateDetail(id){
     view.innerHTML = '';
     view.appendChild(el('div', {class:'error'}, '加载失败：' + esc(e.message)));
   }
+}
+
+// ==================== 增员跟进记录（接触日志） ====================
+var RC_CONTACT_METHODS = ['电话','微信','面谈','线下活动','邮件','其他'];
+var RC_INTEREST_LEVELS = ['高','中','低','无'];
+
+function renderRecruitFollowups(candidateId, rows){
+  var box = el('div', {});
+  box.appendChild(el('div', {style:'margin-bottom:12px'}, el('button', {class:'btn btn-primary btn-sm', onclick:function(){ openRecruitFollowupForm(candidateId, null); }}, '+ 新增跟进')));
+  if(!rows.length){ box.appendChild(el('div',{class:'empty'},'暂无跟进记录')); return box; }
+  rows.forEach(function(f){
+    var card = el('div', {class:'card', style:'margin-bottom:8px;padding:10px'});
+    var header = el('div', {style:'display:flex;justify-content:space-between;align-items:flex-start'}, [
+      el('div', {}, [
+        el('strong', {}, f.followup_date ? String(f.followup_date).slice(0,10) : '未填日期'),
+        f.contact_method ? el('span', {style:'margin-left:8px;font-size:12px;color:var(--muted)'}, '[' + esc(f.contact_method) + ']') : null,
+        f.interest_level ? el('span', {style:'margin-left:8px;font-size:12px;font-weight:600;color:'+(f.interest_level==='高'?'#16a34a':f.interest_level==='中'?'#d97706':f.interest_level==='低'?'#ea580c':'#dc2626')}, '意向:'+esc(f.interest_level)) : null,
+      ]),
+      el('div', {}, [
+        el('a', {class:'btn-sm', style:'margin-right:8px;cursor:pointer', onclick:function(){ openRecruitFollowupForm(candidateId, f); }}, '编辑'),
+        el('a', {class:'btn-sm btn-danger', style:'cursor:pointer', onclick:async function(){
+          if(!confirm('删除该跟进记录？')) return;
+          try {
+            await callFn('recruit_followups', {action:'remove', id:f.id});
+            toast('已删除'); showCandidateDetail(candidateId);
+          } catch(e){ toast(e.message,'error'); }
+        }}, '删除'),
+      ]),
+    ]);
+    card.appendChild(header);
+    if(f.followup_notes) card.appendChild(el('p', {style:'margin:6px 0 4px'}, esc(f.followup_notes)));
+    if(f.concern_feedback) card.appendChild(el('p', {style:'margin:0;font-size:13px;color:#7c2d12'}, '顾虑反馈：' + esc(f.concern_feedback)));
+    if(f.next_followup_date || f.next_followup_goal){
+      card.appendChild(el('p', {style:'margin:4px 0 0;color:var(--muted);font-size:13px'}, '下次：' + (f.next_followup_date ? String(f.next_followup_date).slice(0,10) : '') + ' ' + esc(f.next_followup_goal || '')));
+    }
+    box.appendChild(card);
+  });
+  return box;
+}
+
+function openRecruitFollowupForm(candidateId, fol){
+  var overlay = el('div', {style:'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px'});
+  var modalDiv = el('div', {class:'card', style:'max-width:500px;width:100%;max-height:85vh;overflow-y:auto;padding:20px'});
+  modalDiv.appendChild(el('h2', {style:'margin-bottom:12px'}, fol ? '编辑跟进' : '新增跟进'));
+
+  var fields = [
+    {name:'followup_date', label:'跟进日期 *', type:'date'},
+    {name:'contact_method', label:'接触方式', type:'select', options:[''].concat(RC_CONTACT_METHODS)},
+    {name:'interest_level', label:'意向度', type:'select', options:[''].concat(RC_INTEREST_LEVELS)},
+    {name:'followup_notes', label:'跟进内容', type:'textarea'},
+    {name:'concern_feedback', label:'顾虑反馈', type:'textarea', placeholder:'对方顾虑变化（如薪酬/家庭/职业转型等）'},
+    {name:'next_followup_date', label:'下次跟进日期', type:'date'},
+    {name:'next_followup_goal', label:'下次跟进目标', type:'text'},
+  ];
+  var inputs = {};
+  fields.forEach(function(f){
+    var row = el('div', {style:'margin-bottom:8px'});
+    row.appendChild(el('label', {style:'display:block;font-size:13px;color:var(--muted);margin-bottom:2px'}, f.label));
+    var input;
+    if(f.type === 'select'){
+      input = el('select', {style:'width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:14px'});
+      f.options.forEach(function(o){ input.appendChild(el('option', {value:o}, o || '— 请选择 —')); });
+    } else if(f.type === 'textarea'){
+      input = el('textarea', {style:'width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:14px;min-height:60px;resize:vertical'});
+    } else {
+      input = el('input', {type:f.type, style:'width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:14px'});
+    }
+    if(f.placeholder) input.placeholder = f.placeholder;
+    if(fol && fol[f.name] != null) input.value = fol[f.name];
+    inputs[f.name] = input;
+    row.appendChild(input);
+    modalDiv.appendChild(row);
+  });
+
+  var btnRow = el('div', {style:'display:flex;gap:8px;margin-top:12px'});
+  var saveBtn = el('button', {class:'btn btn-primary'}, '保存');
+  var cancelBtn = el('button', {class:'btn'}, '取消');
+  btnRow.appendChild(cancelBtn);
+  btnRow.appendChild(saveBtn);
+  modalDiv.appendChild(btnRow);
+  overlay.appendChild(modalDiv);
+  document.body.appendChild(overlay);
+
+  cancelBtn.onclick = function(){ overlay.remove(); };
+  overlay.onclick = function(e){ if(e.target === overlay) overlay.remove(); };
+
+  saveBtn.onclick = async function(){
+    var data = {};
+    for(var k in inputs){ data[k] = inputs[k].value.trim(); }
+    if(!data.followup_date){ toast('请填写跟进日期','error'); return; }
+    data.candidate_id = candidateId;
+    data.operator = (CONFIG.operator && CONFIG.operator.name) || 'Victor';
+    saveBtn.disabled = true; saveBtn.textContent = '保存中…';
+    try {
+      if(fol){
+        var r = await callFn('recruit_followups', {action:'update', id:fol.id, data:data});
+        if(r.error){ toast(r.error,'error'); saveBtn.disabled=false; saveBtn.textContent='保存'; return; }
+        toast('已保存');
+      } else {
+        var r = await callFn('recruit_followups', {action:'create', data:data});
+        if(r.error){ toast(r.error,'error'); saveBtn.disabled=false; saveBtn.textContent='保存'; return; }
+        toast('已添加');
+      }
+      overlay.remove();
+      showCandidateDetail(candidateId);
+    } catch(e){
+      toast(e.message,'error');
+      saveBtn.disabled = false; saveBtn.textContent = '保存';
+    }
+  };
 }
 
 // AI 增员话术生成
