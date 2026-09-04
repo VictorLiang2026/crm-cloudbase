@@ -47,6 +47,8 @@
   .btn-danger:hover{background:#fef2f2}
   .btn-ghost{background:transparent;border-color:transparent;color:var(--pri)}
   .btn-ghost:hover{background:var(--pri-light)}
+  .btn-recruit{background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border-color:#b91c1c;font-weight:700;padding:8px 24px;box-shadow:0 2px 8px rgba(220,38,38,.3)}
+  .btn-recruit:hover{background:linear-gradient(135deg,#ef4444,#dc2626);border-color:#dc2626;box-shadow:0 4px 12px rgba(220,38,38,.4);transform:translateY(-1px)}
   table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
   th{text-align:left;padding:10px 12px;border-bottom:1px solid var(--border);color:var(--text-secondary);font-weight:500;font-size:13px;background:#f8fafc}
   td{padding:12px;border-bottom:1px solid var(--border-light)}
@@ -832,7 +834,7 @@ async function showDashboard(){
     el('button', {class:'btn btn-primary', onclick:function(){ openCustomerForm(null); }}, '+ 新增客户'),
     el('button', {class:'btn', onclick:function(){ openAiParse(); }}, 'AI 解析新增'),
     el('button', {class:'btn', onclick:function(){ location.hash='#/ai-suggestions'; }}, 'AI 建议'),
-    el('button', {class:'btn', onclick:function(){ location.hash='#/recruit'; }}, '增员'),
+    el('button', {class:'btn btn-recruit', onclick:function(){ location.hash='#/recruit'; }}, '增员'),
     el('button', {class:'btn', onclick:function(){ location.hash='#/customers'; }, style:'margin-left:auto'}, '全部客户 →'),
   ]);
   view.appendChild(toolbar);
