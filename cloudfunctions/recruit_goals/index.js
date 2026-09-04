@@ -58,7 +58,8 @@ async function saveGoals(event) {
   const rows = [];
   for (const stage of STAGES) {
     const count = parseInt(goals[stage], 10);
-    if (count > 0 || goals[stage] === 0) {
+    // 只保存非0目标：全0保存 = 清空该月目标
+    if (count > 0) {
       rows.push({
         goal_month: goalDate,
         stage: stage,

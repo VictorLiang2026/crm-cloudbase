@@ -2454,18 +2454,51 @@ async function renderRecruitGoalsPage(container, rgState){
       goalInputs[s],
     ]));
   });
+  // 加载目标输入框（allowFallback=当月无目标时自动带出上月值作参考）
+  async function loadGoalInputs(month, allowFallback){
+    var carryHint = document.getElementById('goalCarryHint');
+    var res = await callFn('recruit_goals', {action:'listGoals', startMonth:month, endMonth:month});
+    var rows = res.rows || [];
+    RC_STAGES.forEach(function(s){ goalInputs[s].value = ''; });
+    if(rows.length){
+      rows.forEach(function(r){ if(goalInputs[r.stage]) goalInputs[r.stage].value = r.target_count || 0; });
+      if(carryHint) carryHint.textContent = '';
+      return true;
+    }
+    if(allowFallback){
+      var p = month.split('-');
+      var y = parseInt(p[0],10), m = parseInt(p[1],10) - 1;
+      if(m < 1){ m = 12; y--; }
+      var prevMonth = y + '-' + String(m).padStart(2,'0');
+      var res2 = await callFn('recruit_goals', {action:'listGoals', startMonth:prevMonth, endMonth:prevMonth});
+      var rows2 = res2.rows || [];
+      if(rows2.length){
+        rows2.forEach(function(r){ if(goalInputs[r.stage]) goalInputs[r.stage].value = r.target_count || 0; });
+        if(carryHint) carryHint.textContent = 'ℹ️ ' + month + ' 尚无目标，已自动带出 ' + prevMonth + ' 目标值作参考，可修改后保存';
+        return true;
+      }
+    }
+    if(carryHint) carryHint.textContent = '';
+    return false;
+  }
+
+  // 倒推目标辅助：按行业整体转化率，签约 N 人建议新增人才数
+  function updateBackHint(){
+    var backHint = document.getElementById('goalBackHint');
+    if(!backHint) return;
+    var sign = parseInt(goalInputs['签约入司'].value, 10) || 0;
+    if(!sign || !rgState.overallAvg){ backHint.textContent = ''; return; }
+    var need = Math.ceil(sign * 100 / rgState.overallAvg);
+    backHint.textContent = '💡 倒推参考：签约入司 ' + sign + ' 人，按行业整体转化率 ' + rgState.overallAvg + '%，建议「新增人才」目标 ≥ ' + need + ' 人';
+  }
+  goalInputs['签约入司'].oninput = updateBackHint;
+
   goalCard.appendChild(el('div', {style:'display:flex;align-items:center;gap:12px;flex-wrap:wrap'}, [
     el('span', {style:'font-size:14px;font-weight:600'}, '月度目标设定'),
     goalMonthInput,
     el('button', {class:'btn', style:'font-size:13px', onclick:async function(){
       rgState.goalMonth = goalMonthInput.value || rgState.goalMonth;
-      // 加载已有目标
-      try {
-        var res = await callFn('recruit_goals', {action:'listGoals', startMonth:rgState.goalMonth, endMonth:rgState.goalMonth});
-        var rows = res.rows || [];
-        RC_STAGES.forEach(function(s){ goalInputs[s].value = ''; });
-        rows.forEach(function(r){ if(goalInputs[r.stage]) goalInputs[r.stage].value = r.target_count || 0; });
-      } catch(e){ /* 忽略 */ }
+      try { await loadGoalInputs(rgState.goalMonth, true); } catch(e){ /* 忽略 */ }
     }}, '加载目标'),
   ]));
   goalCard.appendChild(goalFieldsRow);
@@ -2479,11 +2512,10 @@ async function renderRecruitGoalsPage(container, rgState){
       await renderRecruitGoalsPage(container, rgState);
     } catch(e){ alert('保存失败：'+e.message); }
   }}, '保存目标')));
-  // 自动加载该月目标
-  try {
-    var loadRes = await callFn('recruit_goals', {action:'listGoals', startMonth:rgState.goalMonth, endMonth:rgState.goalMonth});
-    (loadRes.rows||[]).forEach(function(r){ if(goalInputs[r.stage]) goalInputs[r.stage].value = r.target_count || 0; });
-  } catch(e){ /* 忽略 */ }
+  goalCard.appendChild(el('div', {id:'goalCarryHint', style:'margin-top:8px;font-size:12px;color:var(--muted)'}));
+  goalCard.appendChild(el('div', {id:'goalBackHint', style:'margin-top:4px;font-size:12px;color:#b45309'}));
+  // 自动加载该月目标（无则带出上月参考值）
+  try { await loadGoalInputs(rgState.goalMonth, true); } catch(e){ /* 忽略 */ }
   container.appendChild(goalCard);
 
   // 3. 目标 vs 实际看板
@@ -2578,6 +2610,9 @@ async function renderRecruitGoalsPage(container, rgState){
 
     // 行业基准参考
     var benchmarks = progRes.benchmarks || [];
+    // 提取整体漏斗基准，供目标设定区倒推辅助使用
+    var overallBmRow = benchmarks.filter(function(b){ return b.stage_from==='新增人才' && b.stage_to==='签约入司'; })[0];
+    if(overallBmRow){ rgState.overallAvg = parseFloat(overallBmRow.conversion_avg); updateBackHint(); }
     if(benchmarks.length){
       var bmCard = el('div', {style:'margin-top:16px;padding:12px;background:var(--accent-bg);border-radius:6px'});
       bmCard.appendChild(el('div', {style:'font-size:13px;font-weight:600;margin-bottom:8px'}, '行业基准参考（友邦+LIMRA+CareerPlug）'));
@@ -2598,6 +2633,35 @@ async function renderRecruitGoalsPage(container, rgState){
       bmCard.appendChild(bmTable);
       bmCard.appendChild(el('div', {style:'margin-top:8px'}, el('button', {class:'btn', style:'font-size:12px', onclick:function(){ openBenchmarkEditor(container, rgState, benchmarks); }}, '✏️ 修改基准')));
       progressCard.appendChild(bmCard);
+
+      // 友邦保险参考指标卡片（精英团队水平，目标设定宏观参考）
+      var aiaCard = el('div', {style:'margin-top:12px;padding:12px;background:var(--accent-bg);border-radius:6px'});
+      aiaCard.appendChild(el('div', {style:'font-size:13px;font-weight:600;margin-bottom:8px'}, '友邦保险参考指标（精英团队水平 · 设定目标时的宏观参考）'));
+      var aiaData = [
+        ['年招募增长率', '+18%', '3-5%', '友邦2024年报'],
+        ['活动人力增长率', '+9%', '—', '友邦2024年报'],
+        ['1年留存率', '约30%', '15-25%', '行业报道'],
+        ['2年留存率', '约20%', '10-15%', '行业报道'],
+        ['人均月保单数', '4+ 张', '1.5-2.5 张', '友邦2025上半年业绩'],
+        ['人均新业务价值', '同业2.9倍', '1x', '友邦2024年报'],
+        ['MDRT会员数', '4,656人（全球第一）', '—', '友邦2024年报'],
+      ];
+      var aiaTable = el('table', {style:'width:100%;border-collapse:collapse;font-size:12px'});
+      aiaTable.appendChild(el('thead', {}, el('tr', {}, ['指标','友邦水平','行业均值','来源'].map(function(h){
+        return el('th', {style:'padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);color:var(--muted)'}, h);
+      }))));
+      var aiaBody = el('tbody');
+      aiaData.forEach(function(a){
+        aiaBody.appendChild(el('tr', {style:'border-bottom:1px solid var(--border)'}, [
+          el('td', {style:'padding:6px 8px'}, a[0]),
+          el('td', {style:'padding:6px 8px;color:#b45309;font-weight:600'}, a[1]),
+          el('td', {style:'padding:6px 8px'}, a[2]),
+          el('td', {style:'padding:6px 8px;color:var(--muted)'}, a[3]),
+        ]));
+      });
+      aiaTable.appendChild(aiaBody);
+      aiaCard.appendChild(aiaTable);
+      progressCard.appendChild(aiaCard);
     }
 
   } catch(e){
