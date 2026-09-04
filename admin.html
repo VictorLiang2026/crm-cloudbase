@@ -654,6 +654,7 @@ function route(){
   var rc = hash.match(/^#\/recruit\/(\d+)$/);
   if(rc) return showCandidateDetail(parseInt(rc[1],10));
   if(hash === '#/recruit') return showRecruit();
+  if(hash === '#/recruit/goals') return showRecruitGoals();
   if(hash === '#/ai-suggestions') return showAiSuggestions();
   if(hash === '#/customers') return showList();
   showDashboard();
@@ -2342,6 +2343,7 @@ async function showRecruit(){
     searchInput,
     el('button', {class:'btn', onclick:doSearch}, '搜索'),
     el('button', {class:'btn btn-primary', onclick:function(){ openCandidateForm(null); }}, '+ 新增候选人'),
+    el('button', {class:'btn btn-recruit', onclick:function(){ location.hash='#/recruit/goals'; }}, '目标管理'),
   ]);
   view.appendChild(toolbar);
 
@@ -2388,7 +2390,285 @@ async function showRecruit(){
   }
 }
 
-// 增员候选人表格渲染
+// ==================== 增员目标管理 ====================
+function monthStr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function monthLabel(ym){ var p=ym.split('-'); return p[0]+'年'+parseInt(p[1],10)+'月'; }
+
+async function showRecruitGoals(){
+  var view = document.getElementById('view');
+  view.innerHTML = '';
+
+  // 默认当前月
+  var now = new Date();
+  var curMonth = monthStr(now);
+  var rgState = {
+    startMonth: curMonth,
+    endMonth: curMonth,
+    goalMonth: curMonth,
+    goals: {},
+  };
+
+  var toolbar = el('div', {class:'toolbar'}, [
+    el('button', {class:'btn', onclick:function(){ location.hash='#/recruit'; }}, '← 增员列表'),
+  ]);
+  view.appendChild(toolbar);
+
+  var container = el('div');
+  view.appendChild(container);
+
+  await renderRecruitGoalsPage(container, rgState);
+}
+
+async function renderRecruitGoalsPage(container, rgState){
+  container.innerHTML = '';
+
+  // 1. 起止月选择器
+  var filterCard = el('div', {class:'card', style:'margin-bottom:12px;padding:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end'});
+  var startInput = el('input', {type:'month', value:rgState.startMonth, style:'padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:14px'});
+  var endInput = el('input', {type:'month', value:rgState.endMonth, style:'padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:14px'});
+  filterCard.appendChild(el('div', {}, [
+    el('div', {style:'font-size:12px;color:var(--muted);margin-bottom:4px'}, '起始月'),
+    startInput,
+  ]));
+  filterCard.appendChild(el('div', {}, [
+    el('div', {style:'font-size:12px;color:var(--muted);margin-bottom:4px'}, '结束月'),
+    endInput,
+  ]));
+  filterCard.appendChild(el('button', {class:'btn btn-recruit', onclick:async function(){
+    rgState.startMonth = startInput.value || rgState.startMonth;
+    rgState.endMonth = endInput.value || rgState.endMonth;
+    if(rgState.endMonth < rgState.startMonth){ rgState.endMonth = rgState.startMonth; endInput.value = rgState.startMonth; }
+    await renderRecruitGoalsPage(container, rgState);
+  }}, '查询'));
+  container.appendChild(filterCard);
+
+  // 2. 目标设定区
+  var goalCard = el('div', {class:'card', style:'margin-bottom:12px;padding:16px'});
+  var goalMonthInput = el('input', {type:'month', value:rgState.goalMonth, style:'padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:14px'});
+  var goalInputs = {};
+  var goalFieldsRow = el('div', {style:'display:flex;flex-wrap:wrap;gap:12px;margin-top:10px'});
+  RC_STAGES.forEach(function(s){
+    goalInputs[s] = el('input', {type:'number', min:'0', placeholder:'0', style:'width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:14px;text-align:center'});
+    goalFieldsRow.appendChild(el('div', {style:'text-align:center'}, [
+      el('div', {style:'font-size:11px;color:var(--muted);margin-bottom:4px;white-space:nowrap'}, s),
+      goalInputs[s],
+    ]));
+  });
+  goalCard.appendChild(el('div', {style:'display:flex;align-items:center;gap:12px;flex-wrap:wrap'}, [
+    el('span', {style:'font-size:14px;font-weight:600'}, '月度目标设定'),
+    goalMonthInput,
+    el('button', {class:'btn', style:'font-size:13px', onclick:async function(){
+      rgState.goalMonth = goalMonthInput.value || rgState.goalMonth;
+      // 加载已有目标
+      try {
+        var res = await callFn('recruit_goals', {action:'listGoals', startMonth:rgState.goalMonth, endMonth:rgState.goalMonth});
+        var rows = res.rows || [];
+        RC_STAGES.forEach(function(s){ goalInputs[s].value = ''; });
+        rows.forEach(function(r){ if(goalInputs[r.stage]) goalInputs[r.stage].value = r.target_count || 0; });
+      } catch(e){ /* 忽略 */ }
+    }}, '加载目标'),
+  ]));
+  goalCard.appendChild(goalFieldsRow);
+  goalCard.appendChild(el('div', {style:'margin-top:12px'}, el('button', {class:'btn btn-primary', onclick:async function(){
+    var goals = {};
+    RC_STAGES.forEach(function(s){ goals[s] = parseInt(goalInputs[s].value, 10) || 0; });
+    try {
+      var r = await callFn('recruit_goals', {action:'saveGoals', goalMonth:rgState.goalMonth, goals:goals});
+      if(r.error) throw new Error(r.error);
+      alert('目标已保存');
+      await renderRecruitGoalsPage(container, rgState);
+    } catch(e){ alert('保存失败：'+e.message); }
+  }}, '保存目标')));
+  // 自动加载该月目标
+  try {
+    var loadRes = await callFn('recruit_goals', {action:'listGoals', startMonth:rgState.goalMonth, endMonth:rgState.goalMonth});
+    (loadRes.rows||[]).forEach(function(r){ if(goalInputs[r.stage]) goalInputs[r.stage].value = r.target_count || 0; });
+  } catch(e){ /* 忽略 */ }
+  container.appendChild(goalCard);
+
+  // 3. 目标 vs 实际看板
+  var progressCard = el('div', {class:'card', style:'margin-bottom:12px;padding:16px'});
+  progressCard.appendChild(el('div', {class:'loading'}, '加载中…'));
+  container.appendChild(progressCard);
+
+  try {
+    var progRes = await callFn('recruit_goals', {action:'getProgress', startMonth:rgState.startMonth, endMonth:rgState.endMonth});
+    if(progRes.error) throw new Error(progRes.error);
+    progressCard.innerHTML = '';
+
+    var title = monthLabel(rgState.startMonth);
+    if(rgState.startMonth !== rgState.endMonth) title = monthLabel(rgState.startMonth) + ' ~ ' + monthLabel(rgState.endMonth);
+    progressCard.appendChild(el('div', {style:'font-size:16px;font-weight:600;margin-bottom:12px'}, '目标 vs 实际完成看板（' + title + '）'));
+
+    // 表格
+    var table = el('table', {style:'width:100%;border-collapse:collapse;font-size:13px'});
+    var thead = el('thead');
+    thead.appendChild(el('tr', {}, ['阶段','目标','实际','达成率','转化率'].map(function(h){
+      return el('th', {style:'padding:8px 10px;text-align:left;border-bottom:2px solid var(--border);color:var(--muted);white-space:nowrap'}, h);
+    })));
+    table.appendChild(thead);
+
+    var tbody = el('tbody');
+    var rows = progRes.rows || [];
+    rows.forEach(function(r){
+      var achieveColor = r.achieve_rate >= 100 ? '#16a34a' : (r.achieve_rate >= 70 ? '#d97706' : '#dc2626');
+      var convText = r.conv_rate == null ? '—' : r.conv_rate + '%';
+      var convColor = r.conv_status === 'green' ? '#16a34a' : (r.conv_status === 'red' ? '#dc2626' : (r.conv_status === 'yellow' ? '#d97706' : 'var(--text-secondary)'));
+      var convIcon = r.conv_status === 'green' ? ' ✅' : (r.conv_status === 'red' ? ' ⚠️' : (r.conv_status === 'yellow' ? ' ⚠️' : ''));
+      if(r.conv_bench) convText += ' (基准' + r.conv_bench.avg + '%)' + convIcon;
+
+      // 进度条
+      var barW = Math.min(r.achieve_rate, 100);
+      var bar = el('div', {style:'width:100px;height:8px;background:var(--border);border-radius:4px;overflow:hidden;display:inline-block;vertical-align:middle'}, 
+        el('div', {style:'width:'+barW+'%;height:100%;background:'+achieveColor+';border-radius:4px'})
+      );
+
+      tbody.appendChild(el('tr', {style:'border-bottom:1px solid var(--border)'}, [
+        el('td', {style:'padding:8px 10px;font-weight:500'}, r.stage),
+        el('td', {style:'padding:8px 10px'}, String(r.target)),
+        el('td', {style:'padding:8px 10px'}, String(r.actual)),
+        el('td', {style:'padding:8px 10px'}, [
+          el('span', {style:'color:'+achieveColor+';font-weight:600'}, r.achieve_rate + '%'),
+          bar,
+        ]),
+        el('td', {style:'padding:8px 10px;color:'+convColor}, convText),
+      ]));
+    });
+    table.appendChild(tbody);
+    progressCard.appendChild(table);
+
+    // 整体漏斗
+    var ov = progRes.overall || {};
+    if(ov.rate != null){
+      var ovColor = ov.status === 'green' ? '#16a34a' : (ov.status === 'red' ? '#dc2626' : '#d97706');
+      var ovIcon = ov.status === 'green' ? ' ✅ 优秀' : (ov.status === 'red' ? ' ⚠️ 需关注' : ' ⚠️ 一般');
+      var ovText = '整体漏斗转化: ' + ov.rate + '%';
+      if(ov.bench) ovText += ' (行业均值' + ov.bench.avg + '%)';
+      ovText += ovIcon;
+      progressCard.appendChild(el('div', {style:'margin-top:12px;padding:10px;background:var(--accent-bg);border-radius:6px;font-size:14px;font-weight:600;color:'+ovColor}, ovText));
+    }
+
+    // 月度趋势
+    var trends = progRes.trends || [];
+    if(trends.length > 1){
+      var trendCard = el('div', {style:'margin-top:16px'});
+      trendCard.appendChild(el('div', {style:'font-size:14px;font-weight:600;margin-bottom:10px'}, '月度趋势'));
+      // 每个阶段一行趋势柱
+      RC_STAGES.forEach(function(s){
+        var maxVal = 0;
+        trends.forEach(function(t){ var v = t.stages[s] ? (t.stages[s].actual || 0) : 0; if(v > maxVal) maxVal = v; });
+        if(maxVal === 0) return; // 跳过无数据阶段
+        var row = el('div', {style:'display:flex;align-items:center;gap:8px;margin-bottom:6px'}, [
+          el('span', {style:'font-size:11px;color:var(--muted);width:70px;text-align:right;white-space:nowrap'}, s),
+        ]);
+        trends.forEach(function(t){
+          var v = t.stages[s] ? (t.stages[s].actual || 0) : 0;
+          var h = maxVal > 0 ? Math.round(v / maxVal * 40) + 2 : 2;
+          var w = 30;
+          row.appendChild(el('div', {style:'text-align:center'}, [
+            el('div', {style:'width:'+w+'px;height:'+h+'px;background:#f59e0b;border-radius:3px;margin:0 auto'}),
+            el('div', {style:'font-size:10px;color:var(--muted);margin-top:2px'}, String(v)),
+          ]));
+        });
+        row.appendChild(el('span', {style:'font-size:10px;color:var(--muted);margin-left:4px'}, trends.map(function(t){ return t.month.substring(5); }).join(' / ')));
+        trendCard.appendChild(row);
+      });
+      progressCard.appendChild(trendCard);
+    }
+
+    // 行业基准参考
+    var benchmarks = progRes.benchmarks || [];
+    if(benchmarks.length){
+      var bmCard = el('div', {style:'margin-top:16px;padding:12px;background:var(--accent-bg);border-radius:6px'});
+      bmCard.appendChild(el('div', {style:'font-size:13px;font-weight:600;margin-bottom:8px'}, '行业基准参考（友邦+LIMRA+CareerPlug）'));
+      var bmTable = el('table', {style:'width:100%;border-collapse:collapse;font-size:12px'});
+      bmTable.appendChild(el('thead', {}, el('tr', {}, ['阶段转换','最低(红)','均值(黄)','优秀(绿)'].map(function(h){
+        return el('th', {style:'padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);color:var(--muted)'}, h);
+      }))));
+      var bmBody = el('tbody');
+      benchmarks.forEach(function(b){
+        bmBody.appendChild(el('tr', {style:'border-bottom:1px solid var(--border)'}, [
+          el('td', {style:'padding:6px 8px'}, b.stage_from + '→' + b.stage_to),
+          el('td', {style:'padding:6px 8px;color:#dc2626'}, b.conversion_min + '%'),
+          el('td', {style:'padding:6px 8px;color:#d97706'}, b.conversion_avg + '%'),
+          el('td', {style:'padding:6px 8px;color:#16a34a'}, b.conversion_good + '%'),
+        ]));
+      });
+      bmTable.appendChild(bmBody);
+      bmCard.appendChild(bmTable);
+      bmCard.appendChild(el('div', {style:'margin-top:8px'}, el('button', {class:'btn', style:'font-size:12px', onclick:function(){ openBenchmarkEditor(container, rgState, benchmarks); }}, '✏️ 修改基准')));
+      progressCard.appendChild(bmCard);
+    }
+
+  } catch(e){
+    progressCard.innerHTML = '';
+    progressCard.appendChild(el('div', {class:'error'}, '加载失败：' + esc(e.message)));
+  }
+}
+
+// 行业基准修改弹窗
+function openBenchmarkEditor(container, rgState, benchmarks){
+  // 移除已有弹窗
+  var old = document.getElementById('bmModal');
+  if(old) old.remove();
+
+  var overlay = el('div', {id:'bmModal', style:'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px'});
+  overlay.onclick = function(e){ if(e.target === overlay) overlay.remove(); };
+
+  var modal = el('div', {class:'card', style:'max-width:600px;width:100%;max-height:80vh;overflow-y:auto;padding:20px'});
+  modal.onclick = function(e){ e.stopPropagation(); };
+
+  modal.appendChild(el('div', {style:'font-size:16px;font-weight:600;margin-bottom:16px'}, '修改行业基准'));
+
+  var inputs = {};
+  var table = el('table', {style:'width:100%;border-collapse:collapse;font-size:13px'});
+  table.appendChild(el('thead', {}, el('tr', {}, ['阶段转换','最低(红)','均值(黄)','优秀(绿)'].map(function(h){
+    return el('th', {style:'padding:6px 8px;text-align:left;border-bottom:2px solid var(--border);color:var(--muted)'}, h);
+  }))));
+  var tbody = el('tbody');
+  benchmarks.forEach(function(b){
+    var key = b.stage_from + '→' + b.stage_to;
+    inputs[key] = {
+      min: el('input', {type:'number', step:'0.01', value:String(b.conversion_min), style:'width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:13px'}),
+      avg: el('input', {type:'number', step:'0.01', value:String(b.conversion_avg), style:'width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:13px'}),
+      good: el('input', {type:'number', step:'0.01', value:String(b.conversion_good), style:'width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:13px'}),
+    };
+    tbody.appendChild(el('tr', {style:'border-bottom:1px solid var(--border)'}, [
+      el('td', {style:'padding:6px 8px'}, b.stage_from + '→' + b.stage_to),
+      el('td', {style:'padding:6px 8px'}, inputs[key].min),
+      el('td', {style:'padding:6px 8px'}, inputs[key].avg),
+      el('td', {style:'padding:6px 8px'}, inputs[key].good),
+    ]));
+  });
+  table.appendChild(tbody);
+  modal.appendChild(table);
+
+  modal.appendChild(el('div', {style:'margin-top:16px;display:flex;gap:8px;justify-content:flex-end'}, [
+    el('button', {class:'btn', onclick:function(){ overlay.remove(); }}, '取消'),
+    el('button', {class:'btn btn-primary', onclick:async function(){
+      var bmList = [];
+      Object.keys(inputs).forEach(function(key){
+        var parts = key.split('→');
+        bmList.push({
+          stage_from: parts[0],
+          stage_to: parts[1],
+          conversion_min: parseFloat(inputs[key].min.value) || 0,
+          conversion_avg: parseFloat(inputs[key].avg.value) || 0,
+          conversion_good: parseFloat(inputs[key].good.value) || 0,
+        });
+      });
+      try {
+        var r = await callFn('recruit_goals', {action:'saveBenchmarks', benchmarks:bmList});
+        if(r.error) throw new Error(r.error);
+        overlay.remove();
+        await renderRecruitGoalsPage(container, rgState);
+      } catch(e){ alert('保存失败：'+e.message); }
+    }}, '保存基准'),
+  ]));
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+}
 function rcRenderTable(card, rows){
   card.innerHTML = '';
   if(!rows.length){
