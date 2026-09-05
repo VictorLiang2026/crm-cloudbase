@@ -2444,7 +2444,11 @@ async function renderRecruitGoalsPage(container, rgState){
 
   // 2. 目标设定区
   var goalCard = el('div', {class:'card', style:'margin-bottom:12px;padding:16px'});
-  var goalMonthInput = el('input', {type:'month', value:rgState.goalMonth, style:'padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:14px'});
+  var goalMonthInput = el('input', {type:'month', value:rgState.goalMonth, onchange:async function(){
+    // 选择月份后自动载入该月目标（无则带出上月值），无需点击加载
+    rgState.goalMonth = this.value || rgState.goalMonth;
+    try { await loadGoalInputs(rgState.goalMonth, true); } catch(e){ /* 忽略 */ }
+  }, style:'padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:14px'});
   var goalInputs = {};
   var goalFieldsRow = el('div', {style:'display:flex;flex-wrap:wrap;gap:12px;margin-top:10px'});
   RC_STAGES.forEach(function(s){
@@ -2474,9 +2478,10 @@ async function renderRecruitGoalsPage(container, rgState){
       var rows2 = res2.rows || [];
       if(rows2.length){
         rows2.forEach(function(r){ if(goalInputs[r.stage]) goalInputs[r.stage].value = r.target_count || 0; });
-        if(carryHint) carryHint.textContent = 'ℹ️ ' + month + ' 尚无目标，已自动带出 ' + prevMonth + ' 目标值作参考，可修改后保存';
+        if(carryHint) carryHint.textContent = '⚠️ ' + month + ' 尚未设定目标：已自动带入上月（' + prevMonth + '）的目标值作为修订基础。请调整后点击「保存目标」，保存结果仅生效于 ' + month + '，不影响上月数据。';
         return true;
       }
+      if(carryHint) carryHint.textContent = month + ' 及上月均无目标记录，请直接填写各阶段目标后保存。';
     }
     if(carryHint) carryHint.textContent = '';
     return false;
@@ -2495,11 +2500,8 @@ async function renderRecruitGoalsPage(container, rgState){
 
   goalCard.appendChild(el('div', {style:'display:flex;align-items:center;gap:12px;flex-wrap:wrap'}, [
     el('span', {style:'font-size:14px;font-weight:600'}, '月度目标设定'),
+    el('span', {style:'font-size:12px;color:var(--muted)'}, '选择月份后自动载入'),
     goalMonthInput,
-    el('button', {class:'btn', style:'font-size:13px', onclick:async function(){
-      rgState.goalMonth = goalMonthInput.value || rgState.goalMonth;
-      try { await loadGoalInputs(rgState.goalMonth, true); } catch(e){ /* 忽略 */ }
-    }}, '加载目标'),
   ]));
   goalCard.appendChild(goalFieldsRow);
   goalCard.appendChild(el('div', {style:'margin-top:12px'}, el('button', {class:'btn btn-primary', onclick:async function(){
@@ -2512,7 +2514,7 @@ async function renderRecruitGoalsPage(container, rgState){
       await renderRecruitGoalsPage(container, rgState);
     } catch(e){ alert('保存失败：'+e.message); }
   }}, '保存目标')));
-  goalCard.appendChild(el('div', {id:'goalCarryHint', style:'margin-top:8px;font-size:12px;color:var(--muted)'}));
+  goalCard.appendChild(el('div', {id:'goalCarryHint', style:'margin-top:10px;font-size:15px;font-weight:600;color:#dc2626;line-height:1.5'}));
   goalCard.appendChild(el('div', {id:'goalBackHint', style:'margin-top:4px;font-size:12px;color:#b45309'}));
   // 自动加载该月目标（无则带出上月参考值）
   try { await loadGoalInputs(rgState.goalMonth, true); } catch(e){ /* 忽略 */ }
