@@ -263,9 +263,11 @@
     #view .card > table thead tr th:nth-child(8){font-size:0}
     #view .card > table thead tr th:nth-child(8)::before{content:"状态";font-size:13px}
     #view .card > table thead tr th:nth-child(9){font-size:0}
-    #view .card > table thead tr th:nth-child(9)::before{content:"编号";font-size:13px}
+    #view .card > table thead tr th:nth-child(9)::before{content:"增员";font-size:13px}
     #view .card > table thead tr th:nth-child(10){font-size:0}
-    #view .card > table thead tr th:nth-child(10)::before{content:"操作";font-size:13px}
+    #view .card > table thead tr th:nth-child(10)::before{content:"编号";font-size:13px}
+    #view .card > table thead tr th:nth-child(11){font-size:0}
+    #view .card > table thead tr th:nth-child(11)::before{content:"操作";font-size:13px}
     /* iPhone 列表紧凑化：badge / 工作台状态徽章 与 列间距 */
     #view .card > table .badge{padding:2px 6px;font-size:11px}
     #view .card > table .wb{padding:2px 6px;font-size:11px}
@@ -720,6 +722,43 @@ async function loadCustomers(force){
 }
 function invalidateCustomers(){ customersCache = null; }
 
+// 增员状态映射缓存：客户列表「增员状态」列 + 工作台统计卡共用
+// active: customer_id → 未删除候选人 id；deleted: 曾增员（软删除记录）标识
+var rcMapCache = null;
+async function loadRcMap(force){
+  if(!force && rcMapCache) return rcMapCache;
+  var r = await callFn('recruit_candidates', {action:'rcMap'});
+  var map = { active:{}, deleted:{} };
+  (r.rows || []).forEach(function(x){
+    if(x.deleted_at) map.deleted[x.customer_id] = true;
+    else map.active[x.customer_id] = x.id;
+  });
+  rcMapCache = map;
+  return map;
+}
+function invalidateRcMap(){ rcMapCache = null; }
+
+// 「增员状态」列单元格：增员中（跳详情）/ 曾增员标识 + 转增员（预填新增弹窗）
+function renderRcCell(c){
+  var rcId = rcMapCache ? rcMapCache.active[c.Id] : null;
+  var toRc = function(){
+    return el('a', {style:'font-size:12px;color:#475569;border:1px dashed #94a3b8;border-radius:10px;padding:2px 8px;cursor:pointer;white-space:nowrap',
+      onclick:function(){ openCandidateForm(null, c); }}, '+ 转增员');
+  };
+  if(rcId){
+    return el('a', {style:'font-size:12px;font-weight:600;color:#166534;background:#dcfce7;border-radius:10px;padding:2px 8px;cursor:pointer;white-space:nowrap',
+      onclick:function(){ location.hash='#/recruit/'+rcId; }}, '增员中');
+  }
+  if(rcMapCache && rcMapCache.deleted[c.Id]){
+    var wrap = el('span', {});
+    wrap.appendChild(el('span', {style:'font-size:11px;color:#94a3b8;background:#f1f5f9;border-radius:10px;padding:2px 6px;margin-right:4px;white-space:nowrap',
+      title:'该客户曾进入增员流程后移除'}, '曾增员'));
+    wrap.appendChild(toRc());
+    return wrap;
+  }
+  return toRc();
+}
+
 // 客户端排序比较（口径与云函数一致，另支持工作台状态 wb_status）
 function cmpCustomerRows(a, b, field, asc){
   var va, vb;
@@ -736,7 +775,7 @@ function cmpCustomerRows(a, b, field, asc){
 }
 
 var LIST_PAGE_SIZE = 50; // 列表每页最多 50 行
-// 共享客户表格：10 列（含工作台状态），表头可点击排序，每页 50 行分页
+// 共享客户表格：11 列（含工作台状态 + 增员状态），表头可点击排序，每页 50 行分页
 function renderCustomerTable(card, rows, state, rerender, emptyText){
   card.innerHTML = '';
   if(!rows.length){
@@ -763,6 +802,7 @@ function renderCustomerTable(card, rows, state, rerender, emptyText){
   htr.appendChild(makeSortHeader('latest_followup_date', '本次跟进日期', state, rerender));
   htr.appendChild(makeSortHeader('next_followup_date', '下次跟进日期', state, rerender));
   htr.appendChild(makeSortHeader('wb_status', '工作台状态', state, rerender));
+  htr.appendChild(el('th', {}, '增员状态'));
   htr.appendChild(makeSortHeader('Id', '编号', state, rerender));
   htr.appendChild(el('th', {}, '操作'));
   thead.appendChild(htr);
@@ -780,6 +820,7 @@ function renderCustomerTable(card, rows, state, rerender, emptyText){
       el('td', {}, c.latest_followup_date ? String(c.latest_followup_date).slice(0,10) : '-'),
       el('td', {}, c.next_followup_date ? String(c.next_followup_date).slice(0,10) : '-'),
       el('td', {}, el('span', {class:s.badge}, s.label)),
+      el('td', {}, renderRcCell(c)),
       el('td', {}, String(c.Id)),
       el('td', {}, el('a', {onclick:function(){ location.hash='#/customer/'+c.Id; }}, '详情')),
     ]));
@@ -809,7 +850,9 @@ async function showDashboard(){
   function renderTable(){
     var kw = dashState.keyword.trim().toLowerCase();
     var filtered = rows;
-    if(dashState.filter) filtered = filtered.filter(function(c){ return c._wb.key === dashState.filter; });
+    if(dashState.filter === 'rc_in') filtered = filtered.filter(function(c){ return rcMapCache && rcMapCache.active[c.Id]; });
+    else if(dashState.filter === 'rc_out') filtered = filtered.filter(function(c){ return !(rcMapCache && rcMapCache.active[c.Id]); });
+    else if(dashState.filter) filtered = filtered.filter(function(c){ return c._wb.key === dashState.filter; });
     if(kw) filtered = filtered.filter(function(c){
       return (c.customer_name && c.customer_name.toLowerCase().indexOf(kw) !== -1) ||
              (c.phone && String(c.phone).indexOf(kw) !== -1) ||
@@ -846,6 +889,7 @@ async function showDashboard(){
 
   try {
     rows = await loadCustomers();
+    await loadRcMap();
     card.innerHTML = '';
 
     var todayStr = dayStr(new Date());
@@ -854,10 +898,11 @@ async function showDashboard(){
       el('span', {class:'dash-date'}, todayStr + ' 星期' + '日一二三四五六'[new Date().getDay()]),
     ]));
 
-    // 分类统计
-    var counts = {all:rows.length, today:0, overdue:0, month:0, stale:0};
+    // 分类统计（含增员状态维度）
+    var counts = {all:rows.length, today:0, overdue:0, month:0, stale:0, rc_in:0, rc_out:0};
     rows.forEach(function(c){
       if(counts[c._wb.key] != null) counts[c._wb.key]++;
+      if(rcMapCache.active[c.Id]) counts.rc_in++; else counts.rc_out++;
     });
 
     // 统计卡：点击即筛选下方表格，再点一次取消筛选
@@ -876,6 +921,8 @@ async function showDashboard(){
         'month':   {sortField:'next_followup_date', sortDir:'asc'},
         'overdue': {sortField:'next_followup_date', sortDir:'asc'},
         'stale':   {sortField:'wb_status',          sortDir:'asc'},
+        'rc_in':   {sortField:'wb_status',          sortDir:'asc'},
+        'rc_out':  {sortField:'wb_status',          sortDir:'asc'},
       };
       item.onclick = function(){
         dashState.filter = (dashState.filter === key ? '' : key);
@@ -894,6 +941,8 @@ async function showDashboard(){
       statCard('未来30天到期', counts.month, 'month', '');
       statCard('已逾期', counts.overdue, 'overdue', counts.overdue ? 'stat-danger' : '');
       statCard('久未联系(30天+)', counts.stale, 'stale', counts.stale ? 'stat-warn' : '');
+      statCard('增员中', counts.rc_in, 'rc_in', '');
+      statCard('转增员', counts.rc_out, 'rc_out', '');
       statCard('客户总数', counts.all, '', '');
     }
     renderStats();
@@ -962,6 +1011,7 @@ async function showList(){
   try {
     // 全量拉取（与工作台共用缓存），客户端搜索 / 排序 / 分页（每页 50 行）
     var rows = await loadCustomers();
+    await loadRcMap();
     var kw = listState.keyword.trim().toLowerCase();
     var filtered = kw ? rows.filter(function(c){
       return (c.customer_name && c.customer_name.toLowerCase().indexOf(kw) !== -1) ||
@@ -2864,6 +2914,7 @@ async function showCandidateDetail(id, tab){
         try {
           var dr = await callFn('recruit_candidates', {action:'remove', id:id});
           if(dr.error){ toast(dr.error, 'error'); return; }
+          invalidateRcMap(); // 删除后客户列表自动回退为「转增员」
           toast('已删除');
           location.hash = '#/recruit';
         } catch(e){ toast(e.message, 'error'); }
@@ -3261,29 +3312,23 @@ function rcInfoRow(label, value){
   ]);
 }
 
-// 新增/编辑候选人表单
-function openCandidateForm(id){
+// 新增/编辑候选人表单（presetCust：客户列表「转增员」带入的客户对象，跳过搜索直接只读展示）
+function openCandidateForm(id, presetCust){
   var isNew = !id;
   var overlay = el('div', {style:'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px'});
   var modal = el('div', {class:'card', style:'max-width:500px;width:100%;max-height:85vh;overflow-y:auto;padding:20px'});
 
-  var title = isNew ? '新增候选人' : '编辑候选人';
+  var title = isNew ? (presetCust ? '转增员 · 新增候选人' : '新增候选人') : '编辑候选人';
   modal.appendChild(el('h2', {style:'margin-bottom:12px'}, title));
 
   var form = el('div');
   var inputs = {};
 
-  // 新增时：输入客户姓名，失焦搜索客户表；找到则带出信息只读展示（修改需去客户管理），未找到提示先建客户
+  // 新增时：客户来源两种——presetCust（客户列表「转增员」带入，直接只读展示）
+  // 或手动输入姓名失焦搜索（找到带出只读展示，未找到提示先建客户）
   if(isNew){
-    var custRow = el('div', {style:'margin-bottom:8px'});
-    custRow.appendChild(el('label', {style:'display:block;font-size:13px;color:var(--muted);margin-bottom:2px'}, '客户姓名 *（输入后离开输入框自动搜索）'));
-    var custInput = el('input', {type:'text', placeholder:'输入客户姓名…', style:'width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:14px'});
-    var custResult = el('div', {style:'display:none;margin-top:6px'});
-    var selectedCust = null;
-
-    function showCustInfo(c){
-      custResult.innerHTML = '';
-      custResult.style.display = 'block';
+    // 客户信息只读卡片（搜索匹配 / 预填带入共用）
+    function custInfoBox(c){
       var box = el('div', {style:'border:1px solid var(--border);border-radius:6px;padding:8px 10px;background:#f8fafc'});
       box.appendChild(el('div', {style:'font-size:13px;font-weight:600;margin-bottom:4px'}, '✓ 已关联客户：' + (c.customer_name || '')));
       var grid = el('div', {style:'display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:12px;color:var(--text-secondary)'});
@@ -3292,7 +3337,24 @@ function openCandidateForm(id){
       });
       box.appendChild(grid);
       box.appendChild(el('div', {style:'font-size:11px;color:var(--muted);margin-top:4px'}, '客户基础信息只读，如需修改请到客户管理中编辑'));
-      custResult.appendChild(box);
+      return box;
+    }
+    var selectedCust = null;
+    var custRow = el('div', {style:'margin-bottom:8px'});
+    if(presetCust){
+      selectedCust = presetCust;
+      custRow.appendChild(el('label', {style:'display:block;font-size:13px;color:var(--muted);margin-bottom:2px'}, '关联客户（已从客户列表带入，只读）'));
+      custRow.appendChild(custInfoBox(presetCust));
+      form.appendChild(custRow);
+    } else {
+    custRow.appendChild(el('label', {style:'display:block;font-size:13px;color:var(--muted);margin-bottom:2px'}, '客户姓名 *（输入后离开输入框自动搜索）'));
+    var custInput = el('input', {type:'text', placeholder:'输入客户姓名…', style:'width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:14px'});
+    var custResult = el('div', {style:'display:none;margin-top:6px'});
+
+    function showCustInfo(c){
+      custResult.innerHTML = '';
+      custResult.style.display = 'block';
+      custResult.appendChild(custInfoBox(c));
     }
 
     custInput.addEventListener('blur', function(){
@@ -3330,6 +3392,7 @@ function openCandidateForm(id){
     custRow.appendChild(custInput);
     custRow.appendChild(custResult);
     form.appendChild(custRow);
+    }
     inputs._customer_id = { _getCustId: function(){ return selectedCust ? selectedCust.Id : null; } };
   }
 
@@ -3445,6 +3508,7 @@ function openCandidateForm(id){
         var r = await callFn('recruit_candidates', {action:'create', data:data});
         if(r.error){ toast(r.error, 'error'); saveBtn.disabled = false; saveBtn.textContent = '保存'; return; }
         createdId = r.id;
+        invalidateRcMap(); // 增员状态变化：客户列表/工作台统计卡联动
         toast('创建成功，可继续上传评估附件');
         // 切换为「已创建-上传附件」状态：表单区收起，附件区激活
         form.style.display = 'none';

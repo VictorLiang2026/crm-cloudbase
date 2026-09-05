@@ -11,6 +11,8 @@
  *   update:  { action:'update', id, data:{...} } → { ok }
  *   remove:  { action:'remove', id } → { ok }（软删除 deleted_at）
  *   funnel:  { action:'funnel' } → { funnel, total }
+ *   rcMap:   { action:'rcMap' } → { rows:[{id, customer_id, deleted_at}] }
+ *            （客户列表「增员状态」列映射：含已删除记录用于「曾增员」标识）
  */
 'use strict';
 
@@ -37,6 +39,7 @@ exports.main = async (event, context) => {
       case 'update': return await update(event);
       case 'remove': return await remove(event);
       case 'funnel': return await funnel(event);
+      case 'rcMap':  return await rcMap();
       default: return { error: 'unknown action: ' + action };
     }
   } catch (e) {
@@ -97,6 +100,10 @@ async function get(event) {
 async function create(event) {
   const data = event.data || {};
   if (!data.customer_id) return { error: 'customer_id required（增员对象必须先是客户）' };
+  // 防重：同一客户至多一条未删除的候选人记录（与 uq_recruit_candidates_customer_active 一致）
+  const dup = assertOk(await rdb.from('recruit_candidates')
+    .select('id').eq('customer_id', data.customer_id).is('deleted_at', null).limit(1).maybeSingle());
+  if (dup.data) return { error: '该客户已在增员列表中', existing_id: dup.data.id };
   const payload = normFields(data, FIELDS);
   const ts = nowIso();
   payload.created_at = ts;
@@ -151,4 +158,11 @@ async function funnel(event) {
   const funnel = {};
   for (const r of (res.data || [])) funnel[r.stage] = (funnel[r.stage] || 0) + 1;
   return { funnel, total: (res.data || []).length };
+}
+
+// rcMap：客户列表「增员状态」列映射（含已删除记录 → 曾增员标识）
+async function rcMap(event) {
+  const res = assertOk(await rdb.from('recruit_candidates')
+    .select('id, customer_id, deleted_at'));
+  return { rows: res.data || [] };
 }
