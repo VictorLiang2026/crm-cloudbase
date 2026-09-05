@@ -542,8 +542,9 @@ function el(tag, attrs, children){
   if(children){
     if(!Array.isArray(children)) children = [children];
     children.forEach(function(c){
-      if(c==null) return;
-      n.appendChild(typeof c==='string' ? document.createTextNode(c) : c);
+      if(c==null || c===false) return;
+      if(typeof c==='string' || typeof c==='number' || typeof c==='boolean') n.appendChild(document.createTextNode(String(c)));
+      else n.appendChild(c); // 仅追加真实 Node；防止数字等非 Node 入参导致 appendChild 抛错整页白屏
     });
   }
   return n;
@@ -2901,8 +2902,8 @@ async function showRecruitActivity(){
         var color = r.achieve_rate >= 80 ? '#059669' : (r.achieve_rate >= 40 ? '#d97706' : '#dc2626');
         tbody.appendChild(el('tr', {}, [
           el('td', {}, r.stage || '-'),
-          el('td', {}, r.target == null ? '-' : r.target),
-          el('td', {}, r.actual == null ? '-' : r.actual),
+          el('td', {}, r.target == null ? '-' : String(r.target)),
+          el('td', {}, r.actual == null ? '-' : String(r.actual)),
           el('td', {style:'color:'+color+';font-weight:600'}, rateTxt),
         ]));
       });
