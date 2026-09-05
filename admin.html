@@ -58,6 +58,8 @@
   .btn-danger:hover{background:#fef2f2}
   .btn-ghost{background:transparent;border-color:transparent;color:var(--pri)}
   .btn-ghost:hover{background:var(--pri-light)}
+  .btn-green{background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-color:#059669;font-weight:700;box-shadow:0 2px 8px rgba(16,185,129,.3)}
+  .btn-green:hover{background:linear-gradient(135deg,#34d399,#10b981);border-color:#10b981;box-shadow:0 4px 12px rgba(16,185,129,.45);transform:translateY(-1px)}
   .btn-recruit{background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border-color:#d97706;font-weight:700;padding:8px 24px;box-shadow:0 2px 8px rgba(245,158,11,.35)}
   .btn-recruit:hover{background:linear-gradient(135deg,#fbbf24,#f59e0b);border-color:#f59e0b;box-shadow:0 4px 12px rgba(245,158,11,.5);transform:translateY(-1px)}
   table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
@@ -909,7 +911,7 @@ async function showDashboard(){
     searchInput,
     el('button', {class:'btn', onclick:doSearch}, '搜索'),
     el('button', {class:'btn btn-primary', onclick:function(){ openCustomerForm(null); }}, '+ 新增客户'),
-    el('button', {class:'btn', onclick:function(){ location.hash='#/customers'; }}, '全部客户 →'),
+    el('button', {class:'btn btn-green', onclick:function(){ location.hash='#/customers'; }}, '全部客户'),
     el('button', {class:'btn', onclick:function(){ openAiParse(); }}, 'AI 解析新增'),
     el('button', {class:'btn', onclick:function(){ location.hash='#/ai-suggestions'; }}, 'AI 建议'),
     el('button', {class:'btn', onclick:function(){ location.hash='#/activity/customer'; }}, '活动量'),
