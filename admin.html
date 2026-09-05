@@ -2063,7 +2063,7 @@ async function showAiSuggestions(){
   }
   var hasFilter = aiSugState.mode !== 'keyword' || !!aiSugState.keyword;
   view.appendChild(el('div', {class:'toolbar'}, [
-    el('a', {onclick:function(){ location.hash='#/'; }}, '← 返回客户工作台'),
+    el('button', {class:'btn', onclick:function(){ location.hash='#/'; }}, '← 客户工作台'),
     el('span', {style:'width:1px;height:20px;background:var(--border);align-self:center'}),
   ].concat(modeBtns).concat(filterControls).concat([
     el('button', {class:'btn', onclick:doReset}, '重置'),
