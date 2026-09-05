@@ -881,6 +881,7 @@ async function showDashboard(){
     el('button', {class:'btn btn-primary', onclick:function(){ openCustomerForm(null); }}, '+ 新增客户'),
     el('button', {class:'btn', onclick:function(){ openAiParse(); }}, 'AI 解析新增'),
     el('button', {class:'btn', onclick:function(){ location.hash='#/ai-suggestions'; }}, 'AI 建议'),
+    el('button', {class:'btn', onclick:function(){ location.hash='#/activity/customer'; }}, '活动量'),
     el('button', {class:'btn btn-recruit', onclick:function(){ location.hash='#/recruit'; }}, '增员'),
     el('button', {class:'btn', onclick:function(){ location.hash='#/customers'; }, style:'margin-left:auto'}, '全部客户 →'),
   ]);
