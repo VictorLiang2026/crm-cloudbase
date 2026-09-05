@@ -50,7 +50,7 @@ async function list(event) {
   const customerId = parseInt(event.customer_id, 10);
   if (!customerId) return { error: 'customer_id required' };
   const r = assertOk(await rdb.from('policy_review_reports').select()
-    .eq('customer_id', customerId)
+    .eq('customer_id', customerId).is('deleted_at', null)
     .order('report_date', { ascending: false, nullsFirst: false })
     .order('id', { ascending: false }));
   return { rows: r.data || [] };

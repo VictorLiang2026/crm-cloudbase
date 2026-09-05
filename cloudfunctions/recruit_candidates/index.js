@@ -9,7 +9,10 @@
  *   get:     { action:'get', id } → { candidate, milestones }
  *   create:  { action:'create', data:{customer_id, ...} } → { id }
  *   update:  { action:'update', id, data:{...} } → { ok }
- *   remove:  { action:'remove', id } → { ok }（软删除 deleted_at）
+ *   remove:  { action:'remove', id } → { ok, cascaded }（软删除 deleted_at，级联标记增员跟进）
+ *   trashList: { action:'trashList', page?, pageSize?, keyword?, sortDir? } → { rows, total, ... }
+ *              （增员回收站：软删除候选人走视图 v_recruit_candidates_trash，默认按删除时间倒序）
+ *   restore: { action:'restore', ids:[...] } → { ok, restored, cascaded }（恢复候选人及其跟进；客户已删除时报错）
  *   funnel:  { action:'funnel' } → { funnel, total }
  *   rcMap:   { action:'rcMap' } → { rows:[{id, customer_id, deleted_at}] }
  *            （客户列表「增员状态」列映射：含已删除记录用于「曾增员」标识）
@@ -37,7 +40,9 @@ exports.main = async (event, context) => {
       case 'get':    return await get(event);
       case 'create': return await create(event);
       case 'update': return await update(event);
-      case 'remove': return await remove(event);
+      case 'remove':  return await remove(event);
+      case 'trashList': return await trashList(event);
+      case 'restore': return await restore(event);
       case 'funnel': return await funnel(event);
       case 'rcMap':  return await rcMap();
       default: return { error: 'unknown action: ' + action };
@@ -147,9 +152,92 @@ async function update(event) {
 async function remove(event) {
   const id = parseInt(event.id, 10);
   if (!id) return { error: 'id required' };
+  const ts = nowIso();
   const r = assertOk(await rdb.from('recruit_candidates')
-    .update({ deleted_at: nowIso() }).eq('id', id).is('deleted_at', null).select('id'));
-  return { ok: (r.data || []).length === 1 };
+    .update({ deleted_at: ts }).eq('id', id).is('deleted_at', null).select('id'));
+  if (!(r.data || []).length) return { ok: false, error: 'not found or already deleted' };
+  // 级联标记增员跟进（同一时间戳，恢复用）
+  const cf = assertOk(await rdb.from('recruit_followups')
+    .update({ deleted_at: ts }).eq('candidate_id', id).is('deleted_at', null).select('id'));
+  return { ok: true, deleted_at: ts, cascaded: { recruit_followups: (cf.data || []).length } };
+}
+
+// 增员回收站列表：走 v_recruit_candidates_trash 视图（含客户基础信息与删除时间）
+async function trashList(event) {
+  const page = Math.max(1, parseInt(event.page || 1, 10));
+  const pageSize = Math.min(100, Math.max(1, parseInt(event.pageSize || 50, 10)));
+  const keyword = (event.keyword || '').trim();
+  const sortDir = event.sortDir === 'asc' ? 'asc' : 'desc';
+
+  const res = assertOk(await rdb.from('v_recruit_candidates_trash').select('*'));
+  let rows = res.data || [];
+
+  if (keyword) {
+    const kw = keyword.toLowerCase();
+    rows = rows.filter(r =>
+      (r.customer_name && r.customer_name.toLowerCase().indexOf(kw) !== -1) ||
+      (r.phone && String(r.phone).indexOf(kw) !== -1) ||
+      (r.occupation && r.occupation.toLowerCase().indexOf(kw) !== -1)
+    );
+  }
+
+  // 默认按删除时间倒序（candidate_deleted_at）
+  rows.sort((a, b) => {
+    const va = a.candidate_deleted_at || '', vb = b.candidate_deleted_at || '';
+    if (va < vb) return sortDir === 'asc' ? -1 : 1;
+    if (va > vb) return sortDir === 'asc' ? 1 : -1;
+    return (b.candidate_id || 0) - (a.candidate_id || 0);
+  });
+
+  const total = rows.length;
+  const offset = (page - 1) * pageSize;
+  const pageRows = rows.slice(offset, offset + pageSize);
+
+  // 页内候选人的跟进计数（被级联标记的）
+  const counts = {};
+  if (pageRows.length) {
+    const ids = pageRows.map(r => r.candidate_id);
+    const set = new Set(ids);
+    const cf = assertOk(await rdb.from('recruit_followups').select('candidate_id, deleted_at'));
+    for (const cid of ids) counts[cid] = { followups: 0 };
+    for (const f of (cf.data || [])) {
+      if (f.deleted_at && set.has(f.candidate_id)) counts[f.candidate_id].followups++;
+    }
+  }
+
+  return { rows: pageRows, total, page, pageSize, counts };
+}
+
+// 恢复候选人及其级联标记的跟进；客户仍处于删除状态时要求先恢复客户
+async function restore(event) {
+  const ids = Array.isArray(event.ids)
+    ? event.ids.map(x => parseInt(x, 10)).filter(Boolean)
+    : (event.id ? [parseInt(event.id, 10)] : []);
+  if (!ids.length) return { error: 'ids required' };
+
+  let restored = 0;
+  let cascadedFollowups = 0;
+  const skipped = [];
+  for (const id of ids) {
+    const c = assertOk(await rdb.from('recruit_candidates')
+      .select('id, customer_id').eq('id', id).maybeSingle());
+    if (!c.data) continue;
+    // 客户已删除 → 先恢复客户
+    const cust = assertOk(await rdb.from('customers')
+      .select('Id, deleted_at').eq('Id', c.data.customer_id).maybeSingle());
+    if (cust.data && cust.data.deleted_at) {
+      skipped.push({ id, reason: '客户仍在回收站，请先恢复客户' });
+      continue;
+    }
+    const u = assertOk(await rdb.from('recruit_candidates')
+      .update({ deleted_at: null }).eq('id', id).select('id'));
+    if (!(u.data || []).length) continue;
+    restored++;
+    const uf = assertOk(await rdb.from('recruit_followups')
+      .update({ deleted_at: null }).eq('candidate_id', id).select('id'));
+    cascadedFollowups += (uf.data || []).length;
+  }
+  return { ok: true, restored, cascaded: { recruit_followups: cascadedFollowups }, skipped };
 }
 
 async function funnel(event) {

@@ -34,7 +34,7 @@ exports.main = async (event, context) => {
 async function list(event) {
   const customerId = parseInt(event.customer_id, 10);
   if (!customerId) return { error: 'customer_id required' };
-  const r = assertOk(await rdb.from('products').select().eq('customer_id', customerId));
+  const r = assertOk(await rdb.from('products').select().eq('customer_id', customerId).is('deleted_at', null));
   return { rows: r.data || [] };
 }
 

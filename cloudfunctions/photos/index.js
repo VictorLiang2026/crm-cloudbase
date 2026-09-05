@@ -34,7 +34,7 @@ async function list(event) {
   if (!customerId) return { error: 'customer_id required' };
   let q = rdb.from('photos')
     .select('id, customer_id, customer_name, file_name, content_type, sort_order, created_at, photo_notes, category')
-    .eq('customer_id', customerId);
+    .eq('customer_id', customerId).is('deleted_at', null);
   const category = event.category;
   if (category === 'photo' || category === 'attachment') {
     q = q.eq('category', category);

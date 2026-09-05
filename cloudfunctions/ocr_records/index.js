@@ -36,7 +36,7 @@ async function list(event) {
   if (!customerId) return { error: 'customer_id required' };
   const r = assertOk(await rdb.from('ocr_records')
     .select('id, customer_id, summary, raw_text, file_ids, file_names, created_at, updated_at')
-    .eq('customer_id', customerId)
+    .eq('customer_id', customerId).is('deleted_at', null)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false }));
   return { rows: r.data || [] };

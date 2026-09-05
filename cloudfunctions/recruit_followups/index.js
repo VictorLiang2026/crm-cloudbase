@@ -38,7 +38,7 @@ async function list(event) {
   const candidateId = parseInt(event.candidate_id, 10);
   if (!candidateId) return { error: 'candidate_id required' };
   const r = assertOk(await rdb.from('recruit_followups').select()
-    .eq('candidate_id', candidateId)
+    .eq('candidate_id', candidateId).is('deleted_at', null)
     .order('followup_date', { ascending: false, nullsFirst: false })
     .order('id', { ascending: false }));
   return { rows: r.data || [] };

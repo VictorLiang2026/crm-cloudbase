@@ -657,8 +657,10 @@ function route(){
   if(rc) return showCandidateDetail(parseInt(rc[1],10));
   if(hash === '#/recruit') return showRecruit();
   if(hash === '#/recruit/goals') return showRecruitGoals();
+  if(hash === '#/recruit/trash') return showRecruitTrash();
   if(hash === '#/ai-suggestions') return showAiSuggestions();
   if(hash === '#/customers') return showList();
+  if(hash === '#/customers/trash') return showCustomerTrash();
   showDashboard();
 }
 
@@ -851,7 +853,6 @@ async function showDashboard(){
     var kw = dashState.keyword.trim().toLowerCase();
     var filtered = rows;
     if(dashState.filter === 'rc_in') filtered = filtered.filter(function(c){ return rcMapCache && rcMapCache.active[c.Id]; });
-    else if(dashState.filter === 'rc_out') filtered = filtered.filter(function(c){ return !(rcMapCache && rcMapCache.active[c.Id]); });
     else if(dashState.filter) filtered = filtered.filter(function(c){ return c._wb.key === dashState.filter; });
     if(kw) filtered = filtered.filter(function(c){
       return (c.customer_name && c.customer_name.toLowerCase().indexOf(kw) !== -1) ||
@@ -899,10 +900,10 @@ async function showDashboard(){
     ]));
 
     // 分类统计（含增员状态维度）
-    var counts = {all:rows.length, today:0, overdue:0, month:0, stale:0, rc_in:0, rc_out:0};
+    var counts = {all:rows.length, today:0, overdue:0, month:0, stale:0, rc_in:0};
     rows.forEach(function(c){
       if(counts[c._wb.key] != null) counts[c._wb.key]++;
-      if(rcMapCache.active[c.Id]) counts.rc_in++; else counts.rc_out++;
+      if(rcMapCache.active[c.Id]) counts.rc_in++;
     });
 
     // 统计卡：点击即筛选下方表格，再点一次取消筛选
@@ -922,7 +923,6 @@ async function showDashboard(){
         'overdue': {sortField:'next_followup_date', sortDir:'asc'},
         'stale':   {sortField:'wb_status',          sortDir:'asc'},
         'rc_in':   {sortField:'wb_status',          sortDir:'asc'},
-        'rc_out':  {sortField:'wb_status',          sortDir:'asc'},
       };
       item.onclick = function(){
         dashState.filter = (dashState.filter === key ? '' : key);
@@ -942,7 +942,6 @@ async function showDashboard(){
       statCard('已逾期', counts.overdue, 'overdue', counts.overdue ? 'stat-danger' : '');
       statCard('久未联系(30天+)', counts.stale, 'stale', counts.stale ? 'stat-warn' : '');
       statCard('增员中', counts.rc_in, 'rc_in', '');
-      statCard('转增员', counts.rc_out, 'rc_out', '');
       statCard('客户总数', counts.all, '', '');
     }
     renderStats();
@@ -1002,6 +1001,7 @@ async function showList(){
   toolbar.appendChild(el('button', {class:'btn btn-primary', onclick:function(){ openCustomerForm(null); }}, '+ 新增客户'));
   toolbar.appendChild(el('button', {class:'btn', onclick:function(){ openAiParse(); }}, 'AI 解析新增'));
   toolbar.appendChild(el('button', {class:'btn', onclick:function(){ location.hash='#/ai-suggestions'; }}, 'AI 建议'));
+  toolbar.appendChild(el('button', {class:'btn', onclick:function(){ location.hash='#/customers/trash'; }}, '回收站'));
   view.appendChild(toolbar);
 
   var card = el('div', {class:'card'});
@@ -1054,6 +1054,14 @@ async function showDetail(id){
   view.appendChild(el('div', {class:'toolbar'}, [
     el('a', {onclick:function(){ location.hash='#/'; }}, '← 工作台'),
     el('a', {onclick:function(){ location.hash='#/customers'; }, style:'margin-left:14px'}, '客户列表'),
+    el('a', {onclick:async function(){
+      if(!confirm('确认删除该客户？\n\n其跟进记录、伴手礼、照片/附件、保单检视报告、AI 解析记录、产品额度及名下增员候选人将一并移入回收站，可随时恢复。')) return;
+      var r = await callFn('customers', {action:'remove', id:id});
+      if(r.error){ toast('删除失败：'+r.error); return; }
+      invalidateCustomers(); invalidateRcMap();
+      toast('已移入回收站');
+      location.hash = '#/customers';
+    }, style:'margin-left:auto;color:#dc2626;font-weight:600'}, '删除客户'),
   ]));
   var card = el('div', {class:'card'});
   card.appendChild(el('div', {class:'loading'}, '加载中…'));
@@ -2394,6 +2402,7 @@ async function showRecruit(){
     el('button', {class:'btn', onclick:doSearch}, '搜索'),
     el('button', {class:'btn btn-primary', onclick:function(){ openCandidateForm(null); }}, '+ 新增候选人'),
     el('button', {class:'btn btn-recruit', onclick:function(){ location.hash='#/recruit/goals'; }}, '目标管理'),
+    el('button', {class:'btn', onclick:function(){ location.hash='#/recruit/trash'; }}, '回收站'),
   ]);
   view.appendChild(toolbar);
 
@@ -2438,6 +2447,208 @@ async function showRecruit(){
     funnelCard.innerHTML = '';
     funnelCard.appendChild(el('div', {class:'error'}, '加载失败：' + esc(e.message)));
   }
+}
+
+// ==================== 回收站（客户域 + 增员域） ====================
+// 删除语义：应用内直接删除子记录 = 硬删除（不进回收站）；
+//           删除客户/增员候选人 = 级联软删除（打 deleted_at 标记，进回收站，可恢复）
+var custTrashState = { page:1, pageSize:50, keyword:'', sortDir:'desc', checked:{} };
+var rcTrashState   = { page:1, pageSize:50, keyword:'', sortDir:'desc', checked:{} };
+
+function fmtTrashTime(s){ return s ? String(s).replace('T',' ').slice(0,16) : '-'; }
+
+// 通用回收站页面：opt = { state, backHash, backLabel, emptyText, fetch(), restoreFn(ids), afterRestore(), columns(), rowCells(row, tr) }
+// columns() → [{label, sortKey?}]；rowCells(row, tr) → 追加若干 td（tr 为表格行容器）
+async function renderTrashPage(opt){
+  var state = opt.state;
+  var view = $('view');
+  view.innerHTML = '';
+
+  var searchInput = el('input', {type:'search', placeholder:'搜索姓名/电话', value:state.keyword});
+  searchInput.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ state.keyword = searchInput.value; state.page = 1; opt.reload(); } });
+
+  var batchBtn = el('button', {class:'btn', disabled:true, onclick:batchRestore}, '批量恢复');
+  var toolbar = el('div', {class:'toolbar'}, [
+    el('button', {class:'btn', onclick:function(){ location.hash=opt.backHash; }}, '← '+opt.backLabel),
+    searchInput,
+    el('button', {class:'btn', onclick:function(){ state.keyword = searchInput.value; state.page = 1; opt.reload(); }}, '搜索'),
+    el('span', {style:'flex:1'}, ''),
+    batchBtn,
+  ]);
+  function updateBatchBtn(){
+    var n = 0; for(var k in state.checked) if(state.checked[k]) n++;
+    batchBtn.disabled = n === 0;
+    batchBtn.textContent = n ? '批量恢复('+n+')' : '批量恢复';
+  }
+  async function batchRestore(){
+    var ids = []; for(var k in state.checked) if(state.checked[k]) ids.push(parseInt(k,10));
+    if(!ids.length) return;
+    if(!confirm('确认恢复选中的 '+ids.length+' 项？其关联数据将一并恢复。')) return;
+    var r = await opt.restoreFn(ids);
+    if(r && r.error){ toast('恢复失败：'+r.error, 'error'); return; }
+    if(r && r.skipped && r.skipped.length){
+      toast('恢复 '+r.restored+' 项；'+r.skipped.length+' 项跳过（'+r.skipped[0].reason+'）', 'error');
+    } else {
+      toast('已恢复'+(r && r.restored != null ? ' '+r.restored+' 项' : ''));
+    }
+    state.checked = {};
+    opt.afterRestore();
+    opt.reload();
+  }
+  view.appendChild(toolbar);
+
+  var card = el('div', {class:'card', style:'padding:0'});
+  card.appendChild(el('div', {class:'loading'}, '加载中…'));
+  view.appendChild(card);
+
+  try {
+    var data = await opt.fetch();
+    card.innerHTML = '';
+    var rows = data.rows || [];
+    var counts = data.counts || {};
+    if(!rows.length){
+      card.appendChild(el('div', {class:'empty'}, opt.emptyText || '回收站为空'));
+      return;
+    }
+
+    var table = el('table');
+    var thead = el('thead'); var htr = el('tr');
+    htr.appendChild(el('th', {style:'width:30px'}, ''));
+    opt.columns().forEach(function(col){
+      if(col.sortKey){
+        htr.appendChild(el('th', {style:'cursor:pointer;user-select:none', onclick:function(){
+          state.sortDir = (state.sortDir === 'desc' ? 'asc' : 'desc');
+          opt.reload();
+        }}, col.label + (state.sortDir === 'desc' ? ' ↓' : ' ↑')));
+      } else {
+        htr.appendChild(el('th', {}, col.label));
+      }
+    });
+    htr.appendChild(el('th', {}, '操作'));
+    thead.appendChild(htr);
+    table.appendChild(thead);
+
+    var tbody = el('tbody');
+    rows.forEach(function(row){
+      var id = row._id;
+      var tr = el('tr');
+      var cb = el('input', {type:'checkbox'});
+      cb.onchange = function(){ state.checked[id] = cb.checked; updateBatchBtn(); };
+      tr.appendChild(el('td', {}, cb));
+      opt.rowCells(row, tr, counts);
+      tr.appendChild(el('td', {}, el('a', {onclick:function(){ opt.restoreOne(id); }}, '恢复')));
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    card.appendChild(table);
+
+    // 分页（每页最多 50 行）
+    var total = data.total || rows.length;
+    var pages = Math.max(1, Math.ceil(total / state.pageSize));
+    var pager = el('div', {class:'pager'});
+    pager.appendChild(el('button', {class:'btn btn-sm', disabled:state.page<=1, onclick:function(){ if(state.page>1){ state.page--; opt.reload(); } }}, '上一页'));
+    pager.appendChild(el('span', {}, state.page+' / '+pages+'（共'+total+'）'));
+    pager.appendChild(el('button', {class:'btn btn-sm', disabled:state.page>=pages, onclick:function(){ if(state.page<pages){ state.page++; opt.reload(); } }}, '下一页'));
+    card.appendChild(pager);
+  } catch(e){
+    card.innerHTML = '';
+    card.appendChild(el('div', {class:'error'}, '加载失败：' + esc(e.message)));
+  }
+}
+
+// ---------- 客户回收站 ----------
+async function showCustomerTrash(){
+  await renderTrashPage({
+    state: custTrashState,
+    backHash: '#/customers', backLabel: '客户列表',
+    emptyText: '回收站为空（删除客户后，其关联数据一并移入此处，可随时恢复）',
+    reload: showCustomerTrash,
+    fetch: function(){
+      return callFn('customers', {action:'trashList', page:custTrashState.page, pageSize:custTrashState.pageSize, keyword:custTrashState.keyword, sortDir:custTrashState.sortDir}).then(function(r){
+        (r.rows||[]).forEach(function(row){ row._id = row.Id; });
+        return r;
+      });
+    },
+    restoreFn: function(ids){ return callFn('customers', {action:'restore', ids:ids}); },
+    afterRestore: function(){ invalidateCustomers(); invalidateRcMap(); },
+    restoreOne: function(id){
+      if(!confirm('确认恢复该客户？其跟进记录、伴手礼、照片/附件、保单检视报告、AI 解析记录、产品额度及增员候选人将一并恢复。')) return;
+      callFn('customers', {action:'restore', ids:[id]}).then(function(r){
+        if(r.error){ toast('恢复失败：'+r.error, 'error'); return; }
+        invalidateCustomers(); invalidateRcMap();
+        toast('已恢复');
+        showCustomerTrash();
+      });
+    },
+    columns: function(){
+      return [
+        {label:'姓名'},
+        {label:'电话'},
+        {label:'删除时间', sortKey:'deleted_at'},
+        {label:'关联数据（移入回收站的记录）'},
+      ];
+    },
+    rowCells: function(row, tr, counts){
+      tr.appendChild(el('td', {}, el('a', {onclick:function(){ toast('已删除客户，恢复后方可查看详情'); }}, row.customer_name || ('客户#'+row.Id))));
+      tr.appendChild(el('td', {}, row.phone || '-'));
+      tr.appendChild(el('td', {}, fmtTrashTime(row.deleted_at)));
+      var parts = [];
+      var cnt = counts || {};
+      var labelMap = [['followups','跟进'],['gifts','礼品'],['photos','照片'],['policy_review_reports','报告'],['ocr_records','解析'],['products','额度'],['recruit_candidates','增员']];
+      labelMap.forEach(function(p){
+        var n = cnt[p[0]] || 0;
+        if(n) parts.push(p[1]+' '+n);
+      });
+      tr.appendChild(el('td', {style:'color:var(--muted);font-size:12px'}, parts.length ? parts.join(' · ') : '无'));
+    },
+  });
+}
+
+// ---------- 增员回收站 ----------
+async function showRecruitTrash(){
+  await renderTrashPage({
+    state: rcTrashState,
+    backHash: '#/recruit', backLabel: '增员列表',
+    emptyText: '回收站为空（删除候选人后，其增员跟进记录一并移入此处，可随时恢复）',
+    reload: showRecruitTrash,
+    fetch: function(){
+      return callFn('recruit_candidates', {action:'trashList', page:rcTrashState.page, pageSize:rcTrashState.pageSize, keyword:rcTrashState.keyword, sortDir:rcTrashState.sortDir}).then(function(r){
+        (r.rows||[]).forEach(function(row){ row._id = row.candidate_id; });
+        return r;
+      });
+    },
+    restoreFn: function(ids){ return callFn('recruit_candidates', {action:'restore', ids:ids}); },
+    afterRestore: function(){ invalidateRcMap(); },
+    restoreOne: function(id){
+      if(!confirm('确认恢复该候选人？其增员跟进记录将一并恢复。')) return;
+      callFn('recruit_candidates', {action:'restore', ids:[id]}).then(function(r){
+        if(r.error){ toast('恢复失败：'+r.error, 'error'); return; }
+        invalidateRcMap();
+        toast('已恢复');
+        showRecruitTrash();
+      });
+    },
+    columns: function(){
+      return [
+        {label:'姓名'},
+        {label:'电话'},
+        {label:'阶段'},
+        {label:'删除时间', sortKey:'deleted_at'},
+        {label:'跟进记录'},
+      ];
+    },
+    rowCells: function(row, tr, counts){
+      var c = counts[row._id] || {};
+      tr.appendChild(el('td', {}, [
+        el('a', {onclick:function(){ toast('已删除候选人，恢复后方可查看详情'); }}, row.customer_name || ('客户#'+row.customer_id)),
+        row.customer_deleted_at ? el('span', {class:'badge', style:'background:#e5e7eb;color:#6b7280;margin-left:6px;font-size:11px'}, '随客户删除') : null,
+      ]));
+      tr.appendChild(el('td', {}, row.phone || '-'));
+      tr.appendChild(el('td', {}, row.stage || '-'));
+      tr.appendChild(el('td', {}, fmtTrashTime(row.candidate_deleted_at)));
+      tr.appendChild(el('td', {style:'color:var(--muted);font-size:12px'}, c.followups ? '跟进 '+c.followups : '无'));
+    },
+  });
 }
 
 // ==================== 增员目标管理 ====================
@@ -2910,12 +3121,12 @@ async function showCandidateDetail(id, tab){
       el('button', {class:'btn', onclick:function(){ openCandidateForm(id); }}, '编辑'),
       el('button', {class:'btn', onclick:function(){ genRecruitScore(id); }}, 'AI 高潜评分'),
       el('button', {class:'btn btn-danger', style:'margin-left:auto', onclick:async function(){
-        if(!confirm('确认删除该候选人？客户记录保留，仅移除增员信息。')) return;
+        if(!confirm('确认删除该候选人？客户记录保留，其增员跟进记录将一并移入回收站，可随时恢复。')) return;
         try {
           var dr = await callFn('recruit_candidates', {action:'remove', id:id});
           if(dr.error){ toast(dr.error, 'error'); return; }
           invalidateRcMap(); // 删除后客户列表自动回退为「转增员」
-          toast('已删除');
+          toast('已移入回收站');
           location.hash = '#/recruit';
         } catch(e){ toast(e.message, 'error'); }
       }}, '删除'),
