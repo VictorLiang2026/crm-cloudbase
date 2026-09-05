@@ -31,6 +31,17 @@
   header h1{font-size:17px;font-weight:600;color:var(--text)}
   header .env{color:var(--muted);font-size:12px}
   header .user-info{margin-left:auto;display:flex;align-items:center;gap:10px;color:var(--text-secondary);font-size:13px}
+  /* 模块切换器：客户经营（蓝）/ 组织发展（金黄） */
+  .mod-switch{margin-left:auto;display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex-shrink:0}
+  .mod-btn{padding:7px 18px;font-size:13px;font-weight:600;background:var(--card);color:var(--muted);border:none;cursor:pointer;white-space:nowrap;transition:all .2s;font-family:inherit}
+  .mod-btn:hover{background:#f8fafc;color:var(--text)}
+  .mod-btn.active{background:var(--pri);color:#fff}
+  .mod-btn.mod-recruit.active{background:linear-gradient(135deg,#f59e0b,#d97706)}
+  @media(max-width:768px){
+    header{flex-wrap:wrap;gap:8px 12px}
+    .mod-switch{margin-left:0;width:100%}
+    .mod-btn{flex:1;padding:9px 10px}
+  }
   main{max-width:1200px;margin:0 auto;padding:24px}
   .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:16px;box-shadow:var(--shadow);animation:fadeIn .25s ease}
   .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
@@ -311,6 +322,10 @@
   <div class="brand-badge">V</div>
   <h1>Victor's CRM</h1>
   <span class="env" id="env-label"></span>
+  <nav class="mod-switch" id="mod-switch">
+    <button type="button" class="mod-btn" data-mod="customer" onclick="location.hash='#/'">客户经营</button>
+    <button type="button" class="mod-btn mod-recruit" data-mod="recruit" onclick="location.hash='#/recruit'">组织发展</button>
+  </nav>
 </header>
 <main id="view"><div class="loading">初始化中…</div></main>
 <div id="modal-root"></div>
@@ -652,6 +667,7 @@ function attachNameDupCheck(container, excludeId){
 // ==================== 路由 ====================
 function route(){
   var hash = location.hash || '#/';
+  updateModuleSwitch(hash);
   var m = hash.match(/^#\/customer\/(\d+)$/);
   if(m) return showDetail(parseInt(m[1],10));
   var rc = hash.match(/^#\/recruit\/(\d+)$/);
@@ -665,6 +681,19 @@ function route(){
   if(hash === '#/customers') return showList();
   if(hash === '#/customers/trash') return showCustomerTrash();
   showDashboard();
+}
+
+// 模块切换器高亮：组织发展 = #/recruit* 各页 + 增员活动量日报；其余归客户经营
+function updateModuleSwitch(hash){
+  hash = hash || location.hash || '#/';
+  var isRecruit = hash.indexOf('#/recruit') === 0 || hash === '#/activity/recruit';
+  var nav = document.getElementById('mod-switch');
+  if(!nav) return;
+  var btns = nav.querySelectorAll('.mod-btn');
+  for(var i=0;i<btns.length;i++){
+    var onRecruit = btns[i].getAttribute('data-mod') === 'recruit';
+    btns[i].classList.toggle('active', onRecruit === isRecruit);
+  }
 }
 
 // ==================== 今日工作台（首页） ====================
@@ -880,11 +909,10 @@ async function showDashboard(){
     searchInput,
     el('button', {class:'btn', onclick:doSearch}, '搜索'),
     el('button', {class:'btn btn-primary', onclick:function(){ openCustomerForm(null); }}, '+ 新增客户'),
+    el('button', {class:'btn', onclick:function(){ location.hash='#/customers'; }}, '全部客户 →'),
     el('button', {class:'btn', onclick:function(){ openAiParse(); }}, 'AI 解析新增'),
     el('button', {class:'btn', onclick:function(){ location.hash='#/ai-suggestions'; }}, 'AI 建议'),
     el('button', {class:'btn', onclick:function(){ location.hash='#/activity/customer'; }}, '活动量'),
-    el('button', {class:'btn btn-recruit', onclick:function(){ location.hash='#/recruit'; }}, '增员'),
-    el('button', {class:'btn', onclick:function(){ location.hash='#/customers'; }, style:'margin-left:auto'}, '全部客户 →'),
   ]);
   view.appendChild(toolbar);
 
@@ -899,7 +927,7 @@ async function showDashboard(){
 
     var todayStr = dayStr(new Date());
     card.appendChild(el('h2', {}, [
-      document.createTextNode('今日工作台'),
+      document.createTextNode('客户工作台'),
       el('span', {class:'dash-date'}, todayStr + ' 星期' + '日一二三四五六'[new Date().getDay()]),
     ]));
 
@@ -999,7 +1027,7 @@ async function showList(){
     if(e.key === 'Enter') doSearch();
   });
   var toolbar = el('div', {class:'toolbar'});
-  toolbar.appendChild(el('button', {class:'btn', onclick:function(){ location.hash='#/'; }}, '← 工作台'));
+  toolbar.appendChild(el('button', {class:'btn', onclick:function(){ location.hash='#/'; }}, '← 客户工作台'));
   toolbar.appendChild(searchInput);
   toolbar.appendChild(el('button', {class:'btn', onclick:doSearch}, '搜索'));
   toolbar.appendChild(el('button', {class:'btn btn-primary', onclick:function(){ openCustomerForm(null); }}, '+ 新增客户'));
@@ -1056,7 +1084,7 @@ async function showDetail(id){
   var view = $('view');
   view.innerHTML = '';
   view.appendChild(el('div', {class:'toolbar'}, [
-    el('a', {onclick:function(){ location.hash='#/'; }}, '← 工作台'),
+    el('a', {onclick:function(){ location.hash='#/'; }}, '← 客户工作台'),
     el('a', {onclick:function(){ location.hash='#/customers'; }, style:'margin-left:14px'}, '客户列表'),
     el('a', {onclick:async function(){
       if(!confirm('确认删除该客户？\n\n其跟进记录、伴手礼、照片/附件、保单检视报告、AI 解析记录、产品额度及名下增员候选人将一并移入回收站，可随时恢复。')) return;
@@ -1991,7 +2019,7 @@ async function showAiSuggestions(){
   var view = $('view');
   view.innerHTML = '';
   view.appendChild(el('div', {class:'toolbar'}, [
-    el('a', {onclick:function(){ location.hash='#/'; }}, '← 返回工作台'),
+    el('a', {onclick:function(){ location.hash='#/'; }}, '← 返回客户工作台'),
     el('span', {style:'color:var(--muted);font-size:13px'}, '点击表头可排序（正序/倒序），点击客户姓名查看详情'),
   ]));
   var card = el('div', {class:'card'});
@@ -2401,7 +2429,6 @@ async function showRecruit(){
   searchInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') doSearch(); });
 
   var toolbar = el('div', {class:'toolbar'}, [
-    el('button', {class:'btn', onclick:function(){ location.hash='#/'; }}, '← 工作台'),
     searchInput,
     el('button', {class:'btn', onclick:doSearch}, '搜索'),
     el('button', {class:'btn btn-primary', onclick:function(){ openCandidateForm(null); }}, '+ 新增候选人'),
@@ -2613,7 +2640,7 @@ async function showCustomerTrash(){
 async function showRecruitTrash(){
   await renderTrashPage({
     state: rcTrashState,
-    backHash: '#/recruit', backLabel: '增员列表',
+    backHash: '#/recruit', backLabel: '增员工作台',
     emptyText: '回收站为空（删除候选人后，其增员跟进记录一并移入此处，可随时恢复）',
     reload: showRecruitTrash,
     fetch: function(){
@@ -2800,7 +2827,7 @@ async function renderActivityPage(opt){
 async function showCustomerActivity(){
   await renderActivityPage({
     state: custActivityState,
-    backHash: '#/', backLabel: '工作台',
+    backHash: '#/', backLabel: '客户工作台',
     title: '客户经营活动量日报',
     fnAction: 'customer',
     reload: showCustomerActivity,
@@ -2848,7 +2875,7 @@ async function showCustomerActivity(){
 async function showRecruitActivity(){
   await renderActivityPage({
     state: rcActivityState,
-    backHash: '#/recruit', backLabel: '增员列表',
+    backHash: '#/recruit', backLabel: '增员工作台',
     title: '增员活动量日报',
     fnAction: 'recruit',
     reload: showRecruitActivity,
@@ -2939,7 +2966,7 @@ async function showRecruitGoals(){
   };
 
   var toolbar = el('div', {class:'toolbar'}, [
-    el('button', {class:'btn', onclick:function(){ location.hash='#/recruit'; }}, '← 增员列表'),
+    el('button', {class:'btn', onclick:function(){ location.hash='#/recruit'; }}, '← 增员工作台'),
   ]);
   view.appendChild(toolbar);
 
@@ -3386,7 +3413,7 @@ async function showCandidateDetail(id, tab){
 
     // 工具栏
     view.appendChild(el('div', {class:'toolbar'}, [
-      el('button', {class:'btn', onclick:function(){ location.hash='#/recruit'; }}, '← 增员列表'),
+      el('button', {class:'btn', onclick:function(){ location.hash='#/recruit'; }}, '← 增员工作台'),
       el('button', {class:'btn', onclick:function(){ openCandidateForm(id); }}, '编辑'),
       el('button', {class:'btn', onclick:function(){ genRecruitScore(id); }}, 'AI 高潜评分'),
       el('button', {class:'btn btn-danger', style:'margin-left:auto', onclick:async function(){
