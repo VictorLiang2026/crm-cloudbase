@@ -2008,7 +2008,7 @@ async function renderAi(cid, recommendations){
 }
 
 // ==================== AI 建议库（全量列表） ====================
-var aiSugState = { page:1, pageSize:20, sortField:'id', sortDir:'desc' };
+var aiSugState = { page:1, pageSize:20, sortField:'id', sortDir:'desc', mode:'keyword', keyword:'', startDate:'', endDate:'' };
 
 function shortTd(text, n){
   var s = String(text==null?'':text);
@@ -2020,23 +2020,78 @@ function shortTd(text, n){
 async function showAiSuggestions(){
   var view = $('view');
   view.innerHTML = '';
+
+  // 搜索：三种互斥方式——按姓名 / 按给出建议日期区间 / 按建议跟进日期区间
+  var AI_SUG_MODES = [
+    {key:'keyword', label:'按姓名'},
+    {key:'recDate',  label:'按给出建议日期'},
+    {key:'fuDate',   label:'按建议跟进日期'},
+  ];
+  function switchMode(m){
+    if(aiSugState.mode === m) return;
+    aiSugState.mode = m; aiSugState.page = 1;
+    aiSugState.keyword = ''; aiSugState.startDate = ''; aiSugState.endDate = '';
+    showAiSuggestions();
+  }
+  var modeBtns = AI_SUG_MODES.map(function(mo){
+    return el('button', {class:'btn btn-sm '+(aiSugState.mode===mo.key?'btn-primary':''), onclick:function(){ switchMode(mo.key); }}, mo.label);
+  });
+  var filterControls = [];
+  if(aiSugState.mode === 'keyword'){
+    var kwInput = el('input', {type:'search', placeholder:'客户姓名', value:aiSugState.keyword, style:'max-width:180px'});
+    function doKw(){ aiSugState.keyword = kwInput.value.trim(); aiSugState.page = 1; showAiSuggestions(); }
+    kwInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') doKw(); });
+    filterControls.push(kwInput, el('button', {class:'btn btn-primary', onclick:doKw}, '搜索'));
+  } else {
+    var isRec = aiSugState.mode === 'recDate';
+    var sInp = el('input', {type:'date', value:aiSugState.startDate, style:'max-width:150px'});
+    var eInp = el('input', {type:'date', value:aiSugState.endDate, style:'max-width:150px'});
+    function doDate(){
+      if(sInp.value && eInp.value && sInp.value > eInp.value){ toast('开始日期不能晚于结束日期', 'error'); return; }
+      aiSugState.startDate = sInp.value; aiSugState.endDate = eInp.value; aiSugState.page = 1;
+      showAiSuggestions();
+    }
+    filterControls.push(
+      el('span', {style:'color:var(--muted);font-size:13px'}, isRec ? '给出建议日期' : '建议跟进日期'),
+      sInp, el('span', {style:'color:var(--muted)'}, '至'), eInp,
+      el('button', {class:'btn btn-primary', onclick:doDate}, '查询')
+    );
+  }
+  function doReset(){
+    aiSugState.mode = 'keyword'; aiSugState.keyword = ''; aiSugState.startDate = ''; aiSugState.endDate = '';
+    aiSugState.page = 1; showAiSuggestions();
+  }
+  var hasFilter = aiSugState.mode !== 'keyword' || !!aiSugState.keyword;
   view.appendChild(el('div', {class:'toolbar'}, [
     el('a', {onclick:function(){ location.hash='#/'; }}, '← 返回客户工作台'),
-    el('span', {style:'color:var(--muted);font-size:13px'}, '点击表头可排序（正序/倒序），点击客户姓名查看详情'),
-  ]));
+    el('span', {style:'width:1px;height:20px;background:var(--border);align-self:center'}),
+  ].concat(modeBtns).concat(filterControls).concat([
+    el('button', {class:'btn', onclick:doReset}, '重置'),
+    el('span', {style:'color:var(--muted);font-size:13px;margin-left:auto'}, '点击表头排序，点击客户姓名查看详情'),
+  ])));
+
   var card = el('div', {class:'card'});
   card.appendChild(el('h3', {style:'margin-bottom:10px'}, 'AI 建议库'));
   card.appendChild(el('div', {class:'loading'}, '加载中…'));
   view.appendChild(card);
 
   try {
-    var r = await callFn('ai_recommendations', {
+    var params = {
       action:'listAll', page:aiSugState.page, pageSize:aiSugState.pageSize,
       sortField:aiSugState.sortField, sortDir:aiSugState.sortDir
-    });
+    };
+    if(aiSugState.mode === 'keyword' && aiSugState.keyword) params.keyword = aiSugState.keyword;
+    if(aiSugState.mode === 'recDate' || aiSugState.mode === 'fuDate'){
+      params.dateField = aiSugState.mode === 'recDate' ? 'recommendation_date' : 'suggested_followup_date';
+      params.startDate = aiSugState.startDate;
+      params.endDate = aiSugState.endDate;
+    }
+    var r = await callFn('ai_recommendations', params);
     card.innerHTML = '';
     if(!r.rows || !r.rows.length){
-      card.appendChild(el('div', {class:'empty'}, '暂无 AI 建议（在客户详情页的「AI 建议」标签中生成）'));
+      card.appendChild(el('div', {class:'empty'}, hasFilter
+        ? '没有符合条件的 AI 建议，可点「重置」查看全部'
+        : '暂无 AI 建议（在客户详情页的「AI 建议」标签中生成）'));
       return;
     }
     var table = el('table');

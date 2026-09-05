@@ -2,8 +2,9 @@
  * ai_recommendations — AI 建议（事件云函数，rdb() 版）
  * 入参 event: { action, ... }
  *   list:    { action:'list', customer_id } → { rows }（单客户历史建议）
- *   listAll: { action:'listAll', page?, pageSize?, sortField?, sortDir? } → { rows, total }
- *            （全量建议，JS 端排序（null 排后）+ 分页，仿 customers list 模式）
+ *   listAll: { action:'listAll', page?, pageSize?, sortField?, sortDir?,
+ *              keyword?（客户姓名模糊）, dateField?('recommendation_date'|'suggested_followup_date')+startDate?/endDate?（区间，任一可空） }
+ *            → { rows, total }（全量建议，JS 端筛选+排序（null 排后）+ 分页，仿 customers list 模式）
  *   get:     { action:'get', id } → { recommendation }（单条完整字段）
  *   update:  { action:'update', id, data:{ suggested_message?, suggested_strategy?, suggested_followup_date?, suggested_customer_stage?, suggested_followup_goal? } }
  *            → { ok }（人工编辑保存；空串转 null，按 id 增量更新）
@@ -56,6 +57,31 @@ async function listAll(event) {
   const r = assertOk(await rdb.from('ai_recommendations')
     .select('id, customer_id, customer_name, recommendation_date, suggested_followup_date, suggested_message, suggested_strategy, suggested_customer_stage, suggested_followup_goal, created_at'));
   let rows = r.data || [];
+
+  // 筛选：三种互斥方式（前端保证互斥；后端按传入参数独立生效）
+  // 1) 客户姓名模糊匹配（不区分大小写）
+  const keyword = (event.keyword == null ? '' : String(event.keyword)).trim().toLowerCase();
+  if (keyword) {
+    rows = rows.filter(function (a) {
+      return a.customer_name && String(a.customer_name).toLowerCase().indexOf(keyword) !== -1;
+    });
+  }
+  // 2/3) 日期区间：dateField=recommendation_date（给出建议日期）或 suggested_followup_date（建议跟进日期）
+  //      startDate/endDate 任一可空（开区间）；启用时空日期行排除；纯日期串比较 slice(0,10)
+  const DATE_FIELDS = { recommendation_date: 1, suggested_followup_date: 1 };
+  if (event.dateField && DATE_FIELDS[event.dateField]) {
+    const start = event.startDate ? String(event.startDate).slice(0, 10) : '';
+    const end = event.endDate ? String(event.endDate).slice(0, 10) : '';
+    if (start && end && start > end) return { error: '开始日期不能晚于结束日期' };
+    const field = event.dateField;
+    rows = rows.filter(function (a) {
+      const d = a[field] ? String(a[field]).slice(0, 10) : '';
+      if (!d) return false;
+      if (start && d < start) return false;
+      if (end && d > end) return false;
+      return true;
+    });
+  }
 
   // JS 端排序：可排序列，null/空值始终排末尾
   const sortField = SORTABLE[event.sortField] ? event.sortField : 'id';
