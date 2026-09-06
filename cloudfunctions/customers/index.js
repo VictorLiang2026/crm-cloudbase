@@ -21,6 +21,7 @@ const FIELDS = [
   'hobbies', 'additional_info', 'gender', 'source', 'tags', 'marital_status',
   'properties_info', 'occupation', 'annual_income', 'household_income',
   'first_contact_date', 'birthday', 'customer_stage', 'phone',
+  'profile', // 轻量客户画像 jsonb：{family,children,parents,career,needs,relationship,events[]}
 ];
 
 // 列表接口也返回所有客户字段（source/annual_income/additional_info 等），
