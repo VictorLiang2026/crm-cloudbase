@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>任务回顾 · 活动量日报 → 发布自动化（截至 2026-09-06）</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: #f4f6fa; color: #2c3e50; margin: 0; padding: 32px 16px; line-height: 1.75;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  .cover {
+    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 55%, #0ea5e9 100%);
+    color: #fff; border-radius: 16px; padding: 36px 40px; box-shadow: 0 8px 28px rgba(37,99,235,.25);
+  }
+  .cover h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: 1px; }
+  .cover .sub { font-size: 15px; opacity: .92; }
+  .cover .meta { margin-top: 18px; font-size: 13px; background: rgba(255,255,255,.14); border-radius: 10px; padding: 12px 18px; }
+  .cover .meta b { color: #fde68a; }
+
+  h2 {
+    font-size: 20px; margin: 38px 0 14px; padding: 10px 16px; border-radius: 10px; color: #fff;
+  }
+  h2 .num { display: inline-block; width: 30px; height: 30px; line-height: 30px; text-align: center;
+    background: rgba(255,255,255,.25); border-radius: 50%; margin-right: 10px; font-size: 15px; }
+  .h-blue   { background: linear-gradient(90deg,#2563eb,#60a5fa); }
+  .h-green  { background: linear-gradient(90deg,#059669,#34d399); }
+  .h-amber  { background: linear-gradient(90deg,#d97706,#fbbf24); }
+  .h-purple { background: linear-gradient(90deg,#7c3aed,#a78bfa); }
+  .h-red    { background: linear-gradient(90deg,#dc2626,#f87171); }
+  .h-teal   { background: linear-gradient(90deg,#0d9488,#2dd4bf); }
+  .h-slate  { background: linear-gradient(90deg,#475569,#94a3b8); }
+
+  .card {
+    background: #fff; border-radius: 12px; padding: 20px 24px; margin-bottom: 16px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.05); border-left: 5px solid #cbd5e1;
+  }
+  .card.blue   { border-left-color: #2563eb; }
+  .card.green  { border-left-color: #059669; }
+  .card.amber  { border-left-color: #d97706; }
+  .card.purple { border-left-color: #7c3aed; }
+  .card.red    { border-left-color: #dc2626; }
+  .card.teal   { border-left-color: #0d9488; }
+  .card h3 { margin: 0 0 8px; font-size: 16px; }
+  .tag {
+    display: inline-block; font-size: 12px; padding: 2px 10px; border-radius: 999px;
+    margin-left: 8px; vertical-align: middle; font-weight: 600;
+  }
+  .tag.ok    { background: #dcfce7; color: #15803d; }
+  .tag.bug   { background: #fee2e2; color: #b91c1c; }
+  .tag.commit{ background: #e0e7ff; color: #4338ca; font-family: Consolas, monospace; }
+  .tag.ver   { background: #fef3c7; color: #b45309; font-family: Consolas, monospace; }
+
+  .label { font-weight: 700; }
+  .lbl-req  { color: #2563eb; }
+  .lbl-do   { color: #059669; }
+  .lbl-verify { color: #7c3aed; }
+  .lbl-note { color: #b45309; }
+
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 14px; background: #fff; }
+  th { background: #1e293b; color: #fff; padding: 9px 12px; text-align: left; font-weight: 600; }
+  td { padding: 8px 12px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  code { background: #eef2ff; color: #4338ca; padding: 1px 7px; border-radius: 5px; font-size: 13px; font-family: Consolas, monospace; }
+  .mono { font-family: Consolas, monospace; font-size: 13px; color: #334155; }
+  ul { margin: 6px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  .callout {
+    border-radius: 10px; padding: 14px 18px; margin: 12px 0; font-size: 14px;
+  }
+  .callout.warn { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; }
+  .callout.info { background: #eff6ff; border: 1px solid #93c5fd; color: #1e40af; }
+  .callout.good { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
+  .foot { text-align: center; color: #94a3b8; font-size: 12px; margin-top: 36px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ========== 封面 ========== -->
+  <div class="cover">
+    <h1>📒 任务回顾：活动量日报 → 双模块导航 → 发布自动化</h1>
+    <div class="sub">Victor's CRM（CloudBase + PostgreSQL + 单文件 admin.html）开发全过程复盘</div>
+    <div class="meta">
+      <b>时间跨度：</b>2026-09-03 ～ 2026-09-06　|　<b>文档截止：</b>2026-09-06　|　<b>环境：</b>crm-d1gkae8ddc930d151（上海 · PostgreSQL 个人版）<br>
+      <b>当前版本：</b>v1.0.4（标签 4abdaa5）+ 后续 2 个存档提交　|　<b>线上状态：</b>三方一致（本地 / GitHub / 云托管 MD5 核对通过）
+    </div>
+  </div>
+
+  <!-- ========== 总览 ========== -->
+  <h2 class="h-slate"><span class="num">∑</span>总览：这次窗口一共做了什么</h2>
+  <div class="card">
+    <table>
+      <tr><th style="width:32%">阶段</th><th style="width:40%">产出</th><th>结果</th></tr>
+      <tr><td><b>① 活动量日报</b>（含 2 轮线上 bug 修复）</td><td>新云函数 <code>activity_reports</code> + 双日报页（客户经营 / 增员）</td><td><span class="tag ok">已上线 v1.0.3</span></td></tr>
+      <tr><td><b>② 全量版本备份</b></td><td>v1.0.0～v1.0.3 标签补齐，本地 ↔ GitHub 核对</td><td><span class="tag ok">5 版本齐全</span></td></tr>
+      <tr><td><b>③ 双模块导航</b></td><td>顶部「客户经营 / 组织发展」切换器，工作台更名、入口收拢</td><td><span class="tag ok">已上线 v1.0.4</span></td></tr>
+      <tr><td><b>④ UI 细节</b></td><td>「全部客户」翠绿按钮；AI 建议页返回改按钮样式</td><td><span class="tag ok">已上线</span></td></tr>
+      <tr><td><b>⑤ AI 建议库筛选</b></td><td>三种互斥搜索：姓名 / 给出建议日期 / 建议跟进日期</td><td><span class="tag ok">已上线</span></td></tr>
+      <tr><td><b>⑥ 架构体检</b></td><td>admin.html 单文件结构评估（仅评估，未改动）</td><td><span class="tag ok">结论：合理</span></td></tr>
+      <tr><td><b>⑦ 发布自动化</b></td><td><code>release.ps1</code> 一键发布 + <code>sync-check.ps1</code> 三方体检</td><td><span class="tag ok">已落地，体检全绿</span></td></tr>
+    </table>
+  </div>
+
+  <!-- ========== ① 活动量日报 ========== -->
+  <h2 class="h-blue"><span class="num">1</span>活动量日报（客户经营 + 增员双维度）</h2>
+
+  <div class="card blue">
+    <h3>需求背景 <span class="tag commit">云函数 activity_reports</span></h3>
+    <p>为 CRM 增加两套「活动量日报」，参考 LIMRA/MDRT 活动量管理与增员漏斗经验：</p>
+    <ul>
+      <li><b>客户经营日报</b>：入口在今日工作台工具栏；</li>
+      <li><b>增员日报</b>：入口在增员列表工具栏（目标管理右、回收站左）。</li>
+    </ul>
+    <p><span class="label lbl-note">口径约定（用户确认 3 点）：</span></p>
+    <ul>
+      <li>按<b>业务发生日期</b>归属（补录算回原日期）；</li>
+      <li>客户经营无件数/保费，用「保单检视 + 额度更新」代理；</li>
+      <li>增员 AI 话术/评分不落库，一期不统计。</li>
+    </ul>
+  </div>
+
+  <div class="card green">
+    <h3>实现做法</h3>
+    <ul>
+      <li><span class="label lbl-do">后端：</span>新建云函数 <code>activity_reports</code>（index.js / db.js / package.json），两个 action：<code>customer</code>、<code>recruit</code>；两种模式：<code>today</code>（默认，实时）与 <code>range</code>（开始/结束日期，上限 366 天）。</li>
+      <li><span class="label lbl-do">纯读聚合：</span>不新增表、不改写入逻辑；全量裁列 select + JS 按北京日期分桶（与回收站同模式）。</li>
+      <li><span class="label lbl-do">客户指标：</span>新增客户、首次接触、跟进、接触客户数、计划到期、已完成计划、完成率、礼品、照片、OCR 解析、AI 建议、保单检视、额度更新等。</li>
+      <li><span class="label lbl-do">增员指标：</span>新增候选人、跟进、漏斗 6 阶段（暖客→初面→活动→精准面谈→申请→入职），阶段由 <code>recruit_milestones.to_stage</code> 映射；当月目标对照内部复用 <code>recruit_goals</code> 的 getProgress。</li>
+      <li><span class="label lbl-do">前端：</span>通用 <code>renderActivityPage(opt)</code>：今日实时/区间切换、指标卡分组（区间显示日均）、逐日趋势表、活动流水（彩色 badge，上限 300 条）、增员页目标对照表。</li>
+    </ul>
+  </div>
+
+  <div class="card red">
+    <h3>上线后两轮 Bug 修复 <span class="tag bug">用户线上反馈</span></h3>
+    <p><b>Bug A：入口一（工作台「活动量」按钮）没出现；入口二点击跳到 <code>#/</code></b></p>
+    <ul>
+      <li>根因：之前同一文件的多个 Edit 放在同一并行批次，工作台按钮被增员页那处覆盖丢失；</li>
+      <li>修复：补回工作台按钮；跳 <code>#/</code> 经无头 DOM 测试证明路由无跳转逻辑，判定为部署瞬间浏览器/CDN 缓存，建议无痕窗口验证。</li>
+    </ul>
+    <p><b>Bug B：入口二报「Failed to execute 'appendChild' on 'Node': parameter 1 is not of type 'Node'」整页加载失败</b></p>
+    <ul>
+      <li>根因：增员日报「当月目标对照」表把<b>数字</b>（目标 60、实际 10）直接塞给 <code>appendChild</code>，真实 DOM 只接受 Node，渲染中途抛错 → 整页 catch 成"加载失败"；无头桩因为 appendChild 太宽松没暴露；</li>
+      <li>修复：公共 <code>el()</code> 加类型兜底（数字/布尔自动转文本节点）+ 目标表显式 <code>String()</code>；空数据正常显示"暂无记录"，不再白屏。</li>
+    </ul>
+  </div>
+
+  <div class="card purple">
+    <h3>验证方式</h3>
+    <ul>
+      <li><span class="label lbl-verify">云函数：</span>线上 invoke 实测 today / range 两种模式数据正确（如客户 9/1-9/5：跟进 4、完成率 16.7%；增员 today：新增 10、暖客 3）。</li>
+      <li><span class="label lbl-verify">前端：</span>Node 最小 DOM 桩跑通整个内联脚本（后升级为<b>严格桩</b>：appendChild 拒绝非 Node、innerHTML='' 真实清空子节点），路由渲染、hash 稳定、无运行时错误。</li>
+    </ul>
+    <div class="callout warn">
+      <b>⚠ 踩坑记录（时区）：</b>dayList 最初用 <code>new Date(start+'T00:00:00+08:00')</code> + <code>toISOString().slice(0,10)</code> 导致日期标签整体回退一天；改为 UTC 算术（<code>new Date(start+'T00:00:00Z')</code> + <code>setUTCDate</code> 递增）后修复。
+    </div>
+  </div>
+
+  <!-- ========== ② 版本备份 ========== -->
+  <h2 class="h-amber"><span class="num">2</span>全量版本备份与标签</h2>
+  <div class="card amber">
+    <p>应用户要求对当时版本做完整备份并设定版本号。核对本地 / GitHub / 线上三方后，补齐历史标签：</p>
+    <table>
+      <tr><th>版本</th><th>提交</th><th>内容</th></tr>
+      <tr><td><b>v1.0.0</b></td><td class="mono">1206d62</td><td>工作台升级 + 产品额度 11 类二维表</td></tr>
+      <tr><td><b>v1.0.1</b></td><td class="mono">aa5aa48</td><td>增员目标管理 + 跟进记录 + 6 列看板 + 行业基准</td></tr>
+      <tr><td><b>v1.0.2</b></td><td class="mono">d8868d5</td><td>双回收站（级联软删除+恢复）+ 全表 RLS 安全加固</td></tr>
+      <tr><td><b>v1.0.3</b></td><td class="mono">9f4b0f7</td><td><b>活动量日报</b>（客户经营 + 增员双维度）</td></tr>
+    </table>
+    <div class="callout good">✅ 标签均带注解、推送 GitHub 确认指向正确；线上 admin.html MD5 与本地一致。</div>
+  </div>
+
+  <!-- ========== ③ 双模块导航 ========== -->
+  <h2 class="h-purple"><span class="num">3</span>双模块导航：客户经营 / 组织发展</h2>
+
+  <div class="card purple">
+    <h3>需求（先出方案、用户两点确认后执行）</h3>
+    <ul>
+      <li>标题「Victor's CRM」环境 ID 后放两个按钮：<b style="color:#2563eb">客户经营</b>（默认）/ <b style="color:#b45309">组织发展</b>；</li>
+      <li>客户经营 = 现有客户页面，"工作台"更名「客户工作台」，去掉工具栏「增员」按钮（入口收拢到顶部）；</li>
+      <li>组织发展 = 增员主页，工具栏顺序：搜索框、搜索、新增候选人、目标管理、活动量、回收站；进入子功能后左上角「增员列表」更名「增员工作台」；</li>
+      <li>确认项：① 首页大标题「今日工作台」同步改「客户工作台」；② 配色 客户经营=蓝 / 组织发展=金黄。</li>
+    </ul>
+  </div>
+
+  <div class="card green">
+    <h3>实现做法 <span class="tag commit">a14708e</span></h3>
+    <ul>
+      <li>header 新增分段切换器，<code>updateModuleSwitch(hash)</code> 在路由开头按前缀刷新高亮：<code>#/recruit*</code> 与 <code>#/activity/recruit</code> → 组织发展（金黄），其余 → 客户经营（蓝）；移动端整行换行；</li>
+      <li>纯前端改动（仅 admin.html）：去 2 个旧按钮、文案统一「← 客户工作台」「← 增员工作台」共 8 处；</li>
+      <li><b>为组织发展后续扩展铺路</b>：新功能只需在增员主页加按钮 + 路由，<code>#/recruit</code> 前缀自动归入组织发展并高亮。</li>
+    </ul>
+    <p><span class="label lbl-verify">验证：</span>无头严格桩跑 <b>12 条路由</b>（含两日报页、详情页、回收站、AI 建议），高亮全部正确、hash 不跳转、无渲染报错。</p>
+  </div>
+
+  <!-- ========== ④ UI 细节 ========== -->
+  <h2 class="h-teal"><span class="num">4</span>UI 细节打磨</h2>
+  <div class="card teal">
+    <ul>
+      <li><b>「全部客户」按钮</b> <span class="tag commit">11ede9e</span>：去掉箭头文字「全部客户 →」→「全部客户」；新增翠绿渐变样式 <code>.btn-green</code>（#10b981→#059669），与蓝色「新增客户」、金黄「目标管理」区分；位置移到「新增客户」之后。</li>
+      <li><b>AI 建议页返回控件</b> <span class="tag commit">4abdaa5</span>：左上角「← 返回客户工作台」由文字超链接改为与全部客户页一致的<b>带边框圆角按钮</b>「← 客户工作台」。</li>
+    </ul>
+  </div>
+
+  <!-- ========== ⑤ AI 建议库筛选 ========== -->
+  <h2 class="h-green"><span class="num">5</span>AI 建议库：三种筛选搜索</h2>
+
+  <div class="card blue">
+    <h3>需求</h3>
+    <p>「AI 建议」页改成类似全部客户的可搜索列表：支持客户姓名搜索，并按「给出建议日期」「跟进建议日期」查时间段；<b>用户明确：两种日期类型互斥，不会同时作为搜索项</b>——共三种搜索情况：① 按姓名 ② 按给出建议日期 ③ 按跟进建议日期。同一人多行仍显示多行；列表展示与现有可排序表头保持不变。</p>
+  </div>
+
+  <div class="card green">
+    <h3>实现做法 <span class="tag commit">86ee09a</span></h3>
+    <ul>
+      <li><span class="label lbl-do">云函数</span> <code>ai_recommendations</code> 的 listAll 在排序/分页前增加 JS 过滤：
+      <ul>
+        <li><code>keyword</code>：客户姓名模糊匹配（不区分大小写）；</li>
+        <li><code>dateField</code> = <code>recommendation_date</code> 或 <code>suggested_followup_date</code>，配 <code>startDate/endDate</code>：单边可空=开区间；空日期行排除；开始晚于结束返回 error。</li>
+      </ul></li>
+      <li><span class="label lbl-do">前端：</span>工具栏三个互斥模式按钮（按姓名 / 按给出建议日期 / 按建议跟进日期）+ 重置；切换模式自动清空其他条件回第 1 页；翻页、表头排序保留当前筛选；无结果提示"可点重置查看全部"；表格 8 列、6 个可排序表头、客户名链接跳详情全部不变。</li>
+    </ul>
+  </div>
+
+  <div class="card purple">
+    <h3>验证（双层实测）</h3>
+    <ul>
+      <li><span class="label lbl-verify">云函数线上 invoke 6 场景：</span>王寻寻→3 行（多行保留）、给出建议日期 8/31 当天→5 行无越界、跟进日期 9/1-9/9→4 行、跟进日期 ≥9/10 开区间→2 行、非法区间→报错、无匹配→0 行；</li>
+      <li><span class="label lbl-verify">无头 DOM 桩 10 项交互断言：</span>模式切换控件显隐、请求参数正确、非法区间前端拦截不发请求、重置恢复全量、3 行表格渲染——全部通过。</li>
+    </ul>
+  </div>
+
+  <!-- ========== ⑥ 架构评估 ========== -->
+  <h2 class="h-slate"><span class="num">6</span>admin.html 单文件结构评估（仅评估）</h2>
+  <div class="card">
+    <p><b>结论：单文件结构合理，不需要推倒重来。</b></p>
+    <ul>
+      <li>✅ 部署原子化（一个文件上传即发布，免疫多文件版本错位/部分缓存）；零构建链；MD5 一对即知线上新旧；git 标签=完整快照；</li>
+      <li>✅ 规模仍在舒适区：208KB / 4109 行，gzip 约 50KB；内部已有 IIFE 严格模式、统一基础设施（el/esc/toast/modal/callFn）、跨页复用（回收站/活动量共用渲染）、分页 state 等工程化组织；</li>
+      <li>💡 低风险改进建议（按性价比）：① 抽共用分页器 helper（4 处重复）；② 路由表数据驱动（配合组织发展扩展）；③ 冒烟测试固化进仓库；</li>
+      <li>⛔ 不建议：引入 Vue/React 或 webpack（毁掉零构建/秒部署/单文件回滚优势）；</li>
+      <li>📌 演进阈值：文件超 6000～8000 行或多人协作时，再用"源码拆分 → 零依赖脚本构建成单个 admin.html"方式，保留单文件部署优势。</li>
+    </ul>
+  </div>
+
+  <!-- ========== ⑦ 发布自动化 ========== -->
+  <h2 class="h-amber"><span class="num">7</span>同步机制确认与发布自动化（方案 B）</h2>
+
+  <div class="card red">
+    <h3>确认中发现的问题</h3>
+    <ul>
+      <li>三方代码内容一致，但<b>不存在任何自动同步机制</b>（无 GitHub Actions、无部署脚本、无 git 钩子）——同步全靠每次手动流程；</li>
+      <li>发现文档漂移实例：README 已改、SPEC.md 被删、SPEC-v1/v2.md 与 architecture-current.md 新增，均未提交；</li>
+      <li>云函数回滚非自动（源码在 git，但检出后需手动重新部署）。</li>
+    </ul>
+  </div>
+
+  <div class="card green">
+    <h3>落地方案 B：脚本化保障（不托管云密钥） <span class="tag commit">7a5af07 文档 / 1acda98 脚本</span></h3>
+    <ul>
+      <li><b>文档归档：</b>README 更新、SPEC 拆分为 v1/v2、docs/architecture-current.md 全部提交推送；</li>
+      <li><b><code>tools/sync-check.ps1</code> 三方体检：</b>工作区未提交改动、本地 ↔ origin/master 提交差异、标签缺失、线上 admin.html MD5（URL 带时间戳防 CDN 缓存）；有漂移退出码 1 报红；另提示最近涉及 cloudfunctions/ 的提交提醒确认部署；</li>
+      <li><b><code>tools/release.ps1</code> 一键发布：</b>git add -A → 提交 → 推送 master → 可选打 <code>vX.Y.Z</code> 标签 → 末尾自动跑体检。</li>
+    </ul>
+    <div class="callout info">
+      <b>以后固定流程：</b>改代码 → MCP 部署（托管/云函数）→ <code>release.ps1 -Message "说明" [-Tag vX.Y.Z]</code> → sync-check 全绿收尾。每次改动都在 GitHub 留有可回滚版本，任何漂移都会被体检报红。
+    </div>
+    <div class="callout warn">
+      <b>⚠ 踩坑：</b>PowerShell 5.1 默认按 GBK 读取无 BOM 脚本，中文注释乱码导致语法解析失败；两个 .ps1 均已存为 <b>UTF-8 带 BOM</b>。
+    </div>
+    <p><span class="label lbl-verify">最终体检结果：</span>工作区干净、本地与 GitHub 一致、5 个标签齐全、线上 MD5 一致 —— <b style="color:#15803d">全部一致 ✅</b></p>
+  </div>
+
+  <!-- ========== 经验教训 ========== -->
+  <h2 class="h-red"><span class="num">!</span>本阶段沉淀的经验教训</h2>
+  <div class="card red">
+    <table>
+      <tr><th style="width:38%">教训</th><th>应对</th></tr>
+      <tr><td>同一文件多个 Edit 放同一并行批次，后写覆盖先写（按钮丢失根因）</td><td>同文件编辑<b>串行</b>，不进同一并行块</td></tr>
+      <tr><td>真实 DOM <code>appendChild</code> 拒收数字/布尔，宽松测试桩漏报</td><td>el() 统一兜底转文本；无头桩必须<b>严格模拟</b> appendChild 校验与 innerHTML 清空</td></tr>
+      <tr><td>日期 <code>toISOString</code> 按时区回退一天</td><td>日期算术统一用 UTC（<code>T00:00:00Z</code> + setUTCDate）</td></tr>
+      <tr><td>线上"已部署"但用户看到旧版</td><td>MD5 核对 + URL 时间戳防缓存 + 无痕窗口验证</td></tr>
+      <tr><td>PowerShell 5.1 中文脚本乱码</td><td>.ps1 一律 UTF-8 带 BOM</td></tr>
+      <tr><td>提交/推送/部署靠人工记忆，易漏</td><td>release.ps1 + sync-check.ps1 制度化，体检全绿才算完</td></tr>
+    </table>
+  </div>
+
+  <!-- ========== 版本台账 ========== -->
+  <h2 class="h-blue"><span class="num">≡</span>版本与提交台账（截至 2026-09-06）</h2>
+  <div class="card blue">
+    <table>
+      <tr><th>提交</th><th>说明</th><th>标签</th></tr>
+      <tr><td class="mono">9f4b0f7</td><td>活动量日报（客户经营+增员）</td><td><span class="tag ver">v1.0.3</span></td></tr>
+      <tr><td class="mono">a14708e</td><td>顶部模块切换器（客户经营/组织发展）</td><td rowspan="4"><span class="tag ver">v1.0.4</span><br><span class="mono" style="font-size:11px">→ 4abdaa5</span></td></tr>
+      <tr><td class="mono">11ede9e</td><td>「全部客户」按钮翠绿样式</td></tr>
+      <tr><td class="mono">86ee09a</td><td>AI 建议库三种筛选搜索</td></tr>
+      <tr><td class="mono">4abdaa5</td><td>AI 建议页返回按钮样式统一</td></tr>
+      <tr><td class="mono">7a5af07</td><td>文档归档（README/SPEC v1-v2/架构说明）</td><td>—</td></tr>
+      <tr><td class="mono">1acda98</td><td>发布与体检脚本 release.ps1 / sync-check.ps1</td><td>—</td></tr>
+    </table>
+    <div class="callout good">✅ 当前 HEAD：<code>1acda98</code>；本地 master 与 GitHub origin/master 完全同步；线上 admin.html MD5 <code>c3af23d6…</code>；v1.0.0～v1.0.4 五个标签本地与 GitHub 齐全，随时可按标签检出回滚。</div>
+  </div>
+
+  <div class="foot">
+    本文档由开发过程自动回顾整理 · 生成于 2026-09-06 · 仅作过程留档，不含任何代码改动
+  </div>
+
+</div>
+</body>
+</html>

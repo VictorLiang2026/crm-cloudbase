@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Victor's CRM 开发全程回顾（2026-08-22 ～ 2026-09-06）</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: #f4f6fa; color: #2c3e50; margin: 0; padding: 32px 16px; line-height: 1.75; }
+  .wrap { max-width: 1000px; margin: 0 auto; }
+  .cover { background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 45%, #2563eb 80%, #0ea5e9 100%);
+    color: #fff; border-radius: 16px; padding: 38px 42px; box-shadow: 0 8px 30px rgba(30,58,138,.3); }
+  .cover h1 { margin: 0 0 10px; font-size: 27px; letter-spacing: 1px; }
+  .cover .sub { font-size: 15px; opacity: .92; }
+  .cover .meta { margin-top: 20px; font-size: 13px; background: rgba(255,255,255,.13); border-radius: 10px; padding: 14px 18px; line-height: 2; }
+  .cover .meta b { color: #fde68a; }
+
+  h2 { font-size: 20px; margin: 40px 0 16px; padding: 11px 18px; border-radius: 10px; color: #fff; }
+  h2 .ico { margin-right: 8px; }
+  .h-setup   { background: linear-gradient(90deg,#475569,#94a3b8); }
+  .h-ai      { background: linear-gradient(90deg,#7c3aed,#a78bfa); }
+  .h-safe    { background: linear-gradient(90deg,#dc2626,#f87171); }
+  .h-wb      { background: linear-gradient(90deg,#2563eb,#60a5fa); }
+  .h-rc      { background: linear-gradient(90deg,#d97706,#fbbf24); }
+  .h-hard    { background: linear-gradient(90deg,#059669,#34d399); }
+  .h-ops     { background: linear-gradient(90deg,#0d9488,#2dd4bf); }
+
+  .day { background: #fff; border-radius: 12px; padding: 16px 22px; margin-bottom: 14px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.05); border-left: 5px solid #cbd5e1; }
+  .day.setup { border-left-color: #64748b; }
+  .day.ai    { border-left-color: #7c3aed; }
+  .day.safe  { border-left-color: #dc2626; }
+  .day.wb    { border-left-color: #2563eb; }
+  .day.rc    { border-left-color: #d97706; }
+  .day.hard  { border-left-color: #059669; }
+  .day.ops   { border-left-color: #0d9488; }
+  .day .date { font-size: 16px; font-weight: 800; margin-bottom: 4px; }
+  .date-badge { display: inline-block; background: #1e293b; color: #fff; border-radius: 8px;
+    padding: 2px 12px; font-size: 14px; margin-right: 10px; font-family: Consolas, monospace; }
+  .day .weekday { color: #94a3b8; font-weight: 600; font-size: 13px; }
+  .day ul { margin: 8px 0 2px; padding-left: 22px; }
+  .day li { margin: 5px 0; font-size: 14.5px; }
+  .tag { display: inline-block; font-size: 11.5px; padding: 1px 9px; border-radius: 999px;
+    font-weight: 700; margin: 0 3px; white-space: nowrap; }
+  .t-feat { background: #dbeafe; color: #1d4ed8; }
+  .t-fix  { background: #fee2e2; color: #b91c1c; }
+  .t-style{ background: #f3e8ff; color: #7e22ce; }
+  .t-safe { background: #fef3c7; color: #b45309; }
+  .t-ops  { background: #ccfbf1; color: #0f766e; }
+  .t-doc  { background: #e2e8f0; color: #334155; }
+  .commit { font-family: Consolas, monospace; font-size: 12px; background: #eef2ff; color: #4338ca; padding: 0 6px; border-radius: 4px; }
+
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 14px; background: #fff; border-radius: 10px; overflow: hidden; }
+  th { background: #1e293b; color: #fff; padding: 10px 12px; text-align: left; font-weight: 600; }
+  td { padding: 9px 12px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  .card { background: #fff; border-radius: 12px; padding: 18px 24px; margin-bottom: 16px; box-shadow: 0 2px 10px rgba(0,0,0,.05); }
+  .callout { border-radius: 10px; padding: 14px 18px; margin: 12px 0; font-size: 14px; }
+  .callout.warn { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; }
+  .callout.info { background: #eff6ff; border: 1px solid #93c5fd; color: #1e40af; }
+  .callout.good { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
+  .foot { text-align: center; color: #94a3b8; font-size: 12px; margin-top: 40px; }
+  .phase-line { font-size: 13px; color: #64748b; margin: -6px 0 14px 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="cover">
+    <h1>📘 Victor's CRM 开发全程回顾</h1>
+    <div class="sub">从环境搭建到双模块导航 + 发布自动化 —— 16 天完整开发时间线</div>
+    <div class="meta">
+      <b>时间跨度：</b>2026-08-22 ～ 2026-09-06（16 天）　|　<b>文档生成：</b>2026-09-06<br>
+      <b>技术栈：</b>腾讯云开发 CloudBase（上海 · PostgreSQL 个人版）+ 单文件 admin.html + Node.js 云函数<br>
+      <b>最终版本：</b>v1.0.4（标签 4abdaa5）+ 发布脚本存档，<b>本地 / GitHub / 线上三方一致</b><br>
+      <b>数据来源：</b>git 全量提交历史（60 个提交）+ 项目对话历史纪要（41 个话题 / 133 条消息纪要）
+    </div>
+  </div>
+
+  <!-- 阶段总览 -->
+  <h2 class="h-setup"><span class="ico">🗺</span>七大阶段总览</h2>
+  <table>
+    <tr><th style="width:13%">日期</th><th style="width:20%">阶段</th><th>核心产出</th></tr>
+    <tr><td><b>8/22-8/25</b></td><td>① 环境搭建与 UI 现代化</td><td>云环境绑定、静态托管、GitHub 建仓、.gitignore 安全基线、现代极简蓝 UI 重设计、照片描述字段</td></tr>
+    <tr><td><b>8/28-8/29</b></td><td>② AI 解析与本地 OCR</td><td>多文件 AI 解析新增、Tesseract.js 图片 OCR + pdf.js PDF 提取（免费套餐无视觉模型的应对）、AI 解析记录表与回滚</td></tr>
+    <tr><td><b>8/31-9/01</b></td><td>③ 安全会话与移动端</td><td>5 分钟无操作重新登录（含 iOS Safari 后台回收漏洞修复）、客户名失焦查重、AI 建议卡片样式、iPhone/iPad 响应式</td></tr>
+    <tr><td><b>9/02-9/03</b></td><td>④ 今日工作台 + 保单检视 + 增员上线</td><td>首页改任务驱动工作台、统计卡可点击筛选、产品额度→11 类×5 字段保单检视 + AI 报告、增员招募模块上线、统一仅用 admin.html</td></tr>
+    <tr><td><b>9/04</b></td><td>⑤ 增员模块深化</td><td>雷达图/天生赢家报告附件、增员跟进记录、详情页 tab 化、目标管理（漏斗+行业基准+三色预警）、金黄按钮、PG 视图重建技能固化</td></tr>
+    <tr><td><b>9/05</b></td><td>⑥ 安全加固 + 回收站 + 活动量日报</td><td>全表 RLS 安全基线、客户/增员双回收站（级联软删除）、活动量双日报、两轮线上 bug 修复、客户经营/组织发展模块切换器、AI 建议库筛选</td></tr>
+    <tr><td><b>9/06</b></td><td>⑦ 版本治理与发布自动化</td><td>v1.0.0～v1.0.4 标签体系、文档归档、release.ps1 一键发布 + sync-check.ps1 三方体检脚本、全程回顾文档</td></tr>
+  </table>
+
+  <!-- ① -->
+  <h2 class="h-setup"><span class="ico">🏗</span>阶段① 环境搭建与 UI 现代化（8/22-8/25）</h2>
+  <p class="phase-line">关键词：云环境 · 托管部署 · GitHub · UI 重设计</p>
+
+  <div class="day setup">
+    <div class="date"><span class="date-badge">08-22</span><span class="weekday">周六</span></div>
+    <ul>
+      <li>安装 CloudBase Skills（30+ 子技能），完成云开发登录与环境绑定：<b>crm-d1gkae8ddc930d151</b>（ap-shanghai，个人版，PostgreSQL 后端）<span class="tag t-ops">环境</span></li>
+      <li>首次用 MCP <code>manageHosting</code> 精准上传 admin.html/index.html 到静态托管（替代 <code>tcb hosting deploy</code>，避免泄露 .git/、cloudfunctions/）<span class="tag t-ops">部署</span></li>
+      <li>创建 <b>.gitignore</b>：排除 数据库信息.txt、.env、test_ocr.*、node_modules、.deploy/ 等敏感/临时文件 <span class="tag t-safe">安全</span></li>
+    </ul>
+  </div>
+
+  <div class="day setup">
+    <div class="date"><span class="date-badge">08-23</span><span class="weekday">周日</span></div>
+    <ul>
+      <li>完成 GitHub 建仓与首次推送（经历 gh CLI 认证问题，改用交互式 <code>gh auth login</code> 解决）<span class="tag t-ops">Git</span></li>
+      <li>环境资源体检：8 个云函数 Active（customers/followups/gifts/products/photos/ai_parse/ai_recommend/ai_recommendations），PG 6 张表，customers 763 行</li>
+      <li>AI 建议三项体验优化：建议文本框加大、首页 AI 建议加「详情」链接（全文无省略号）、详情页底部加「往期建议」列表 <span class="tag t-feat">功能</span></li>
+    </ul>
+  </div>
+
+  <div class="day setup">
+    <div class="date"><span class="date-badge">08-24</span><span class="weekday">周一</span></div>
+    <ul>
+      <li><b>UI 全面重设计</b>：参考配色图，从纯测试版升级为现代极简蓝风格（Linear/Notion 设计语言），60+ CSS 变量（Design Tokens）、排版/导航/卡片/按钮/表格/徽章/弹窗/登录页全部翻新，<b>JS 逻辑与云函数调用零改动</b> <span class="tag t-style">UI</span></li>
+      <li>客户「基本信息」页多轮排版打磨：最终定为标签加粗 +「：」+ 值同行显示、三个优先级用彩色 badge、附加信息保持堆叠布局</li>
+      <li>确认 ai_recommend 云函数参考的数据表范围（customers/followups/products/gifts/ai_recommendations）</li>
+    </ul>
+  </div>
+
+  <div class="day setup">
+    <div class="date"><span class="date-badge">08-25</span><span class="weekday">周二</span></div>
+    <ul>
+      <li>photos 表纳入 AI 建议参考范围（6 张表全覆盖）；新增 <code>photo_notes</code> 照片描述字段（云函数 update action + 前端上传/展示/编辑/原图查看）<span class="tag t-feat">功能</span></li>
+      <li>标题更名「个人CRM」→「<b>Victor's CRM</b>」；环境标签确认可安全隐藏（纯 UI 无逻辑依赖）</li>
+      <li>一次回滚演练：从 git 恢复 admin.html 后重做 UI 与照片功能，验证版本可恢复性 <span class="tag t-ops">回滚</span></li>
+    </ul>
+  </div>
+
+  <!-- ② -->
+  <h2 class="h-ai"><span class="ico">🤖</span>阶段② AI 解析与本地 OCR（8/28-8/29）</h2>
+  <p class="phase-line">关键词：多文件解析 · Tesseract/pdf.js · OCR 记录</p>
+
+  <div class="day ai">
+    <div class="date"><span class="date-badge">08-28</span><span class="weekday">周五</span></div>
+    <ul>
+      <li><b>AI 解析新增</b>支持多文件/多照片选择；论证附件与照片可共用 photos 表（新增 <code>category</code> 字段区分 photo/attachment）<span class="tag t-feat">功能</span></li>
+      <li>同名客户<b>对比审核</b>更新流程：解析后与已有客户匹配，人工选择新建或更新 <span class="commit">559748d</span></li>
+      <li>生产项目正式初始提交 <span class="commit">e4a6259</span>，确认本地/GitHub/线上三方一致</li>
+    </ul>
+  </div>
+
+  <div class="day ai">
+    <div class="date"><span class="date-badge">08-29</span><span class="weekday">周六</span></div>
+    <ul>
+      <li><b>关键问题</b>：免费套餐云环境仅支持纯文本 hy3 模型，静默忽略图片 → AI 解析只记录文件名 <span class="tag t-fix">Bug</span></li>
+      <li><b>解决方案</b>：前端本地 OCR —— Tesseract.js 识别图片中英文（带进度条）+ pdf.js 提取 PDF 文字，文本先在本地提取再统一送 AI 解析；Word/Excel 作为附件留存 <span class="commit">f8d42ef</span> <span class="tag t-feat">功能</span></li>
+      <li>新建 <b>ocr_records 表</b>与「OCR 记录」页签：每次解析留痕，支持「更新客户信息」（AI 重新匹配 + 人工确认）<span class="tag t-feat">功能</span></li>
+    </ul>
+  </div>
+
+  <!-- ③ -->
+  <h2 class="h-safe"><span class="ico">🔒</span>阶段③ 安全会话与移动端适配（8/31-9/01）</h2>
+  <p class="phase-line">关键词：5 分钟超时 · 重名查重 · iPhone/iPad</p>
+
+  <div class="day safe">
+    <div class="date"><span class="date-badge">08-31</span><span class="weekday">周一</span></div>
+    <ul>
+      <li>附加信息改为<b>追加式合并</b>（原内容 + 分隔行 + 新汇总，不再覆盖）；「OCR 记录」更名「<b>AI 解析记录</b>」<span class="commit">ee32deb</span> <span class="tag t-feat">功能</span></li>
+      <li><b>会话安全</b>：5 分钟无操作要求重新登录，仅允许 CloudBase「用户管理」账号密码；跟踪点击/键盘/触摸/滚动，callFn 统一拦截，超时弹遮罩、挂起操作登录后自动恢复 <span class="commit">30911b7</span> <span class="tag t-safe">安全</span></li>
+      <li><b>客户名失焦查重</b>：4 种姓名输入场景全覆盖，重名红框提醒并列出可点击的已有客户链接，编辑时自动排除自身 <span class="commit">414bbf2</span> <span class="tag t-feat">功能</span></li>
+      <li>AI 建议「策略」段改深色字体 + 淡蓝背景卡片（可读性）<span class="commit">5fe38ac</span> <span class="tag t-style">UI</span></li>
+      <li>两轮 frontend-design 界面精修；长文本框加大 <span class="tag t-style">UI</span></li>
+    </ul>
+  </div>
+
+  <div class="day safe">
+    <div class="date"><span class="date-badge">09-01</span><span class="weekday">周二</span></div>
+    <ul>
+      <li><b>移动端适配</b>：iPhone / iPad 响应式样式；首页列表表头按设备差异化（iPhone 短表头如「签单」，iPad/桌面全字段），纯 CSS <code>::before</code> 伪元素实现，DOM 零改动 <span class="tag t-style">UI</span></li>
+      <li><b>修复</b>：短表头不生效 —— CSS 选择器 <code>#view > table</code> 错误（表格在 .card 内），改为 <code>#view .card > table</code> <span class="commit">213460f</span> <span class="tag t-fix">Bug</span></li>
+      <li><b>安全漏洞修复</b>：iOS Safari 后台回收标签页后 JS 计时器归零 + 本地登录缓存 → 超时规则被绕过；将最后活动时间持久化到 localStorage，电脑/iPhone/iPad 行为完全一致 <span class="commit">60cf94b</span> <span class="tag t-fix">Bug</span></li>
+    </ul>
+  </div>
+
+  <!-- ④ -->
+  <h2 class="h-wb"><span class="ico">📊</span>阶段④ 今日工作台 + 保单检视 + 增员上线（9/02-9/03）</h2>
+  <p class="phase-line">关键词：任务驱动首页 · 保单检视 AI 报告 · 增员模块</p>
+
+  <div class="day wb">
+    <div class="date"><span class="date-badge">09-02</span><span class="weekday">周三</span></div>
+    <ul>
+      <li>结合保险代理行业国际经验做功能优化分析：系统从「被动记录型」向「<b>主动驱动型</b>」演进 <span class="tag t-doc">分析</span></li>
+      <li><b>首页改版为「今日工作台」</b>：顶部 5 张统计卡（今日待跟进/未来 30 天到期/已逾期/久未联系/客户总数）+ 四个任务分区，客户列表降级为二级页面 <code>#/customers</code> <span class="commit">050201d</span> <span class="tag t-feat">功能</span></li>
+    </ul>
+  </div>
+
+  <div class="day wb">
+    <div class="date"><span class="date-badge">09-03</span><span class="weekday">周四</span>（大版本日）</div>
+    <ul>
+      <li><b>统计卡可点击筛选</b> + 统一客户表格组件（工作台状态列、表头排序、每页 50 行分页），工作台与全部客户共用 <span class="commit">b49e2c7</span> <span class="tag t-feat">功能</span></li>
+      <li><b>产品额度 → 11 类险种 × 5 字段二维表</b>（新增个人养老金 PPA）；工作台搜索（姓名/电话/职业，可与筛选叠加）；姓名排序；7 天到期改 30 天 <span class="commit">6569a18</span> <span class="tag t-feat">功能</span> → 日后定为 <b>v1.0.0</b></li>
+      <li><b>「产品额度」更名「保单检视」</b>：浏览态/编辑态切换 + 「生成报告」AI 保单检视报告（双十原则/保险金字塔/普尔象限/家庭责任期方法论），新建 policy_review_reports 表（18 列）<span class="tag t-feat">功能</span></li>
+      <li>CDN 缓存导致新版不显示 → 加 <code>Cache-Control: no-cache</code> meta；并发现 index.html 的 JS 漏改导致双文件不一致 <span class="tag t-fix">Bug</span></li>
+      <li>AI 解析记录<b>删除回滚</b>：ocr_records 存 customer_snapshot 快照，删除记录时可恢复客户到解析前状态 <span class="tag t-feat">功能</span></li>
+      <li><b>增员招募模块上线</b>：recruit_candidates / recruit_milestones 表 + recruit_candidates/recruit_recommend/recruit_score 云函数 + 前端「增员」Tab <span class="commit">5281f64</span> <span class="tag t-feat">功能</span></li>
+      <li><b>统一仅用 admin.html</b>：托管首页/错误页改指 admin.html、删除 index.html，根治双文件版本漂移 <span class="commit">6e6689a</span> <span class="tag t-ops">治理</span></li>
+      <li>增员表结构重构（去重叠字段、建视图）、阶段流程改版（7 阶段漏斗）<span class="tag t-feat">功能</span></li>
+    </ul>
+  </div>
+
+  <!-- ⑤ -->
+  <h2 class="h-rc"><span class="ico">🎯</span>阶段⑤ 增员模块深化（9/04）</h2>
+  <p class="phase-line">关键词：评估附件 · 跟进记录 · 目标管理</p>
+
+  <div class="day rc">
+    <div class="date"><span class="date-badge">09-04</span><span class="weekday">周五</span></div>
+    <ul>
+      <li><b>评估附件</b>：竞争力评估雷达图（图片）+ 天生赢家报告（文档），CloudBase PG 云存储私有 bucket 'recruit'，1 小时签名下载链接；新增候选人弹窗保存后可直接上传 <span class="commit">acfc0c9 / 523dae2</span> <span class="tag t-feat">功能</span></li>
+      <li><b>视图踩坑 → 技能固化</b>：附件列不显示，根因是 PG 视图不会自动包含后加列；迁移重建 v_recruit_candidates 视图后修复；沉淀为 <b>pg-view-rebuild-check</b> 技能（基表加列后检查并重建依赖视图）<span class="commit">e5312db / 3f13e0d</span> <span class="tag t-fix">Bug</span></li>
+      <li><b>增员跟进记录</b>（recruit_followups，接触日志模式）；详情页改 tab 切换（基本信息/跟进记录/AI 增员话术/阶段时间线），与客户详情页风格统一 <span class="commit">2f4b8ce / 38586d3</span> <span class="tag t-feat">功能</span></li>
+      <li>增员按钮样式：红色太刺眼 → 改为<b>金黄渐变</b>（财富/机会寓意，与蓝色主按钮对比）<span class="commit">3289a8e</span> <span class="tag t-style">UI</span></li>
+      <li><b>目标管理</b>：月度目标 + 行业基准（LIMRA/友邦参考）+ 漏斗 6 列看板（指标/目标/实际/进度/目标转化率+实际转化率/AI 提醒）+ 三色预警；月份选择自动载入（无则带上月值）<span class="commit">befc9ce / dcddfce / 52738d4 / 802998f</span> <span class="tag t-feat">功能</span> → 日后定为 <b>v1.0.1</b></li>
+      <li>完整备份：git bundle 全量备份（含标签）+ 恢复说明.txt，本地/GitHub/线上三方核对 <span class="tag t-ops">备份</span></li>
+    </ul>
+  </div>
+
+  <!-- ⑥ -->
+  <h2 class="h-hard"><span class="ico">🛡</span>阶段⑥ 安全加固 + 回收站 + 活动量日报（9/05）</h2>
+  <p class="phase-line">关键词：RLS · 软删除 · 活动量 · 模块导航</p>
+
+  <div class="day hard">
+    <div class="date"><span class="date-badge">09-05</span><span class="weekday">周六</span>（内容最密集的一天）</div>
+    <ul>
+      <li><b>安全基线对齐</b>：增员 5 表 + ocr_records 启用 RLS + fn_only 策略（仅云函数匿名上下文可访问），GRANT 对齐 customers 基线，全业务表安全策略统一 <span class="commit">358a169 / ee0d8ff</span> <span class="tag t-safe">安全</span></li>
+      <li>客户列表增员状态列（增员中/曾增员/转增员预填）+ 工作台统计卡联动 + 候选人防重唯一索引 <span class="commit">ebbd9b3</span> <span class="tag t-feat">功能</span></li>
+      <li><b>双回收站</b>：客户/增员主对象级联软删除（子记录打同一 deleted_at 可恢复），回收站列表支持逐行与批量恢复；直接删的子记录硬删除不可恢复 <span class="commit">d8868d5</span> <span class="tag t-feat">功能</span> → 日后定为 <b>v1.0.2</b></li>
+      <li><b>活动量日报上线</b>：新云函数 activity_reports，客户经营 + 增员双维度，今日实时/区间查询（LIMRA/MDRT 活动量 + 增员漏斗口径，按业务发生日期归属）<span class="commit">ead43c9</span> <span class="tag t-feat">功能</span> → 日后定为 <b>v1.0.3</b></li>
+      <li><b>两轮线上 Bug 修复</b>：① 工作台「活动量」按钮在并行同文件编辑中被覆盖丢失（补回）<span class="commit">92b1b0d</span>；② 增员日报目标对照表数字直传 appendChild 导致整页「加载失败」（el() 加类型兜底 + 严格 DOM 桩）<span class="commit">9f4b0f7</span> <span class="tag t-fix">Bug</span></li>
+      <li><b>双模块导航</b>：顶部「<span style="color:#2563eb;font-weight:700">客户经营</span> / <span style="color:#b45309;font-weight:700">组织发展</span>」分段切换器，随路由自动高亮；工作台更名「客户工作台」、增员侧「增员工作台」；增员入口收拢到顶部 <span class="commit">a14708e</span> <span class="tag t-feat">功能</span></li>
+      <li>「全部客户」按钮改翠绿渐变（区别于蓝色新增客户）<span class="commit">11ede9e</span> <span class="tag t-style">UI</span></li>
+      <li><b>AI 建议库筛选</b>：三种互斥搜索（按姓名 / 按给出建议日期区间 / 按建议跟进日期区间），翻页排序保留筛选 <span class="commit">86ee09a</span> <span class="tag t-feat">功能</span></li>
+      <li>AI 建议页返回链接改为按钮样式「← 客户工作台」<span class="commit">4abdaa5</span> <span class="tag t-style">UI</span> → 定为 <b>v1.0.4</b></li>
+      <li>对话历史纪要文档入库 <span class="commit">e3c898e</span> <span class="tag t-doc">文档</span></li>
+    </ul>
+  </div>
+
+  <!-- ⑦ -->
+  <h2 class="h-ops"><span class="ico">🚀</span>阶段⑦ 版本治理与发布自动化（9/06）</h2>
+  <p class="phase-line">关键词：版本标签 · 一键发布 · 三方体检</p>
+
+  <div class="day ops">
+    <div class="date"><span class="date-badge">09-06</span><span class="weekday">周六</span></div>
+    <ul>
+      <li><b>版本标签体系</b>：补齐 v1.0.0～v1.0.4 五个带注解标签并全部推送 GitHub，每个里程碑可独立检出回滚 <span class="tag t-ops">版本</span></li>
+      <li>文档归档：README 更新、SPEC 拆分为 v1/v2、docs/architecture-current.md 当前架构说明 <span class="commit">7a5af07</span> <span class="tag t-doc">文档</span></li>
+      <li><b>发布自动化（方案 B）</b>：<code>tools/release.ps1</code> 一键发布（提交→推送→打标签→自动体检）+ <code>tools/sync-check.ps1</code> 三方一致性体检（未提交改动/本地↔GitHub 差异/标签缺失/线上 MD5），漂移即报红 <span class="commit">1acda98</span> <span class="tag t-ops">自动化</span></li>
+      <li>admin.html 单文件架构评估：结论<b>结构合理不需重构</b>，给出分页器/路由表等低风险改进建议与拆分演进阈值 <span class="tag t-doc">评估</span></li>
+      <li>生成两份回顾文档：活动量专题回顾 + 本全程回顾 <span class="tag t-doc">文档</span></li>
+    </ul>
+  </div>
+
+  <!-- 版本台账 -->
+  <h2 class="h-setup"><span class="ico">🏷</span>版本标签台账</h2>
+  <div class="card">
+    <table>
+      <tr><th>版本</th><th>提交</th><th>日期</th><th>里程碑内容</th></tr>
+      <tr><td><b>v1.0.0</b></td><td class="commit">1206d62</td><td>09-03</td><td>客户管理 + 今日工作台 + 保单检视（11 类二维表 + AI 报告）+ OCR 基础</td></tr>
+      <tr><td><b>v1.0.1</b></td><td class="commit">aa5aa48</td><td>09-04</td><td>增员模块完整版（目标管理 + 跟进记录 + 6 列看板 + 行业基准 + 评估附件）</td></tr>
+      <tr><td><b>v1.0.2</b></td><td class="commit">d8868d5</td><td>09-05</td><td>客户/增员双回收站（级联软删除+恢复）+ 全表 RLS 安全加固</td></tr>
+      <tr><td><b>v1.0.3</b></td><td class="commit">9f4b0f7</td><td>09-05</td><td>活动量日报（客户经营 + 增员双维度，今日实时/区间查询）</td></tr>
+      <tr><td><b>v1.0.4</b></td><td class="commit">4abdaa5</td><td>09-06</td><td>客户经营/组织发展双模块导航 + AI 建议库三种筛选 + UI 细节统一</td></tr>
+    </table>
+    <div class="callout good">✅ 当前 HEAD <code>1acda98</code>：本地 master 与 GitHub origin/master 完全同步；线上 admin.html MD5 核对一致；5 个标签本地与 GitHub 齐全；发布/体检脚本就位。</div>
+  </div>
+
+  <!-- 经验教训 -->
+  <h2 class="h-safe"><span class="ico">📌</span>关键经验教训（踩过的坑）</h2>
+  <div class="card">
+    <table>
+      <tr><th style="width:46%">坑</th><th>沉淀的对策</th></tr>
+      <tr><td>免费套餐 AI 模型静默忽略图片，解析只有文件名</td><td>前端本地 OCR（Tesseract.js + pdf.js）兜底，不依赖云端视觉模型</td></tr>
+      <tr><td>iOS Safari 后台回收标签页，5 分钟超时被绕过</td><td>最后活动时间持久化 localStorage，重载后仍按真实经过时间判断</td></tr>
+      <tr><td>CDN/浏览器缓存导致新版页面不显示</td><td>no-cache meta + 部署后 MD5 核对（URL 带时间戳）+ 无痕窗口验证</td></tr>
+      <tr><td>admin.html / index.html 双文件内容漂移</td><td>统一仅用 admin.html，托管首页改指它，删除 index.html</td></tr>
+      <tr><td>PG 基表加列后视图不自动包含，新字段界面不显示</td><td>固化 pg-view-rebuild-check 技能：表结构变更后检查并重建依赖视图</td></tr>
+      <tr><td>同一文件多个 Edit 并行执行，后写覆盖先写（按钮丢失）</td><td>同一文件的编辑串行执行，不放进同一并行批次</td></tr>
+      <tr><td>数字直传 appendChild，真实 DOM 抛错整页「加载失败」</td><td>el() 统一类型兜底；无头测试桩必须严格模拟 DOM（拒收非 Node、innerHTML 清空）</td></tr>
+      <tr><td>日期 toISOString 按时区回退一天</td><td>日期算术统一 UTC（T00:00:00Z + setUTCDate）</td></tr>
+      <tr><td>PowerShell 5.1 按 GBK 读无 BOM 脚本，中文乱码报语法错</td><td>.ps1 脚本一律存为 UTF-8 带 BOM</td></tr>
+      <tr><td>提交/推送/部署靠人工记忆，容易漏</td><td>release.ps1 + sync-check.ps1 制度化，体检全绿才算收尾</td></tr>
+    </table>
+  </div>
+
+  <!-- 系统现状 -->
+  <h2 class="h-ops"><span class="ico">🧭</span>系统现状速览（截至 2026-09-06）</h2>
+  <div class="card">
+    <ul>
+      <li><b>两大模块</b>：<span style="color:#2563eb;font-weight:700">客户经营</span>（客户工作台、全部客户、客户详情、AI 建议库、客户回收站、客户活动量日报）｜ <span style="color:#b45309;font-weight:700">组织发展</span>（增员工作台、目标管理、候选人详情、增员回收站、增员活动量日报）</li>
+      <li><b>前端</b>：单文件 admin.html（约 4100 行，HTML+CSS+JS 零构建），hash 路由，iPhone/iPad/桌面全适配</li>
+      <li><b>后端</b>：10+ 个 Node.js 云函数（customers/followups/gifts/photos/products/ai_parse/ai_recommend/ai_recommendations/policy_review_reports/recruit_*/activity_reports 等）</li>
+      <li><b>数据库</b>：PostgreSQL，业务表全部 RLS + fn_only 安全基线；17 个迁移 SQL 入档；软删除回收站机制</li>
+      <li><b>AI 能力</b>：AI 跟进建议（参考 6 张表）、AI 保单检视报告、增员 AI 话术/高潜评分、AI 解析新增（本地 OCR）</li>
+      <li><b>运维</b>：MCP 部署 + MD5 核对、git 标签版本、bundle 离线备份、release/sync-check 脚本</li>
+    </ul>
+  </div>
+
+  <div class="foot">
+    Victor's CRM 开发全程回顾 · 2026-08-22 ～ 2026-09-06 · 依据 git 提交历史与对话纪要整理 · 仅作过程留档
+  </div>
+
+</div>
+</body>
+</html>
