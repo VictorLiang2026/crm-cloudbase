@@ -9,8 +9,14 @@
  * 出参: { id, recommendation, raw }
  *   - id: ai_recommendations.id
  *   - recommendation: { suggested_message, suggested_strategy, suggested_followup_date,
- *                       suggested_customer_stage, suggested_followup_goal }
+ *                       suggested_customer_stage, suggested_followup_goal,
+ *                       nba: { assessment, goal, next_action, topic, avoid, success_criteria } }
  *   - raw: 模型原始输出文本
+ *
+ * NBA（Next Best Action 下一最佳行动，v1.0.7 增量）：
+ *   - 7 字段结构中前 6 项存入 ai_recommendations.nba (jsonb)；
+ *     第 7 项「建议下一次跟进时间」复用 suggested_followup_date，不重复生成
+ *   - 信息不足规则：任何字段缺数据依据必须填"信息不足"，严禁编造客户信息
  *
  * AI 仅用 hy3（app.ai().createModel('cloudbase')）。
  */
@@ -50,8 +56,39 @@ function buildSystem(op) {
     'suggested_followup_date(建议跟进日期 YYYY-MM-DD),',
     'suggested_customer_stage(建议客户经营阶段:新认识/关系维护/需求挖掘/方案沟通/成交推进/转介绍经营),',
     'suggested_followup_goal(建议跟进目标:建立联系/约见面/邀请活动/获取家庭信息/推进签单/推进招募/推进转介绍/安排家庭保单检视)。',
+    '【Next Best Action（下一步行动）— 必须输出】',
+    '- 在上述字段外，额外输出 nba 对象（与其它字段同一次 JSON 输出），字段：',
+    '  assessment(当前经营判断：结合客户阶段/保单检视结论/最近联系时间/最近跟进记录，不超过2句),',
+    '  goal(当前最重要的经营目标：1句，与 suggested_followup_goal 呼应),',
+    '  next_action(下一最佳行动：1句，具体到渠道与动作，业务员拿到即可执行，如"微信沟通并争取一次30分钟见面"),',
+    '  topic(推荐沟通主题：不超过12字，可用、分隔多个),',
+    '  avoid(不建议做什么：1句，指出当前阶段最容易犯的错误),',
+    '  success_criteria(成功标准：1句，可验证的结果，如"约到一次30分钟沟通"),',
+    '- nba 不含日期字段：建议下一次跟进时间统一使用 suggested_followup_date，不要在 nba 中输出日期。',
+    '- 【信息不足规则】任一字段若现有资料不足以判断，必须填"信息不足"，严禁编造客户的家庭/收入/需求/意向等信息。',
+    '- nba 必须与 suggested_message/suggested_strategy 相互一致，不得矛盾。',
     '只输出 JSON，不要解释。',
   ].join('\n');
+}
+
+// NBA 结构清洗：仅保留 6 个文本字段；全空视为未产出（返回 null）
+function normNba(n) {
+  if (!n || typeof n !== 'object' || Array.isArray(n)) return null;
+  var KEYS = ['assessment', 'goal', 'next_action', 'topic', 'avoid', 'success_criteria'];
+  var out = {}, any = false;
+  KEYS.forEach(function (k) {
+    var v = typeof n[k] === 'string' ? n[k].trim().slice(0, 200) : '';
+    out[k] = v;
+    if (v) any = true;
+  });
+  return any ? out : null;
+}
+
+// 枚举词表校验（与 DB enum 完全一致）：AI 输出超出词表时置 null，避免插入失败
+var GOAL_ENUM = ['建立联系', '约见面', '邀请活动', '获取家庭信息', '推进签单', '推进招募', '推进转介绍'];
+var STAGE_ENUM = ['新认识', '关系维护', '需求挖掘', '方案沟通', '成交推进', '转介绍经营'];
+function inEnum(v, list) {
+  return (typeof v === 'string' && list.indexOf(v.trim()) >= 0) ? v.trim() : null;
 }
 
 // 给模型的历史建议参考说明（与 SYSTEM 分开，便于在 user 消息里拼接）
@@ -80,7 +117,7 @@ exports.main = async (event, context) => {
         .limit(5),
       // 拉取历史 AI 建议（最近 5 条，按时间倒序）作为生成新建议的参考
       rdb.from('ai_recommendations').select(
-        'recommendation_date,suggested_message,suggested_strategy,suggested_followup_date,suggested_customer_stage,suggested_followup_goal'
+        'recommendation_date,suggested_message,suggested_strategy,suggested_followup_date,suggested_customer_stage,suggested_followup_goal,nba'
       ).eq('customer_id', customerId)
         .order('recommendation_date', { ascending: false, nullsFirst: false })
         .order('id', { ascending: false })
@@ -162,6 +199,7 @@ exports.main = async (event, context) => {
           followup_date: r.suggested_followup_date,
           stage: r.suggested_customer_stage,
           goal: r.suggested_followup_goal,
+          nba: r.nba || null,
         };
       }),
       // 保单检视报告（关键输入）：优先编辑后版本
@@ -189,6 +227,7 @@ exports.main = async (event, context) => {
           followup_date: r.suggested_followup_date,
           stage: r.suggested_customer_stage,
           goal: r.suggested_followup_goal,
+          nba: r.nba || null,
         };
       }), null, 2);
     }
@@ -201,6 +240,7 @@ exports.main = async (event, context) => {
     const parsed = extractJson(raw) || {};
 
     const today = new Date().toISOString().slice(0, 10);
+    const nba = normNba(parsed.nba);
     const payload = {
       customer_id: customerId,
       customer_name: customer.customer_name,
@@ -208,12 +248,13 @@ exports.main = async (event, context) => {
       suggested_followup_date: parsed.suggested_followup_date || null,
       suggested_message: parsed.suggested_message || null,
       suggested_strategy: parsed.suggested_strategy || null,
-      suggested_customer_stage: parsed.suggested_customer_stage || null,
-      suggested_followup_goal: parsed.suggested_followup_goal || null,
+      suggested_customer_stage: inEnum(parsed.suggested_customer_stage, STAGE_ENUM),
+      suggested_followup_goal: inEnum(parsed.suggested_followup_goal, GOAL_ENUM),
+      nba: nba,
     };
     const r = assertOk(await rdb.from('ai_recommendations').insert(payload).select('id'));
 
-    return { id: r.data[0].id, recommendation: parsed, raw: raw };
+    return { id: r.data[0].id, recommendation: Object.assign({}, parsed, { nba: nba }), raw: raw };
   } catch (e) {
     return { error: e.message };
   }

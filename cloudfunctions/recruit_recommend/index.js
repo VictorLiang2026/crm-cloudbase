@@ -6,8 +6,15 @@
  *        → hy3 生成 → 解析 JSON → 实时返回（不持久化，前端按需展示）
  * 出参: { recommendation, raw }
  *   - recommendation: { suggested_approach, suggested_message, suggested_objection_handling[],
- *                       suggested_next_stage_goal, suggested_followup_date }
+ *                       suggested_next_stage_goal, suggested_followup_date,
+ *                       nba: { assessment, goal, next_action, topic, avoid, success_criteria } }
  *   - raw: 模型原始输出文本
+ *
+ * NBA（Next Best Action 下一最佳行动，v1.0.7 增量）：
+ *   - 与客户侧同构的 7 字段结构，但语言与判断逻辑为增员经营视角；
+ *     前 6 项存 nba 对象随响应实时返回（本函数不持久化，与现状一致）；
+ *     第 7 项「建议下一次跟进时间」复用 suggested_followup_date
+ *   - 信息不足规则：任何字段缺数据依据必须填"信息不足"，严禁编造候选人信息
  *
  * AI 仅用 hy3（app.ai().createModel('cloudbase')）。
  */
@@ -38,6 +45,17 @@ function buildSystem(op) {
     'suggested_objection_handling(针对候选人顾虑的3条异议处理话术，数组，每条80字内),',
     'suggested_next_stage_goal(下一步推进目标：约面谈/邀创说会/促报考/其他，20字内),',
     'suggested_followup_date(建议下次跟进日期 YYYY-MM-DD)。',
+    '【Next Best Action（下一步行动）— 必须输出】',
+    '- 在上述字段外，额外输出 nba 对象（增员经营视角），字段：',
+    '  assessment(当前增员经营判断：结合当前增员阶段/最近接触情况/动机与顾虑，不超过2句),',
+    '  goal(当前最重要的增员目标：1句，对应增员五步法当前阶段的推进要求),',
+    '  next_action(下一最佳行动：1句，具体到渠道与动作，拿到即可执行),',
+    '  topic(推荐沟通主题：不超过12字),',
+    '  avoid(不建议做什么：1句，指出当前增员阶段最容易犯的错误),',
+    '  success_criteria(成功标准：1句，可验证的结果),',
+    '- nba 不含日期字段：建议下次跟进时间统一使用 suggested_followup_date，不要在 nba 中输出日期。',
+    '- 【信息不足规则】资料不足的字段必须填"信息不足"，严禁编造候选人的动机/家庭/收入等信息。',
+    '- nba 必须与 suggested_message/suggested_next_stage_goal 相互一致，不得矛盾。',
     '只输出 JSON，不要解释。',
   ].join('\n');
 }
@@ -64,6 +82,19 @@ function buildUser(c) {
   ].join('\n');
 }
 
+// NBA 结构清洗：仅保留 6 个文本字段；全空视为未产出（返回 null）
+function normNba(n) {
+  if (!n || typeof n !== 'object' || Array.isArray(n)) return null;
+  var KEYS = ['assessment', 'goal', 'next_action', 'topic', 'avoid', 'success_criteria'];
+  var out = {}, any = false;
+  KEYS.forEach(function (k) {
+    var v = typeof n[k] === 'string' ? n[k].trim().slice(0, 200) : '';
+    out[k] = v;
+    if (v) any = true;
+  });
+  return any ? out : null;
+}
+
 exports.main = async (event, context) => {
   try {
     const candidateId = parseInt(event && event.candidate_id, 10);
@@ -87,8 +118,9 @@ exports.main = async (event, context) => {
     ];
     const { text: raw } = await generateText(messages, { timeout: 120000 });
     const parsed = extractJson(raw) || {};
+    const nba = normNba(parsed.nba);
 
-    return { recommendation: parsed, raw: raw };
+    return { recommendation: Object.assign({}, parsed, { nba: nba }), raw: raw };
   } catch (e) {
     return { error: e.message };
   }
