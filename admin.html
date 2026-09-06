@@ -709,6 +709,7 @@ function route(){
   if(hash === '#/activity/customer') return showCustomerActivity();
   if(hash === '#/activity/recruit') return showRecruitActivity();
   if(hash === '#/ai-suggestions') return showAiSuggestions();
+  if(hash === '#/today') return showTodayCoach();
   if(hash === '#/customers') return showList();
   if(hash === '#/customers/trash') return showCustomerTrash();
   showDashboard();
@@ -952,7 +953,7 @@ async function renderTodayCoach(force){
   if(!box) return;
   var today = dayStr(new Date());
   var cache = coachLoad();
-  if(!force && cache && cache.date === today && cache.data && cache.data.items){
+  if(!force && cache && cache.date === today && cache.v === 2 && cache.data && cache.data.items){
     renderCoachItems(box, cache.data, false);
     // 指纹校验（轻量接口，不调 AI）：数据有变化仅提示
     callFn('today_coach', {action:'candidates'}).then(function(r){
@@ -967,11 +968,35 @@ async function renderTodayCoach(force){
   try{
     var r = await callFn('today_coach', {action:'generate'});
     if(r.error) throw new Error(r.error);
-    coachSave({ date: today, fingerprint: r.fingerprint || '', data: r });
+    coachSave({ v: 2, date: today, fingerprint: r.fingerprint || '', data: r });
     renderCoachItems(box, r, false);
   }catch(e){
     box.innerHTML = '';
     box.appendChild(el('div', {class:'coach-stale'}, '今日建议生成失败：' + esc(e.message)));
+  }
+}
+
+// ==================== 今日经营（独立功能页 #/today） ====================
+// 当天已生成则直接用缓存（不调 AI），否则自动生成一次；「重新生成今日建议」主动刷新
+async function showTodayCoach(){
+  var view = $('view');
+  view.innerHTML = '';
+  view.appendChild(el('div', {class:'toolbar'}, [
+    el('button', {class:'btn', onclick:function(){ location.hash='#/'; }}, '← 客户工作台'),
+  ]));
+  var card = el('div', {class:'card'});
+  card.appendChild(el('div', {class:'loading'}, '加载中…'));
+  view.appendChild(card);
+
+  try {
+    var coachBox = el('div', {class:'coach-box'});
+    card.innerHTML = '';
+    card.appendChild(coachBox);
+    todayCoachBox = coachBox;
+    await renderTodayCoach(false);
+  } catch(e){
+    card.innerHTML = '';
+    card.appendChild(el('div', {class:'empty'}, '加载失败：' + esc(e.message)));
   }
 }
 
@@ -1010,6 +1035,7 @@ async function showDashboard(){
   var toolbar = el('div', {class:'toolbar'}, [
     searchInput,
     el('button', {class:'btn', onclick:doSearch}, '搜索'),
+    el('button', {class:'btn btn-green', onclick:function(){ location.hash='#/today'; }}, '今日经营'),
     el('button', {class:'btn btn-primary', onclick:function(){ openCustomerForm(null); }}, '+ 新增客户'),
     el('button', {class:'btn btn-green', onclick:function(){ location.hash='#/customers'; }}, '全部客户'),
     el('button', {class:'btn', onclick:function(){ openAiParse(); }}, 'AI 解析新增'),
@@ -1032,12 +1058,6 @@ async function showDashboard(){
       document.createTextNode('客户工作台'),
       el('span', {class:'dash-date'}, todayStr + ' 星期' + '日一二三四五六'[new Date().getDay()]),
     ]));
-
-    // 今日经营驾驶舱（在统计卡上方；异步填充，不阻塞统计卡与表格渲染）
-    var coachBox = el('div', {class:'coach-box'});
-    card.appendChild(coachBox);
-    todayCoachBox = coachBox;
-    renderTodayCoach(false);
 
     // 分类统计（含增员状态维度）
     var counts = {all:rows.length, today:0, overdue:0, month:0, stale:0, rc_in:0};

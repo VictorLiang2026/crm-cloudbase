@@ -8,7 +8,7 @@
  *     candidates: { action:'candidates' }
  *       → 纯规则筛选（不调 AI，快），返回 { today, fingerprint, customerPool, recruitPool }
  *     generate:   { action:'generate' }
- *       → 规则候选（客户 top8 + 增员 top6）→ hy3 结构化排序/理由 → { today, fingerprint, source, items }
+ *       → 规则候选（客户 top12 + 增员 top9）→ hy3 结构化排序/理由 → { today, fingerprint, source, items }
  *         items[]: { type:'customer'|'recruit', id, name, stage, priority, reason,
  *                    recommended_action, suggested_topic, next_step }
  *         AI 失败自动降级为规则版（source:'rule'），保证功能可用
@@ -20,9 +20,9 @@
 
 const { rdb, generateText, extractJson, assertOk, nowIso } = require('./db');
 
-const POOL_CUSTOMER = 8;   // 进入 AI 排序的客户候选数
-const POOL_RECRUIT = 6;    // 进入 AI 排序的增员候选数
-const FINAL_COUNT = 10;    // 最终展示人数
+const POOL_CUSTOMER = 12;  // 进入 AI 排序的客户候选数
+const POOL_RECRUIT = 9;    // 进入 AI 排序的增员候选数
+const FINAL_COUNT = 15;    // 最终展示人数
 
 // ---------- 北京日期工具（同 activity_reports 口径） ----------
 function bjNow() { return new Date(Date.now() + 8 * 3600 * 1000); }
