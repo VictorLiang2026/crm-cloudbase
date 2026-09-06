@@ -8,7 +8,7 @@
 - 不启用 VPC，不填 VPC ID / 子网
 - 照片 base64 存 `photos` 表（不调多模态，不开云存储匿名登录）
 - `admin.html` 通过 `callFunction`（同域）调云函数，不直连 PG，不直连 AI
-- 数据库安全：6 张业务表启用 RLS，policy 仅放行云函数 token（详见「数据库安全（RLS）」）
+- 数据库安全：**13 张业务表全部启用 RLS**，policy 仅放行云函数 token（详见「数据库安全（RLS）」）
 
 ## 目录结构
 
@@ -32,16 +32,21 @@ crm-cloudbase/
 │   ├── recruit_goals/               # 月度目标 + getProgress（与行业基准对照）
 │   ├── recruit_score/               # AI 高潜评分（hy3，120s，6 维度加权）
 │   └── recruit_recommend/           # AI 接触建议（hy3，120s，STAR 异议框架）
-├── admin.html                       # 单页管理台（callFunction 同域，单文件 4109 行）
-├── cloudbase/migrations/            # 17 个迁移 SQL（含 RLS / 软删除 / 增员模块）
-├── docs/                            # 架构图 + 优化方案
-│   ├── architecture-current.md      # 单页式架构图（v2.0）
-│   └── 对话历史记录.md              # 项目对话历史
-├── backups/                         # 数据快照 + 恢复说明
+├── admin.html                       # 单页管理台（callFunction 同域，单文件约 3900 行）
+├── cloudbase/migrations/            # 16 个迁移 SQL（含 RLS / 软删除 / 增员模块，按时间戳执行）
+├── docs/                            # 架构与过程文档
+│   ├── architecture-current.md      # 单页式架构图（v2.0，改架构前先看）
+│   ├── 对话历史记录.md              # 项目对话历史纪要（2026-08-22~09-05）
+│   ├── 任务全程回顾-20260822至20260906.html  # 16 天开发全程彩色回顾
+│   └── 任务回顾-活动量统计至发布自动化-20260906.html
+├── tools/                           # 发布与运维脚本（Windows / PowerShell 5.1+，UTF-8 BOM）
+│   ├── release.ps1                  # 一键发布：提交→推送→打标签→自动体检
+│   └── sync-check.ps1               # 三方一致性体检（工作区/git/线上 MD5）
+├── backups/                         # 数据快照 + 恢复说明（.gitignore 排除，仅本机存在）
 ├── SPEC-v1.md                       # 早期规格（6 表 8 函数 + PGHOST，已归档）
 ├── SPEC-v2.md                       # 当前规格（13 表 16 函数 + rdb()，2026-09-06 重写）
-├── 增员平台开发方案.md              # 增员模块原始方案
-├── 数据库信息.txt                   # 数据库连接信息
+├── 增员平台开发方案.md              # 增员模块原始方案（✅ 已实现，留档）
+├── 数据库信息.txt                   # 数据库连接信息（.gitignore 排除，不入库）
 └── README.md                        # 本文件
 ```
 
@@ -118,8 +123,14 @@ crm-cloudbase/
 | action | 入参 | 出参 |
 |--------|------|------|
 | `list` | `{ action:'list', customer_id }` | `{ rows }` |
+| `listAll` | `{ action:'listAll', page?, pageSize?, sortField?, sortDir?, keyword?, dateField?, startDate?, endDate? }` | `{ rows, total, page, pageSize }` |
 
 只读。记录由 `ai_recommend` 写入。
+
+`listAll` 为 AI 建议库页面专用：
+- `keyword`：客户姓名模糊匹配（不区分大小写），空=不过滤；
+- `dateField`：日期筛选字段，取值 `recommendation_date`（给出建议日期）或 `suggested_followup_date`（建议跟进日期），与 `startDate` / `endDate`（YYYY-MM-DD，单边可空=开区间）配合；**两种日期互斥，一次只按一种日期筛选**；启用日期筛选时无该日期的记录排除；
+- `sortField` / `sortDir`：表头排序（id / customer_name / recommendation_date / suggested_followup_date / stage / followup_goal），空值排末尾；默认 `id desc`。
 
 ### 7. ai_parse（hy3，120s）
 
@@ -279,7 +290,7 @@ crm-cloudbase/
 
 ## 前端（admin.html）
 
-- 单页 HTML，**单文件 4109 行 / 92 个函数 / 无构建步骤**
+- 单页 HTML，**单文件约 3900 行 / 120+ 函数 / 无构建步骤**
 - `@cloudbase/js-sdk` CDN：`https://static.cloudbase.net/cloudbase-js-sdk/latest/cloudbase.full.js`
 - `window.APP_CONFIG.envId` 填环境 ID（部署前修改）
 - `apiBase` 留空：通过 `app.callFunction({ name, data })` 同域调用，不直连 PG/AI
@@ -310,8 +321,8 @@ crm-cloudbase/
 
 ### 工具栏按钮
 
-- **客户工作台** 工具栏（9 个按钮）：搜索框 / 搜索 / + 新增客户 / 全部客户 / AI 解析新增 / AI 建议 / 活动量 / 客户列表 / 客户工作台（已删除"增员"按钮 — 已迁到组织发展）
-- **增员工作台** 工具栏（6 个按钮）：搜索框 / 搜索 / + 新增候选人 / 目标管理 / 活动量 / 回收站
+- **客户工作台** 工具栏：搜索框 / 搜索 / + 新增客户（蓝）/ 全部客户（绿，进 `#/customers`）/ AI 解析新增 / AI 建议 / 活动量（旧"增员"按钮已迁到顶栏「组织发展」）；客户列表页另含「← 客户工作台」返回按钮
+- **增员工作台** 工具栏（6 个按钮）：搜索框 / 搜索 / + 新增候选人 / 目标管理 / 活动量 / 回收站（子页面左上角统一为「← 增员工作台」返回按钮）
 
 ### 照片上传
 
@@ -361,6 +372,44 @@ WITH CHECK (同上)
 5. **创建登录用户**：`managePermissions(action="createUser", username=..., password=...)` 或控制台「身份认证 → 用户管理」创建（PG 模式 HTTP API 不支持纯用户名密码自助注册）。当前账号：`crm_admin`
 6. **网关 OPA 策略**（已配置）：`authz.user.rego` 显式 `deny` 匿名/未登录用户调用 functions（纵深防御；注册用户由平台默认策略放行）
 7. **端到端验证**：打开 admin.html → 登录 → **客户工作台** → 新增客户 → 详情各 Tab（7 个）→ AI 解析 / AI 建议 → 切换到**组织发展** → 增员工作台 → 目标管理 → 活动量日报 → 客户/增员回收站
+
+## 发布与版本管理（日常迭代流程）
+
+日常改动走「**改代码 → 部署 → 一键发布 → 体检**」四步，全部留痕、可回滚：
+
+### 1. 改动并部署（MCP）
+
+- **云函数**：MCP `manageFunctions`（createFunction / updateFunctionCode，runtime Nodejs18.15，handler `index.main`）；共享模块 `_shared/db.js` 需先复制为各函数 `./db.js`。
+- **前端**：MCP `manageHosting` 上传 `admin.html` 到静态托管（**不要用** `tcb hosting deploy`，会泄露 `.git/`、`cloudfunctions/` 等非托管文件）。
+- **数据库变更**：在 `cloudbase/migrations/` 新增时间戳命名的 SQL 并执行；**基表加列/改列后必须重建依赖视图**（参考 pg-view-rebuild-check 清单，v_* 视图不会自动包含新列）；新表同步启用 RLS fn_only 策略。
+- MCP 环境需先 `auth` set_env，envId = `crm-d1gkae8ddc930d151`。
+- 部署后核对线上文件 MD5（请求 URL 加时间戳防 CDN 缓存）。
+
+### 2. 一键发布（tools/release.ps1）
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\release.ps1 -Message "feat: 改动说明"
+# 里程碑发版时追加标签：
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\release.ps1 -Message "feat: xxx" -Tag v1.0.5
+```
+
+脚本自动执行：`git add -A` → 提交 → 推送 master →（带 `-Tag` 时）创建并推送带注解标签 → 末尾自动跑三方体检。
+
+### 3. 三方体检（tools/sync-check.ps1）
+
+可随时单独运行，检查任一漂移即退出码 1 报红：
+
+- 工作区是否有未提交改动；
+- 本地 master 与 GitHub `origin/master` 是否一致；
+- 版本标签本地与 GitHub 是否齐全；
+- 线上 admin.html MD5 与本地是否一致；
+- 最近提交涉及 `cloudfunctions/` 时提示确认云函数已部署（云函数代码无法 MD5 直比，由部署动作保证）。
+
+### 4. 版本与回滚
+
+- 标签命名 `vX.Y.Z`，里程碑发版；现有标签：v1.0.0（工作台+保单检视）→ v1.0.1（增员完整版）→ v1.0.2（回收站+RLS）→ v1.0.3（活动量日报）→ v1.0.4（双模块导航）。
+- 回滚：`git checkout vX.Y.Z -- admin.html` 后重新上传托管；云函数检出旧版本后需重新 MCP 部署；数据库结构回滚走反向迁移 SQL。
+- 注意：`.ps1` 脚本存为 **UTF-8 带 BOM**（PowerShell 5.1 否则按 GBK 解析中文注释报语法错）；`backups/` 与 `数据库信息.txt` 被 .gitignore 排除，换电脑需单独拷贝。
 
 ## 硬性限制
 

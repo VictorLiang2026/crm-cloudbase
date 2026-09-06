@@ -32,7 +32,8 @@ admin.html (单页, @cloudbase/js-sdk CDN, callFunction 同域)
   ├─ _shared/db.js（rdb() 数据访问 + AI(hy3) 封装；部署时复制为各函数 ./db.js）
   └─ @cloudbase/node-sdk@^4
        └─ app.rdb()                          → 共享集群 PG（RLS fn_only）
-       └─ app.ai().createModel('cloudbase')  → hy3（ai_parse/ai_recommend/policy_review_reports）
+       └─ app.ai().createModel('cloudbase')  → hy3（5 个 AI 函数：ai_parse / ai_recommend /
+                                                   policy_review_reports / recruit_score / recruit_recommend）
 ```
 
 **边界**：前端不直连 PG，不直连 AI。所有 PG 访问与 AI 调用都在云函数内完成。
@@ -50,7 +51,7 @@ admin.html (单页, @cloudbase/js-sdk CDN, callFunction 同域)
 |  | `products` | 10s | 2026-08-18 | 保单额度 upsert（每客户一行，11 个 ap_* bigint + items JSON） |
 |  | `gifts` | 10s | 2026-08-18 | 伴手礼 CRUD |
 |  | `photos` | 10s | 2026-08-18 | 照片存储（base64 → photos 表，list 只返元数据，get 返 data URL） |
-| **AI 历史** | `ai_recommendations` | 10s | 2026-08-18 | AI 建议历史列表（只读） |
+| **AI 历史** | `ai_recommendations` | 10s | 2026-08-18 | AI 建议历史（只读；`list` 按客户 / `listAll` 分页排序+姓名与日期区间筛选） |
 | **AI 生成** | `ai_parse` | **120s** | 2026-08-18 | AI 文本解析 → 客户资料（hy3），可选存图 |
 |  | `ai_recommend` | **120s** | 2026-08-18 | AI 跟进建议生成（hy3）→ 写 ai_recommendations |
 | **画像增强** | `policy_review_reports` | **120s** | 2026-09-03 | 保单检视报告 5 段 AI 生成（标准普尔+双十原则+保险金字塔方法论）|
@@ -105,7 +106,7 @@ admin.html (单页, @cloudbase/js-sdk CDN, callFunction 同域)
 
 ## 数据库安全（RLS）
 
-共享集群 PG 的 REST API（`https://<envId>.api.tcloudbasegateway.com/v1/rdb/rest/...`）默认对匿名 token（`role=anon`）开放，且云函数 `app.rdb()` 的实际身份也是 `anon`。为防止任何人匿名 REST 直读客户数据，**11 张业务表 + 2 张视图配套策略**均启用 RLS，policy 统一为：
+共享集群 PG 的 REST API（`https://<envId>.api.tcloudbasegateway.com/v1/rdb/rest/...`）默认对匿名 token（`role=anon`）开放，且云函数 `app.rdb()` 的实际身份也是 `anon`。为防止任何人匿名 REST 直读客户数据，**13 张业务表全部启用 RLS**（6 张客户域 + 2 张画像增强 + 5 张增员域），policy 统一为：
 
 ```sql
 -- 每张表：<table>_fn_only（TO anon, FOR ALL）
@@ -121,11 +122,11 @@ WITH CHECK (同上)
 - 2 张增员视图（`v_recruit_candidates` / `v_recruit_candidates_trash`）显式 `GRANT SELECT TO anon`，因为 RLS 已在基表生效，视图读出来的就是已经过滤过的安全数据
 - 依赖 `@cloudbase/node-sdk@^4`（4.x 才有 `rdb()`；3.x 无）
 
-**已启 RLS 的 11 张业务表**：
+**已启 RLS 的 13 张业务表**：
 customers / followups / products / gifts / photos / ai_recommendations /
 policy_review_reports / ocr_records /
 recruit_candidates / recruit_milestones / recruit_followups / recruit_goals / recruit_goal_benchmarks
-（**实际 13 张全部启用**，详见 `cloudbase/migrations/20260905170000_recruit_security_baseline.sql`）
+（统一 fn_only 策略，详见 `cloudbase/migrations/20260905170000_recruit_security_baseline.sql` 与 `20260905171000_ocr_records_rls.sql`）
 
 已验证：云函数正常读写 761 条客户；匿名 REST 读表/读视图均返回空或 `permission denied`。
 
@@ -152,6 +153,8 @@ recruit_candidates / recruit_milestones / recruit_followups / recruit_goals / re
 6. **网关 OPA 策略**（已配置）：`authz.user.rego` 显式 `deny` 匿名/未登录用户调用 functions（纵深防御；注册用户由平台默认策略放行）
 7. **端到端验证**：打开 admin.html → 登录 → 客户工作台 → 新增客户 → 详情各 Tab → AI 解析 / AI 建议 → 切换到"组织发展" → 增员工作台 → 目标管理 → 活动量日报 → 客户/增员回收站
 
+> **日常迭代发布**（非首次部署）：改代码 → MCP 部署云函数/托管 → `tools/release.ps1` 一键提交推送（可带 `-Tag vX.Y.Z`）→ `tools/sync-check.ps1` 三方体检。完整流程见 [`README.md`](./README.md)「发布与版本管理」章节。
+
 ## 硬性限制（v2 与 v1 一致）
 
 1. **AI 只用 hy3**：`app.ai().createModel('cloudbase')` + `generateText({ model: 'hy3' })`。
@@ -163,7 +166,7 @@ recruit_candidates / recruit_milestones / recruit_followups / recruit_goals / re
 5. **所有 SQL 参数化**：`$1, $2, ...`，空串统一转 null。
 6. **不启用 VPC**：共享集群 PG，`ssl=false`，云函数走内网。
 7. **admin.html `apiBase` 留空**：通过 `callFunction` 同域调用。
-8. **11 张业务表 + 2 张增员视图 RLS baseline**：不得建 `TO anon USING (true)` 类过宽 policy；不得对 anon 授予 6 张 `*_view` 视图 SELECT。
+8. **13 张业务表 RLS baseline**（6 张客户域 + 2 张画像增强 + 5 张增员域）：不得建 `TO anon USING (true)` 类过宽 policy；不得对 anon 授予 6 张 `*_view` 视图 SELECT。
 
 ## v1 → v2 变更摘要
 
@@ -198,4 +201,4 @@ recruit_candidates / recruit_milestones / recruit_followups / recruit_goals / re
 
 **当前版本**：v2.0（2026-09-06 重写）
 **维护者**：Victor
-**配套文档**：[README.md](./README.md)（云函数契约）/ [docs/architecture-current.md](./docs/architecture-current.md)（单页架构图）/ [docs/system-optimization-plan.md](./docs/system-optimization-plan.md)（未来 30 天优化路径）
+**配套文档**：[README.md](./README.md)（云函数契约 + 发布与版本管理）/ [docs/architecture-current.md](./docs/architecture-current.md)（单页架构图）/ [tools/release.ps1](./tools/release.ps1)、[tools/sync-check.ps1](./tools/sync-check.ps1)（发布与体检脚本）
