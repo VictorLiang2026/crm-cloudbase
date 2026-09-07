@@ -239,6 +239,7 @@ exports.main = async (event, context) => {
       new_info: clip(parsed.new_info, 200),
       stage_change: stageChange,
       profile_updates: normProfileUpdates(parsed.profile_updates),
+      recommendation_id: event.recommendation_id ? parseInt(event.recommendation_id, 10) : null,
     };
     if (!result.followup_notes) {
       return { error: 'AI 未能从描述中识别出沟通内容，请补充细节后重试' };

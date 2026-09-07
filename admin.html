@@ -1596,6 +1596,9 @@ function renderFollowups(cid, rows){
       ]),
     ]));
     if(f.followup_notes) card.appendChild(el('p', {}, f.followup_notes));
+    if(f.recommendation_id){
+      card.appendChild(el('div', {style:'font-size:12px;color:#047857;margin-top:2px'}, '🔗 关联经营建议 #' + f.recommendation_id));
+    }
     if(f.next_followup_date||f.next_followup_goal){
       card.appendChild(el('p', {style:'color:var(--muted);font-size:13px'}, '下次：'+(f.next_followup_date?String(f.next_followup_date).slice(0,10):'')+' '+esc(f.next_followup_goal||'')));
     }
@@ -1627,7 +1630,7 @@ function openFollowupForm(cid, fol, customerName){
 }
 
 // ---------- AI 沟通记录助手：口语描述 → AI 结构化 → 确认页 → 写 followups（+可选追加客户信息/阶段建议） ----------
-function openAiFollowup(cid, customerName){
+function openAiFollowup(cid, customerName, presetRecId){
   var overlay = el('div', {class:'modal-overlay'});
   var m = el('div', {class:'modal', style:'max-width:680px'});
   overlay.appendChild(m);
@@ -1652,7 +1655,7 @@ function openAiFollowup(cid, customerName){
         if(txt.length < 5){ msg.textContent = '请至少描述 5 个字'; return; }
         var btn = this; btn.disabled = true; btn.textContent = 'AI 解析中…（约几秒）'; msg.textContent = '';
         try {
-          var r = await callFn('ai_followup', {action:'parse', customer_id:cid, text:txt});
+          var r = await callFn('ai_followup', {action:'parse', customer_id:cid, text:txt, recommendation_id:presetRecId || null});
           if(r.error) throw new Error(r.error);
           showConfirm(r.parsed);
         } catch(e){
@@ -1665,7 +1668,7 @@ function openAiFollowup(cid, customerName){
   }
 
   // 步骤 2：确认页（内容可编辑；客户信息/阶段变更默认不生效，逐项勾选）
-  function showConfirm(p){
+  async function showConfirm(p){
     m.innerHTML = '';
     m.appendChild(el('h3', {}, '确认跟进记录'));
     m.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:0 0 10px'},
@@ -1761,6 +1764,42 @@ function openAiFollowup(cid, customerName){
       }
     }
 
+    // 关联经营建议（NBA）选择区
+    var nbaSelect = null;
+    var nbaRecId = p.recommendation_id || presetRecId || null;
+    if(nbaRecId){
+      // 从 NBA 完成入口进来，已有关联 ID，显示提示
+      m.appendChild(el('div', {class:'aif-suggest'}, [
+        el('div', {class:'aif-item'}, [
+          el('span', {class:'aif-suggest-title', style:'display:block'}, '🔗 本次沟通关联经营建议 #' + nbaRecId),
+          el('span', {class:'aif-hint', style:'display:block'}, '本次沟通记录将自动关联到刚才执行的 NBA 建议。'),
+        ]),
+      ]));
+    } else {
+      // 查找该客户最近未完成的 NBA（最多 3 条）
+      try {
+        var recs = await callFn('ai_recommendations', {action:'list', customer_id:cid, limit:10});
+        var pendingNbas = (recs.rows || []).filter(function(r){
+          return r.nba && (!r.nba.status || r.nba.status === 'pending');
+        }).slice(0, 3);
+        if(pendingNbas.length){
+          nbaSelect = el('select', {id:'aif-nba', style:'width:100%;max-width:300px'});
+          nbaSelect.appendChild(el('option', {value:''}, '不关联'));
+          pendingNbas.forEach(function(r){
+            var label = '#' + r.id + ' ' + (r.nba && r.nba.next_action ? String(r.nba.next_action).slice(0,30) : '建议') + ' (' + (r.recommendation_date||'').slice(0,10) + ')';
+            nbaSelect.appendChild(el('option', {value:String(r.id)}, label));
+          });
+          m.appendChild(el('div', {class:'aif-suggest'}, [
+            el('div', {class:'aif-item'}, [
+              el('span', {class:'aif-suggest-title', style:'display:block'}, '🔗 关联经营建议'),
+              nbaSelect,
+              el('span', {class:'aif-hint', style:'display:block'}, '选择本次沟通对应的 NBA 建议（可空）。'),
+            ]),
+          ]));
+        }
+      } catch(e){ /* 查询失败不影响正常流程 */ }
+    }
+
     var errMsg = el('div', {style:'color:#c0392b;font-size:13px;margin-top:8px'});
     m.appendChild(errMsg);
     m.appendChild(el('div', {class:'modal-footer'}, [
@@ -1780,6 +1819,7 @@ function openAiFollowup(cid, customerName){
             followup_date: form.followup_date || dayStr(new Date()),
             next_followup_date: form.next_followup_date || null,
             next_followup_goal: form.next_followup_goal || null,
+            recommendation_id: nbaRecId || (nbaSelect ? parseInt(nbaSelect.value, 10) || null : null),
           };
           var r1 = await callFn('followups', {action:'create', data:payload});
           if(r1.error) throw new Error(r1.error);
@@ -2557,6 +2597,27 @@ function openNbaStatusModal(recId, mode){
           overlay.remove();
           // 刷新当前详情页
           if(detailState.id){ showDetail(detailState.id); }
+          // 完成后提示：是否继续记录沟通？
+          if(mode === 'completed' && detailState.id){
+            var custName = (detailState.data && detailState.data.customer && detailState.data.customer.customer_name) || '';
+            setTimeout(function(){
+              var c2 = el('div', {class:'modal-overlay'});
+              var m2 = el('div', {class:'modal', style:'max-width:360px'});
+              c2.appendChild(m2);
+              c2.addEventListener('click', function(e){ if(e.target===c2) c2.remove(); });
+              document.getElementById('modal-root').appendChild(c2);
+              m2.appendChild(el('h3', {}, '记录本次沟通？'));
+              m2.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:0 0 12px'},
+                '本次沟通已关联到刚才的经营建议，可快速用 AI 记录。'));
+              m2.appendChild(el('div', {class:'modal-footer'}, [
+                el('button', {class:'btn', onclick:function(){ c2.remove(); }}, '暂不记录'),
+                el('button', {class:'btn btn-primary', onclick:function(){
+                  c2.remove();
+                  openAiFollowup(detailState.id, custName, recId);
+                }}, '✨ AI 记录沟通'),
+              ]));
+            }, 300);
+          }
         } catch(e){
           toast('操作失败：' + (e.message || e), 'err');
           btn.disabled = false; btn.textContent = opt;
@@ -4327,6 +4388,9 @@ function renderRecruitFollowups(candidateId, rows){
     ]);
     card.appendChild(header);
     if(f.followup_notes) card.appendChild(el('p', {style:'margin:6px 0 4px'}, esc(f.followup_notes)));
+    if(f.recommendation_id){
+      card.appendChild(el('div', {style:'font-size:12px;color:#047857;margin:2px 0'}, '🔗 关联经营建议 #' + f.recommendation_id));
+    }
     if(f.concern_feedback) card.appendChild(el('p', {style:'margin:0;font-size:13px;color:#7c2d12'}, '顾虑反馈：' + esc(f.concern_feedback)));
     if(f.next_followup_date || f.next_followup_goal){
       card.appendChild(el('p', {style:'margin:4px 0 0;color:var(--muted);font-size:13px'}, '下次：' + (f.next_followup_date ? String(f.next_followup_date).slice(0,10) : '') + ' ' + esc(f.next_followup_goal || '')));
