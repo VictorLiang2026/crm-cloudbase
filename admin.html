@@ -397,6 +397,9 @@ var app = null;
 var STAGES = ['','新认识','关系维护','需求挖掘','方案沟通','成交推进','转介绍经营'];
 var PRIORITIES = ['','A','B','C','D','E'];
 var GOALS = ['','建立联系','约见面','邀请活动','获取家庭信息','推进签单','推进招募','推进转介绍'];
+// 经营机会（v1.2.1）：类型与状态词表（与 opportunities 表、ai_followup OPP_ENUM 一致）
+var OPP_TYPES = ['医疗保障','重疾保障','养老规划','教育规划','财富规划','家庭保障','转介绍'];
+var OPP_STATUSES = ['发现','沟通','方案','成交','关闭'];
 
 var CUSTOMER_FIELDS = [
   {name:'customer_name',label:'姓名',type:'text',req:true},
@@ -1275,6 +1278,7 @@ async function showDetail(id){
     switch(detailState.tab){
       case 'info': content.appendChild(renderInfo(r.customer)); break;
       case 'profile': content.appendChild(renderProfile(r.customer, r.followups ? r.followups.length : 0)); break;
+      case 'opps': content.appendChild(await renderOpps(id)); break;
       case 'followups': content.appendChild(renderFollowups(id, r.followups)); break;
       case 'products': content.appendChild(renderPolicyReview(id, r.products, r.reports || [])); break;
       case 'gifts': content.appendChild(renderGifts(id, r.gifts)); break;
@@ -1764,6 +1768,23 @@ function openAiFollowup(cid, customerName, presetRecId){
       }
     }
 
+    // 建议创建经营机会（默认勾选，可取消；AI 只建议，确认后由 opportunities 创建）
+    var oppCb = null;
+    if(p.opportunity && p.opportunity.type){
+      oppCb = el('input', {type:'checkbox', id:'aif-opp'});
+      oppCb.checked = true;
+      m.appendChild(el('div', {class:'aif-suggest'}, [
+        el('div', {class:'aif-item'}, [
+          oppCb,
+          el('label', {for:'aif-opp'}, [
+            el('span', {class:'aif-suggest-title', style:'display:block'}, '建议创建经营机会：' + esc(p.opportunity.type)),
+            el('span', {class:'aif-suggest-text', style:'display:block'}, esc(p.opportunity.reason || '')),
+            el('span', {class:'aif-hint', style:'display:block'}, '勾选后在本客户名下创建该机会（初始状态：发现）；取消勾选则不创建。'),
+          ]),
+        ]),
+      ]));
+    }
+
     // 关联经营建议（NBA）选择区
     var nbaSelect = null;
     var nbaRecId = p.recommendation_id || presetRecId || null;
@@ -1844,6 +1865,16 @@ function openAiFollowup(cid, customerName, presetRecId){
             var r4 = await callFn('customers', {action:'update', id:cid, data:{profile: mergedProf}});
             if(r4.error) throw new Error('跟进已保存，但画像更新失败：' + r4.error);
           }
+          // 可选：创建经营机会（AI 仅建议，勾选才创建；只存机会状态，不复制客户资料）
+          if(oppCb && oppCb.checked && p.opportunity && p.opportunity.type){
+            var r5 = await callFn('opportunities', {action:'create', data:{
+              customer_id: cid,
+              opportunity_type: p.opportunity.type,
+              discovered_at: payload.followup_date,
+              ai_summary: p.opportunity.reason || '',
+            }});
+            if(r5.error) throw new Error('跟进已保存，但机会创建失败：' + r5.error);
+          }
           toast('跟进已记录');
           overlay.remove();
           invalidateCustomers();
@@ -1858,6 +1889,85 @@ function openAiFollowup(cid, customerName, presetRecId){
   }
 
   showInput();
+}
+
+// ---------- 经营机会（v1.2.1：轻量机会跟踪；只存机会状态，不复制客户资料） ----------
+function oppStatusStyle(s){
+  var m = {'发现':'#2563eb','沟通':'#d97706','方案':'#7c3aed','成交':'#047857','关闭':'#9ca3af'};
+  return 'color:#fff;background:' + (m[s] || '#9ca3af') + ';padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600';
+}
+
+async function renderOpps(cid){
+  var box = el('div', {});
+  var r = await callFn('opportunities', {action:'list', customer_id:cid});
+  if(r && r.error){
+    box.appendChild(el('div', {style:'margin-bottom:12px;display:flex;justify-content:flex-end'}, el('button', {class:'btn btn-primary btn-sm', onclick:function(){ openOppForm(cid); }}, '+ 新增机会')));
+    box.appendChild(el('div', {class:'empty'}, '加载失败：' + esc(r.error)));
+    return box;
+  }
+  var rows = (r && r.rows) || [];
+  box.appendChild(el('div', {style:'margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap'}, [
+    el('button', {class:'btn btn-primary btn-sm', onclick:function(){ openOppForm(cid); }}, '+ 新增机会'),
+  ]));
+  if(!rows.length){
+    box.appendChild(el('div', {class:'empty'},
+      '暂无经营机会。可手动新增；通过「✨ AI 记录本次沟通」时，AI 识别到明确机会也会建议创建（确认后才会创建）。'));
+    return box;
+  }
+  rows.forEach(function(o){
+    var card = el('div', {class:'card', style:'margin-bottom:8px;padding:10px'});
+    card.appendChild(el('div', {style:'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px'}, [
+      el('div', {}, [
+        el('strong', {}, o.opportunity_type),
+        el('span', {style:'margin-left:8px'}, el('span', {style:oppStatusStyle(o.status)}, o.status)),
+        el('span', {style:'margin-left:8px;color:var(--muted);font-size:12px'}, o.discovered_at ? String(o.discovered_at).slice(0,10) : ''),
+      ]),
+      el('div', {}, [
+        el('a', {class:'btn-sm', style:'margin-right:8px', onclick:function(){ openOppForm(cid, o); }}, '编辑'),
+        o.status !== '关闭' ? el('a', {class:'btn-sm', style:'margin-right:8px', onclick:async function(){
+          var rr = await callFn('opportunities', {action:'close', id:o.id});
+          if(rr.error){ toast('操作失败：'+rr.error); return; }
+          toast('已关闭'); showDetail(cid);
+        }}, '关闭') : null,
+        el('a', {class:'btn-sm btn-danger', onclick:async function(){
+          if(!confirm('删除该经营机会？')) return;
+          var rr = await callFn('opportunities', {action:'remove', id:o.id});
+          if(rr.error){ toast('删除失败：'+rr.error); return; }
+          toast('已删除'); showDetail(cid);
+        }}, '删除'),
+      ]),
+    ]));
+    if(o.last_progress) card.appendChild(el('p', {}, esc(o.last_progress)));
+    if(o.next_action) card.appendChild(el('p', {style:'color:var(--muted);font-size:13px'}, '下一步：' + esc(o.next_action)));
+    if(o.ai_summary) card.appendChild(el('div', {style:'font-size:12px;color:#7c3aed;margin-top:2px'}, '✨ AI 识别：' + esc(o.ai_summary)));
+    box.appendChild(card);
+  });
+  return box;
+}
+
+function openOppForm(cid, opp){
+  var FIELDS = [
+    {name:'opportunity_type',label:'机会类型',type:'select',options:OPP_TYPES,req:true},
+    {name:'status',label:'当前状态',type:'select',options:OPP_STATUSES},
+    {name:'discovered_at',label:'发现日期',type:'date'},
+    {name:'next_action',label:'下一步',type:'text'},
+    {name:'last_progress',label:'最近进展',type:'textarea'},
+  ];
+  modal(opp?'编辑机会':'新增机会', FIELDS, opp || {}, async function(data){
+    if(!data.opportunity_type) throw new Error('请选择机会类型');
+    if(!opp) data.discovered_at = data.discovered_at || dayStr(new Date());
+    if(opp){
+      var r = await callFn('opportunities', {action:'update', id:opp.id, data:data});
+      if(r.error) throw new Error(r.error);
+      toast('已保存');
+    } else {
+      data.customer_id = cid;
+      var r = await callFn('opportunities', {action:'create', data:data});
+      if(r.error) throw new Error(r.error);
+      toast('已添加');
+    }
+    showDetail(cid);
+  }, {wide:true});
 }
 
 // ---------- 保单检视（11 个险种类别 × 5 个字段的二维短列表 + 检视报告列表） ----------

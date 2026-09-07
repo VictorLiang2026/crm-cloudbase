@@ -20,6 +20,7 @@
  *     relationship        客户关系变化 或空串
  *     new_info            新出现的家庭/职业/生命周期信息 或空串
  *     stage_change        { to, reason } 或 null（仅当建议推进且与当前阶段不同）
+ *     opportunity         { type, reason } 或 null（潜在经营机会建议；AI 只建议，用户确认后由前端调 opportunities 创建）
  *     profile_updates     画像更新建议（8 维度结构，仅本次沟通带来的新信息；全空 null）
  *   }
  * 原则：
@@ -35,6 +36,8 @@ const { rdb, generateText, extractJson, assertOk } = require('./db');
 // 枚举词表（与 DB enum、前端 GOALS/STAGE 常量完全一致）：AI 输出超出词表置 null
 var GOAL_ENUM = ['建立联系', '约见面', '邀请活动', '获取家庭信息', '推进签单', '推进招募', '推进转介绍'];
 var STAGE_ENUM = ['新认识', '关系维护', '需求挖掘', '方案沟通', '成交推进', '转介绍经营'];
+// 机会类型词表（与 opportunities 表、前端常量一致）
+var OPP_ENUM = ['医疗保障', '重疾保障', '养老规划', '教育规划', '财富规划', '家庭保障', '转介绍'];
 
 // 北京时间（与 today_coach 一致：UTC+8）
 function bjNow() { return new Date(Date.now() + 8 * 3600 * 1000); }
@@ -192,6 +195,9 @@ exports.main = async (event, context) => {
       '  relationship(与业务员的关系程度，如"可约饭的朋友关系""仅业务往来""转介绍来的信任关系")，',
       '  events(重要人生事件数组：本次提到的、对保险经营有意义的人生事件，如子女留学/家人退休/买房/生子/换工作，每项 {"date":"YYYY-MM 或空字符串","text":"事件"}，没有则空数组)。',
       '  每个文本字段不超过 60 字；只基于客户明确说出的内容，严禁猜测。',
+      'opportunity: 本次沟通识别出的潜在经营机会建议，{"type":"类型","reason":"1句依据"}；',
+      '  type 只能取：医疗保障/重疾保障/养老规划/教育规划/财富规划/家庭保障/转介绍；',
+      '  仅当沟通中明确出现对应主题的需求、意向、人生事件或转介绍信号时输出；只是泛泛而谈或证据不足用 null。严禁编造。',
       '【纪律】',
       '1. 严禁编造客户没说的信息；信息不足的字段给 null 或空字符串。',
       '2. 输出要短：followup_notes 不超过 120 字，其余每个字段不超过 60 字（new_info/needs 不超过 100 字）。',
@@ -228,6 +234,14 @@ exports.main = async (event, context) => {
       }
     }
 
+    // 机会建议：词表校验；AI 只建议不落表，由用户在确认页勾选后创建
+    var opp = null;
+    var o = parsed.opportunity;
+    if (o && typeof o === 'object' && !Array.isArray(o)) {
+      var ot = inEnum(o.type, OPP_ENUM);
+      if (ot) opp = { type: ot, reason: clip(o.reason, 60) };
+    }
+
     var result = {
       followup_notes: clip(parsed.followup_notes, 300),
       followup_date: normDate(parsed.followup_date) || today,
@@ -238,6 +252,7 @@ exports.main = async (event, context) => {
       relationship: clip(parsed.relationship, 120),
       new_info: clip(parsed.new_info, 200),
       stage_change: stageChange,
+      opportunity: opp,
       profile_updates: normProfileUpdates(parsed.profile_updates),
       recommendation_id: event.recommendation_id ? parseInt(event.recommendation_id, 10) : null,
     };
