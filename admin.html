@@ -31,12 +31,13 @@
   header h1{font-size:17px;font-weight:600;color:var(--text)}
   header .env{color:var(--muted);font-size:12px}
   header .user-info{margin-left:auto;display:flex;align-items:center;gap:10px;color:var(--text-secondary);font-size:13px}
-  /* 模块切换器：客户经营（蓝）/ 组织发展（金黄） */
+  /* 模块切换器：客户经营（蓝）/ 组织发展（金黄）/ 活动经营（玫红） */
   .mod-switch{margin-left:auto;display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex-shrink:0}
   .mod-btn{padding:7px 18px;font-size:13px;font-weight:600;background:var(--card);color:var(--muted);border:none;cursor:pointer;white-space:nowrap;transition:all .2s;font-family:inherit}
   .mod-btn:hover{background:#f8fafc;color:var(--text)}
   .mod-btn.active{background:var(--pri);color:#fff}
   .mod-btn.mod-recruit.active{background:linear-gradient(135deg,#f59e0b,#d97706)}
+  .mod-btn.mod-activity.active{background:linear-gradient(135deg,#f43f5e,#e11d48)}
   @media(max-width:768px){
     header{flex-wrap:wrap;gap:8px 12px}
     .mod-switch{margin-left:0;width:100%}
@@ -379,6 +380,7 @@
   <nav class="mod-switch" id="mod-switch">
     <button type="button" class="mod-btn" data-mod="customer" onclick="location.hash='#/'">客户经营</button>
     <button type="button" class="mod-btn mod-recruit" data-mod="recruit" onclick="location.hash='#/recruit'">组织发展</button>
+    <button type="button" class="mod-btn mod-activity" data-mod="activity" onclick="location.hash='#/activities'">活动经营</button>
   </nav>
 </header>
 <main id="view"><div class="loading">初始化中…</div></main>
@@ -744,16 +746,22 @@ function route(){
   showDashboard();
 }
 
-// 模块切换器高亮：组织发展 = #/recruit* 各页 + 增员活动量日报；其余归客户经营
-function updateModuleSwitch(hash){
+// 模块切换器高亮：客户经营 / 组织发展 / 活动经营 三态
+// 活动经营 = #/activities 列表 + #/activity/<数字> 详情；
+// 注意 #/activity/customer、#/activity/recruit 是"活动量日报"，分别归客户经营/组织发展
+function currentModule(hash){
   hash = hash || location.hash || '#/';
-  var isRecruit = hash.indexOf('#/recruit') === 0 || hash === '#/activity/recruit';
+  if(hash.indexOf('#/recruit') === 0 || hash === '#/activity/recruit') return 'recruit';
+  if(hash === '#/activities' || /^#\/activity\/\d+/.test(hash)) return 'activity';
+  return 'customer';
+}
+function updateModuleSwitch(hash){
+  var cur = currentModule(hash);
   var nav = document.getElementById('mod-switch');
   if(!nav) return;
   var btns = nav.querySelectorAll('.mod-btn');
   for(var i=0;i<btns.length;i++){
-    var onRecruit = btns[i].getAttribute('data-mod') === 'recruit';
-    btns[i].classList.toggle('active', onRecruit === isRecruit);
+    btns[i].classList.toggle('active', btns[i].getAttribute('data-mod') === cur);
   }
 }
 
@@ -1074,7 +1082,6 @@ async function showDashboard(){
     el('button', {class:'btn btn-green', onclick:function(){ location.hash='#/customers'; }}, '全部客户'),
     el('button', {class:'btn', onclick:function(){ openAiParse(); }}, 'AI 解析新增'),
     el('button', {class:'btn', onclick:function(){ location.hash='#/ai-suggestions'; }}, 'AI 建议'),
-    el('button', {class:'btn', onclick:function(){ location.hash='#/activities'; }}, '活动经营'),
     el('button', {class:'btn', onclick:function(){ location.hash='#/activity/customer'; }}, '活动量'),
   ]);
   view.appendChild(toolbar);
@@ -3850,7 +3857,6 @@ async function showActivities(){
   view.innerHTML = '';
   var toolbar = el('div', {class:'toolbar'}, [
     el('button', {class:'btn btn-primary', onclick:function(){ openActivityForm(null); }}, '+ 新增活动'),
-    el('button', {class:'btn', onclick:function(){ location.hash='#/'; }}, '返回工作台'),
   ]);
   view.appendChild(toolbar);
 
