@@ -13,7 +13,7 @@ const { rdb, nowIso, normFields, assertOk } = require('./db');
 
 const FIELDS = [
   'customer_id', 'customer_name', 'followup_notes', 'followup_date',
-  'next_followup_date', 'next_followup_goal', 'recommendation_id',
+  'next_followup_date', 'next_followup_goal', 'recommendation_id', 'activity_id',
 ];
 
 exports.main = async (event, context) => {

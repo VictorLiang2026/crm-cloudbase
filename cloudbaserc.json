@@ -1,0 +1,24 @@
+{
+  "envId": "crm-d1gkae8ddc930d151",
+  "version": "2.0",
+  "functions": [
+    {
+      "name": "activities",
+      "timeout": 10,
+      "runtime": "Nodejs20.19",
+      "handler": "index.main"
+    },
+    {
+      "name": "ai_activity",
+      "timeout": 60,
+      "runtime": "Nodejs20.19",
+      "handler": "index.main"
+    },
+    {
+      "name": "followups",
+      "timeout": 10,
+      "runtime": "Nodejs20.19",
+      "handler": "index.main"
+    }
+  ]
+}
