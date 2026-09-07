@@ -8,7 +8,9 @@
  *   get:     { action:'get', id } → { recommendation }（单条完整字段）
  *   update:  { action:'update', id, data:{ suggested_message?, suggested_strategy?, suggested_followup_date?, suggested_customer_stage?, suggested_followup_goal? } }
  *            → { ok }（人工编辑保存；空串转 null，按 id 增量更新）
- * 建议记录由 ai_recommend 函数写入，本函数读取 + 增量编辑。
+ *   update_status: { action:'update_status', id, status:'completed'|'skipped', result }
+ *            → { ok }（NBA 执行闭环：将 status/executed_at/result merge 进 nba jsonb，不改原始 AI 建议）
+ * 建议记录由 ai_recommend 函数写入，本函数读取 + 增量编辑 + 执行状态。
  */
 'use strict';
 
@@ -36,7 +38,8 @@ exports.main = async (event, context) => {
       case 'list':    return await list(event);
       case 'listAll': return await listAll(event);
       case 'get':     return await get(event);
-      case 'update':  return await update(event);
+      case 'update':        return await update(event);
+      case 'update_status': return await updateStatus(event);
       default: return { error: 'unknown action: ' + action };
     }
   } catch (e) {
@@ -121,5 +124,29 @@ async function update(event) {
   payload.updated_at = nowIso();
   if (!Object.keys(payload).length) return { error: 'no valid fields' };
   assertOk(await rdb.from('ai_recommendations').update(payload).eq('id', id).select('id'));
+  return { ok: true };
+}
+
+// NBA 执行闭环：将 status/executed_at/result merge 进 nba jsonb，不改原始 AI 建议字段
+async function updateStatus(event) {
+  const id = parseInt(event.id, 10);
+  if (!id) return { error: 'id required' };
+  const status = String(event.status || '').trim();
+  if (status !== 'completed' && status !== 'skipped') return { error: 'status must be completed or skipped' };
+  const result = String(event.result || '').trim();
+  if (!result) return { error: 'result required' };
+
+  // 读取现有记录
+  var r = assertOk(await rdb.from('ai_recommendations').select('id, nba').eq('id', id).maybeSingle());
+  if (!r.data) return { error: 'not found' };
+
+  // merge status 进 nba jsonb（保留原有 AI 建议 6 字段不变）
+  var nba = {};
+  try { if (r.data.nba) nba = typeof r.data.nba === 'object' ? r.data.nba : JSON.parse(r.data.nba); } catch (e) { nba = {}; }
+  nba.status = status;
+  nba.executed_at = nowIso();
+  nba.result = result;
+
+  assertOk(await rdb.from('ai_recommendations').update({ nba: nba, updated_at: nowIso() }).eq('id', id).select('id'));
   return { ok: true };
 }

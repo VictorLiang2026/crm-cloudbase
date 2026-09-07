@@ -2498,8 +2498,8 @@ function nbaRow(label, value, hl){
     el('span', {class:'nba-val' + (insufficient ? ' na' : '')}, insufficient ? '信息不足' : v),
   ]);
 }
-function renderNbaCard(nba, fuDate){
-  return el('div', {class:'nba-card'}, [
+function renderNbaCard(nba, fuDate, recId){
+  var card = el('div', {class:'nba-card'}, [
     el('div', {class:'nba-title'}, '下一步行动（Next Best Action）'),
     nbaRow('当前判断：', nba.assessment),
     nbaRow('经营目标：', nba.goal),
@@ -2509,6 +2509,64 @@ function renderNbaCard(nba, fuDate){
     nbaRow('成功标准：', nba.success_criteria),
     nbaRow('下次跟进：', fuDate ? String(fuDate).slice(0,10) : ''),
   ]);
+  // NBA 执行闭环：状态徽标 or 操作按钮
+  var st = nba.status || 'pending';
+  if(st === 'completed' || st === 'skipped'){
+    var icon = st === 'completed' ? '✅' : '⏭️';
+    var label = st === 'completed' ? '已完成' : '已跳过';
+    card.appendChild(el('div', {style:'margin-top:8px;padding-top:8px;border-top:1px dashed #6ee7b7;font-size:13px;color:#047857'}, [
+      el('span', {style:'font-weight:600'}, icon + ' ' + label + '：' + (nba.result || '')),
+      nba.executed_at ? el('span', {style:'color:var(--muted);margin-left:8px'}, String(nba.executed_at).replace('T',' ').slice(0,16)) : null,
+    ]));
+  } else if(recId){
+    // pending：显示操作按钮
+    card.appendChild(el('div', {style:'margin-top:8px;padding-top:8px;border-top:1px dashed #6ee7b7;display:flex;gap:8px'}, [
+      el('button', {class:'btn btn-sm btn-primary', onclick:function(){ openNbaStatusModal(recId, 'completed'); }}, '完成'),
+      el('button', {class:'btn btn-sm', onclick:function(){ openNbaStatusModal(recId, 'skipped'); }}, '跳过'),
+    ]));
+  }
+  return card;
+}
+
+// ---------- NBA 执行闭环：完成/跳过 模态选择 ----------
+var NBA_RESULTS = ['成功','部分完成','未推进','客户无回应','客户拒绝','改期','其他'];
+var NBA_SKIP_REASONS = ['暂不合适','时间不合适','已有其他优先事项','其他'];
+
+function openNbaStatusModal(recId, mode){
+  var title = mode === 'completed' ? '选择执行结果' : '选择跳过原因';
+  var options = mode === 'completed' ? NBA_RESULTS : NBA_SKIP_REASONS;
+  var status = mode === 'completed' ? 'completed' : 'skipped';
+
+  var overlay = el('div', {class:'modal-overlay'});
+  var m = el('div', {class:'modal', style:'max-width:400px'});
+  overlay.appendChild(m);
+  overlay.addEventListener('click', function(e){ if(e.target===overlay) overlay.remove(); });
+  document.getElementById('modal-root').appendChild(overlay);
+  m.appendChild(el('h3', {}, title));
+
+  options.forEach(function(opt){
+    m.appendChild(el('button', {
+      class:'btn',
+      style:'display:block;width:100%;text-align:left;margin-bottom:6px;padding:10px 14px',
+      onclick: async function(){
+        var btn = this; btn.disabled = true; btn.textContent = '保存中…';
+        try {
+          var res = await callFn('ai_recommendations', {action:'update_status', id:recId, status:status, result:opt});
+          if(res && res.error) throw new Error(res.error);
+          toast(mode === 'completed' ? '已记录：' + opt : '已跳过：' + opt);
+          overlay.remove();
+          // 刷新当前详情页
+          if(detailState.id){ showDetail(detailState.id); }
+        } catch(e){
+          toast('操作失败：' + (e.message || e), 'err');
+          btn.disabled = false; btn.textContent = opt;
+        }
+      }
+    }, opt));
+  });
+  m.appendChild(el('div', {class:'modal-footer'}, [
+    el('button', {class:'btn', onclick:function(){ overlay.remove(); }}, '取消'),
+  ]));
 }
 
 async function renderAi(cid, recommendations){
@@ -2574,7 +2632,7 @@ async function renderAi(cid, recommendations){
         p_nbaWrap.innerHTML = '';
         p_msgWrap.innerHTML = ''; p_strWrap.innerHTML = ''; p_tagsWrap.innerHTML = '';
         if(rec.nba && typeof rec.nba === 'object'){
-          p_nbaWrap.appendChild(renderNbaCard(rec.nba, rec.suggested_followup_date));
+          p_nbaWrap.appendChild(renderNbaCard(rec.nba, rec.suggested_followup_date, rec.id));
         }
         if(rec.suggested_message) p_msgWrap.appendChild(el('p', {}, rec.suggested_message));
         if(rec.suggested_strategy){
@@ -4362,7 +4420,7 @@ async function genRecruitRecommend(candidateId){
       area.innerHTML = '';
       area.appendChild(el('h3', {style:'margin-bottom:8px'}, 'AI 增员话术建议'));
       // Next Best Action 卡（增员经营语言，与客户侧同构 7 字段）
-      if(rec.nba && typeof rec.nba === 'object') area.appendChild(renderNbaCard(rec.nba, rec.suggested_followup_date));
+      if(rec.nba && typeof rec.nba === 'object') area.appendChild(renderNbaCard(rec.nba, rec.suggested_followup_date, rec.id));
       if(rec.suggested_approach) area.appendChild(rcInfoRow('接触方式', rec.suggested_approach));
       if(rec.suggested_message) area.appendChild(rcInfoRow('开场白', rec.suggested_message));
       if(rec.suggested_next_stage_goal) area.appendChild(rcInfoRow('下一步目标', rec.suggested_next_stage_goal));
