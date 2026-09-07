@@ -54,7 +54,7 @@ function cut(s, n) {
 
 // ---------- 数据读取（全量裁列 + deleted_at 过滤） ----------
 async function loadAll() {
-  const [cust, fol, rc, rf, rm, ai] = await Promise.all([
+  const [cust, fol, rc, rf, rm, ai, opp] = await Promise.all([
     rdb.from('customers').select(
       'Id, customer_name, gender, customer_stage, sales_priority, first_contact_date, created_at, updated_at'
     ).is('deleted_at', null),
@@ -71,6 +71,10 @@ async function loadAll() {
     // 详情页 Next Best Action（仅裁 NBA 相关列，按 created_at 倒序，取每人最新一条）
     rdb.from('ai_recommendations').select('customer_id, nba, recommendation_date, created_at')
       .order('created_at', { ascending: false }),
+    // 经营机会（v1.4：转介绍线索进入今日经营）
+    rdb.from('opportunities').select(
+      'id, customer_id, opportunity_type, status, referred_name, next_action, discovered_at, updated_at'
+    ).is('deleted_at', null),
   ]);
   return {
     customers: (cust.data || []),
@@ -79,7 +83,22 @@ async function loadAll() {
     recruitFollowups: (rf.data || []),
     milestones: (rm.data || []),
     aiRecs: (ai.data || []),
+    opportunities: (opp.data || []),
   };
+}
+
+// 每个来源客户最新一条进行中的转介绍线索（v1.4）
+function indexActiveReferrals(opps) {
+  const byCust = {};
+  for (const o of (opps || [])) {
+    if (o.opportunity_type !== '转介绍') continue;
+    if (o.status === '关闭' || o.status === '成交') continue;
+    const cid = o.customer_id;
+    if (!cid) continue;
+    const prev = byCust[cid];
+    if (!prev || String(o.updated_at || '') > String(prev.updated_at || '')) byCust[cid] = o;
+  }
+  return byCust;
 }
 
 // 每个客户最近一条"新鲜" NBA（recommendation_date 距今 ≤ NBA_FRESH_DAYS 天）→ 直接引用
@@ -109,6 +128,7 @@ function buildFingerprint(d) {
   return [
     maxUpd(d.customers), maxUpd(d.followups),
     maxUpd(d.candidates), maxUpd(d.recruitFollowups),
+    maxUpd(d.opportunities || []),
   ].join('|');
 }
 
@@ -131,6 +151,7 @@ const NEED_KEYWORDS = ['意向', '兴趣', '需求', '考虑', '犹豫', '方案
 // ---------- 客户池规则引擎 ----------
 function scoreCustomers(d, today) {
   const folIdx = indexFollowups(d.followups);
+  const refIdx = indexActiveReferrals(d.opportunities);
   const out = [];
   for (const c of d.customers) {
     let score = 0; const hits = [];
@@ -160,6 +181,16 @@ function scoreCustomers(d, today) {
 
     if (c.sales_priority === 'A' || c.sales_priority === 'B') { score += 5; hits.push(c.sales_priority + ' 类重点客户'); }
 
+    // v1.4 转介绍经营信号：进行中的转介绍线索必须推进（高权重，保证进池）；转介绍经营阶段客户可尝试自然转介绍
+    const ref = refIdx[c.Id];
+    if (ref) {
+      score += 45;
+      hits.push('转介绍线索推进中：' + (ref.referred_name ? '被介绍人「' + ref.referred_name + '」' : '被介绍人待记录') + '（' + ref.status + '）');
+    } else if (c.customer_stage === '转介绍经营') {
+      score += 10;
+      hits.push('处于转介绍经营阶段，可尝试自然转介绍');
+    }
+
     if (score > 0) {
       out.push({
         type: 'customer', id: c.Id, name: c.customer_name || '未知',
@@ -167,11 +198,19 @@ function scoreCustomers(d, today) {
         gender: c.gender || '',
         last_note: fol ? cut(fol.latest.followup_notes, 60) : '',
         last_date: lastFolDate || '',
+        ref: ref ? { name: ref.referred_name || '', status: ref.status, next_action: cut(ref.next_action, 60) } : null,
       });
     }
   }
   out.sort((a, b) => b.score - a.score || a.id - b.id);
-  return out.slice(0, POOL_CUSTOMER);
+  const top = out.slice(0, POOL_CUSTOMER);
+  // 进行中的转介绍线索强制入池（硬经营信号，不能漏）
+  const inTop = new Set(top.map(x => x.id));
+  for (const x of out) {
+    if (top.length >= POOL_CUSTOMER) break;
+    if (x.ref && !inTop.has(x.id)) { top.push(x); inTop.add(x.id); }
+  }
+  return top;
 }
 
 const FINAL_STAGE = '签约入司';
@@ -293,24 +332,32 @@ function ruleItems(custPool, rcPool, nbaIdx) {
   const merged = custPool.concat(rcPool).sort((a, b) => b.score - a.score).slice(0, FINAL_COUNT);
   return merged.map(x => {
     const fresh = x.type === 'customer' ? nbaIdx[x.id] : null;
+    // v1.4 转介绍线索：规则版直接给出推进动作，覆盖通用客户话术
+    const ref = x.ref || null;
+    const refGoal = '推进转介绍线索';
+    const refAction = ref
+      ? '跟进转介绍线索「' + (ref.name || '被介绍人') + '」（当前' + ref.status + '）：' +
+        (ref.next_action ? ref.next_action : '联系来源客户了解近况并推进到下一步')
+      : '';
     if (fresh) {
       return {
         type: x.type, id: x.id, name: x.name, stage: x.stage, priority: prio(x.score),
         assessment: cut(fresh.assessment, 80), goal: cut(fresh.goal, 40),
         next_action: cut(fresh.next_action, 60), topic: cut(fresh.topic, 16),
         avoid: cut(fresh.avoid, 60), success_criteria: cut(fresh.success_criteria, 40),
-        next_followup_date: x.next_date || '', nba_from: 'detail',
+        next_followup_date: x.next_date || '', nba_from: 'detail', ref: ref,
       };
     }
     return {
       type: x.type, id: x.id, name: x.name, stage: x.stage, priority: prio(x.score),
       assessment: x.hits.join('；') || '有跟进价值',
-      goal: x.type === 'customer' ? goalC(x) : goalR(x),
-      next_action: x.type === 'customer' ? actC(x) : actR(x),
-      topic: x.last_note ? cut(x.last_note, 16) : (x.type === 'customer' ? x.stage : '近况交流'),
+      goal: ref ? refGoal : (x.type === 'customer' ? goalC(x) : goalR(x)),
+      next_action: ref ? cut(refAction, 60) : (x.type === 'customer' ? actC(x) : actR(x)),
+      topic: ref ? '转介绍' : (x.last_note ? cut(x.last_note, 16) : (x.type === 'customer' ? x.stage : '近况交流')),
       avoid: x.type === 'customer' ? avoidC : avoidR,
-      success_criteria: x.type === 'customer' ? critC : critR,
+      success_criteria: ref ? '线索状态向前推进一步（已介绍/已联系/已建立关系）' : (x.type === 'customer' ? critC : critR),
       next_followup_date: x.next_date || '',
+      ref: ref,
     };
   });
 }
@@ -323,6 +370,8 @@ function buildMessages(pools, nbaIdx) {
     lines.push((i + 1) + '. type=' + x.type + ' id=' + x.id + ' 姓名=' + x.name +
       ' 阶段=' + x.stage + ' 信号=' + (x.hits.join('、') || '无') +
       ' 最近跟进摘要=' + (x.last_note || '无') +
+      (x.ref ? ' 转介绍线索=被介绍人「' + (x.ref.name || '待记录') + '」状态' + x.ref.status +
+        '（goal/next_action 应围绕推进该转介绍线索，话术体现自然请介绍人牵线）' : '') +
       (fresh ? ' 已有下一步行动方案(内容必须原样采用)=' + JSON.stringify(fresh) : ''));
   });
   const system = [
@@ -361,7 +410,7 @@ function mergeAiResult(parsed, pools, nbaIdx) {
         assessment: cut(fresh.assessment, 80), goal: cut(fresh.goal, 40),
         next_action: cut(fresh.next_action, 60), topic: cut(fresh.topic, 16),
         avoid: cut(fresh.avoid, 60), success_criteria: cut(fresh.success_criteria, 40),
-        next_followup_date: base.next_date || '', nba_from: 'detail',
+        next_followup_date: base.next_date || '', nba_from: 'detail', ref: base.ref || null,
       });
       continue;
     }
@@ -375,9 +424,45 @@ function mergeAiResult(parsed, pools, nbaIdx) {
       avoid: cut(it.avoid, 60),
       success_criteria: cut(it.success_criteria, 40),
       next_followup_date: base.next_date || '',
+      ref: base.ref || null,
     });
   }
   return out.length ? out : null;
+}
+
+// v1.4 兜底：进行中的转介绍线索必须出现在今日经营列表（AI 只负责排序，ref 是硬经营信号）
+function ensureRefItems(items, custPool, nbaIdx) {
+  const have = new Set(items.filter(x => x.type === 'customer').map(x => x.id));
+  for (const base of custPool) {
+    if (!base.ref || have.has(base.id)) continue;
+    if (items.length >= FINAL_COUNT + 3) break;
+    const ref = base.ref;
+    const fresh = nbaIdx[base.id];
+    if (fresh) {
+      items.push({
+        type: 'customer', id: base.id, name: base.name, stage: base.stage, priority: '高',
+        assessment: cut(fresh.assessment, 80), goal: cut(fresh.goal, 40),
+        next_action: cut(fresh.next_action, 60), topic: cut(fresh.topic, 16),
+        avoid: cut(fresh.avoid, 60), success_criteria: cut(fresh.success_criteria, 40),
+        next_followup_date: base.next_date || '', nba_from: 'detail', ref: ref,
+      });
+    } else {
+      items.push({
+        type: 'customer', id: base.id, name: base.name, stage: base.stage, priority: '高',
+        assessment: base.hits.join('；') || '有进行中的转介绍线索',
+        goal: '推进转介绍线索',
+        next_action: cut('跟进转介绍线索「' + (ref.name || '被介绍人') + '」（当前' + ref.status + '）：' +
+          (ref.next_action || '联系来源客户了解近况并推进到下一步'), 60),
+        topic: '转介绍',
+        avoid: '不要绕过来源客户直接接触被介绍人',
+        success_criteria: '线索状态向前推进一步（已介绍/已联系/已建立关系）',
+        next_followup_date: base.next_date || '',
+        ref: ref,
+      });
+    }
+    have.add(base.id);
+  }
+  return items;
 }
 
 // ---------- 入口 ----------
@@ -410,6 +495,7 @@ exports.main = async (event, context) => {
       } catch (e) { ai_error = 'AI 调用失败：' + e.message; }
     }
     if (!items) items = ruleItems(custPool, rcPool, nbaIdx);
+    items = ensureRefItems(items, custPool, nbaIdx);
     const out = { today, fingerprint, source, generated_at: nowIso(), items };
     if (ai_error) out.ai_error = ai_error;
     return out;

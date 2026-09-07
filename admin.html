@@ -402,6 +402,8 @@ var GOALS = ['','建立联系','约见面','邀请活动','获取家庭信息','
 // 经营机会（v1.2.1）：类型与状态词表（与 opportunities 表、ai_followup OPP_ENUM 一致）
 var OPP_TYPES = ['医疗保障','重疾保障','养老规划','教育规划','财富规划','家庭保障','转介绍'];
 var OPP_STATUSES = ['发现','沟通','方案','成交','关闭'];
+// 转介绍线索（v1.4）：opportunity_type='转介绍' 专属状态机
+var REF_STATUSES = ['潜在线索','已介绍','已联系','已建立关系','成交','关闭'];
 
 var CUSTOMER_FIELDS = [
   {name:'customer_name',label:'姓名',type:'text',req:true},
@@ -976,9 +978,11 @@ function renderCoachItems(box, data, stale){
         el('div', {class:'coach-line1'}, [
           el('span', {class:'coach-name'}, String(it.name || '')),
           el('span', {class:'coach-tag ' + (it.type === 'recruit' ? 't-recruit' : 't-customer')}, it.type === 'recruit' ? '增员' : '客户'),
+          it.ref ? el('span', {class:'coach-tag', style:'background:#fdf2f8;color:#be185d;border:1px solid #fbcfe8'}, '转介绍') : null,
           el('span', {class:'coach-tag t-stage'}, String(it.stage || '')),
           el('span', {class:'coach-tag ' + pCls}, '优先级 ' + String(it.priority || '中')),
         ]),
+        it.ref ? el('div', {style:'font-size:12px;color:#be185d;margin:2px 0'}, '转介绍线索：' + esc(it.ref.name || '被介绍人待记录') + '（' + esc(it.ref.status || '') + '）') : null,
         el('div', {class:'coach-reason' + (isNa(it.assessment) ? ' coach-na' : '')}, String(cv(it.assessment))),
         el('div', {class:'coach-action'}, [ el('b', {}, '下一步：'), String(cv(it.next_action)) ]),
         el('div', {class:'coach-sub'}, '目标：' + cv(it.goal) + ' · 主题：' + cv(it.topic)),
@@ -995,7 +999,7 @@ async function renderTodayCoach(force){
   if(!box) return;
   var today = dayStr(new Date());
   var cache = coachLoad();
-  if(!force && cache && cache.date === today && cache.v === 3 && cache.data && cache.data.items){
+  if(!force && cache && cache.date === today && cache.v === 4 && cache.data && cache.data.items){
     renderCoachItems(box, cache.data, false);
     // 指纹校验（轻量接口，不调 AI）：数据有变化仅提示
     callFn('today_coach', {action:'candidates'}).then(function(r){
@@ -1010,7 +1014,7 @@ async function renderTodayCoach(force){
   try{
     var r = await callFn('today_coach', {action:'generate'});
     if(r.error) throw new Error(r.error);
-    coachSave({ v: 3, date: today, fingerprint: r.fingerprint || '', data: r });
+    coachSave({ v: 4, date: today, fingerprint: r.fingerprint || '', data: r });
     renderCoachItems(box, r, false);
   }catch(e){
     box.innerHTML = '';
@@ -1904,9 +1908,14 @@ function openAiFollowup(cid, customerName, presetRecId){
 
 // ---------- 经营机会（v1.2.1：轻量机会跟踪；只存机会状态，不复制客户资料） ----------
 function oppStatusStyle(s){
-  var m = {'发现':'#2563eb','沟通':'#d97706','方案':'#7c3aed','成交':'#047857','关闭':'#9ca3af'};
+  var m = {
+    '发现':'#2563eb','沟通':'#d97706','方案':'#7c3aed','成交':'#047857','关闭':'#9ca3af',
+    // 转介绍线索状态（v1.4）
+    '潜在线索':'#64748b','已介绍':'#0ea5e9','已联系':'#d97706','已建立关系':'#7c3aed',
+  };
   return 'color:#fff;background:' + (m[s] || '#9ca3af') + ';padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600';
 }
+function isRefOpp(o){ return o && o.opportunity_type === '转介绍'; }
 
 async function renderOpps(cid){
   var box = el('div', {});
@@ -1919,6 +1928,8 @@ async function renderOpps(cid){
   var rows = (r && r.rows) || [];
   box.appendChild(el('div', {style:'margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap'}, [
     el('button', {class:'btn btn-primary btn-sm', onclick:function(){ openOppForm(cid); }}, '+ 新增机会'),
+    el('button', {class:'btn btn-sm', style:'background:linear-gradient(135deg,#f43f5e,#e11d48);color:#fff;border-color:#e11d48;font-weight:700', onclick:function(){ openReferralForm(cid); }}, '+ 转介绍线索'),
+    el('button', {class:'btn btn-sm btn-ai', onclick:function(){ openReferralAdvice(cid); }}, '✨ AI 转介绍建议'),
   ]));
   if(!rows.length){
     box.appendChild(el('div', {class:'empty'},
@@ -1927,11 +1938,16 @@ async function renderOpps(cid){
   }
   rows.forEach(function(o){
     var card = el('div', {class:'card', style:'margin-bottom:8px;padding:10px'});
+    var ref = isRefOpp(o);
     card.appendChild(el('div', {style:'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px'}, [
       el('div', {}, [
         el('strong', {}, o.opportunity_type),
         el('span', {style:'margin-left:8px'}, el('span', {style:oppStatusStyle(o.status)}, o.status)),
         el('span', {style:'margin-left:8px;color:var(--muted);font-size:12px'}, o.discovered_at ? String(o.discovered_at).slice(0,10) : ''),
+        ref ? el('span', {style:'margin-left:8px;font-size:13px'}, [
+          el('b', {}, '被介绍人：'),
+          document.createTextNode(esc(o.referred_name || '待记录') + (o.referred_relation ? '（' + esc(o.referred_relation) + '）' : '')),
+        ]) : null,
       ]),
       el('div', {}, [
         o.status !== '关闭' ? el('a', {class:'btn-sm', style:'margin-right:8px;color:#047857;font-weight:600', onclick:function(){ openOppFollowup(cid, o); }}, '记录沟通') : null,
@@ -1963,7 +1979,7 @@ function openOppFollowup(cid, opp){
     {name:'followup_notes',label:'沟通内容',type:'textarea',req:true},
     {name:'followup_date',label:'沟通日期',type:'date'},
     {name:'next_followup_date',label:'下次跟进日期',type:'date'},
-    {name:'opp_status',label:'更新机会状态',type:'select',options:OPP_STATUSES},
+    {name:'opp_status',label:'更新' + (isRefOpp(opp) ? '线索' : '机会') + '状态',type:'select',options:isRefOpp(opp) ? REF_STATUSES : OPP_STATUSES},
     {name:'last_progress',label:'最新进展',type:'textarea'},
     {name:'next_action',label:'下一步（新NBA）',type:'text'},
   ];
@@ -1973,7 +1989,7 @@ function openOppFollowup(cid, opp){
     last_progress: opp.last_progress || '',
     next_action: opp.next_action || '',
   };
-  modal('记录沟通 · ' + opp.opportunity_type, FIELDS, init, async function(data){
+  modal('记录沟通 · ' + opp.opportunity_type + (isRefOpp(opp) ? '线索' : ''), FIELDS, init, async function(data){
     // 1. 保存跟进记录
     var folData = {
       customer_id: cid,
@@ -1989,6 +2005,7 @@ function openOppFollowup(cid, opp){
       last_progress: data.last_progress,
       next_action: data.next_action,
     };
+    if(isRefOpp(opp)) oppData.opportunity_type = '转介绍';
     var r2 = await callFn('opportunities', {action:'update', id:opp.id, data:oppData});
     if(r2.error) throw new Error('跟进已保存，但机会更新失败：' + r2.error);
     toast('沟通已记录，机会已更新');
@@ -1997,28 +2014,145 @@ function openOppFollowup(cid, opp){
 }
 
 function openOppForm(cid, opp){
-  var FIELDS = [
+  // 编辑转介绍线索时用专属字段；普通机会用通用字段
+  var ref = isRefOpp(opp);
+  var FIELDS = ref ? [
+    {name:'referred_name',label:'被介绍人姓名',type:'text'},
+    {name:'referred_relation',label:'被介绍人与我的关系（朋友/同事/亲戚等）',type:'text'},
+    {name:'status',label:'线索状态',type:'select',options:REF_STATUSES},
+    {name:'discovered_at',label:'发现日期',type:'date'},
+    {name:'next_action',label:'下一步',type:'text'},
+    {name:'last_progress',label:'最近进展',type:'textarea'},
+  ] : [
     {name:'opportunity_type',label:'机会类型',type:'select',options:OPP_TYPES,req:true},
     {name:'status',label:'当前状态',type:'select',options:OPP_STATUSES},
     {name:'discovered_at',label:'发现日期',type:'date'},
     {name:'next_action',label:'下一步',type:'text'},
     {name:'last_progress',label:'最近进展',type:'textarea'},
   ];
-  modal(opp?'编辑机会':'新增机会', FIELDS, opp || {}, async function(data){
-    if(!data.opportunity_type) throw new Error('请选择机会类型');
-    if(!opp) data.discovered_at = data.discovered_at || dayStr(new Date());
-    if(opp){
+  modal(ref?'编辑转介绍线索':(opp?'编辑机会':'新增机会'), FIELDS, opp || {}, async function(data){
+    if(ref){
+      data.opportunity_type = '转介绍';
+      var rr = await callFn('opportunities', {action:'update', id:opp.id, data:data});
+      if(rr.error) throw new Error(rr.error);
+      toast('已保存');
+    } else if(opp){
       var r = await callFn('opportunities', {action:'update', id:opp.id, data:data});
       if(r.error) throw new Error(r.error);
       toast('已保存');
     } else {
+      // 通用表单选了转介绍：状态走转介绍状态机（非法状态删掉，后端默认"潜在线索"）
+      if(data.opportunity_type === '转介绍' && REF_STATUSES.indexOf(data.status) < 0) delete data.status;
       data.customer_id = cid;
-      var r = await callFn('opportunities', {action:'create', data:data});
-      if(r.error) throw new Error(r.error);
+      data.discovered_at = data.discovered_at || dayStr(new Date());
+      var rc = await callFn('opportunities', {action:'create', data:data});
+      if(rc.error) throw new Error(rc.error);
       toast('已添加');
     }
     showDetail(cid);
   }, {wide:true});
+}
+
+// 新增转介绍线索（轻量：来源客户=当前客户，只记被介绍人/关系/状态/下一步）
+function openReferralForm(cid){
+  var FIELDS = [
+    {name:'referred_name',label:'被介绍人姓名（暂不知道可先空，后续补）',type:'text'},
+    {name:'referred_relation',label:'被介绍人与我的关系（朋友/同事/亲戚等）',type:'text'},
+    {name:'status',label:'当前状态',type:'select',options:REF_STATUSES},
+    {name:'discovered_at',label:'发现日期',type:'date'},
+    {name:'next_action',label:'下一步',type:'text'},
+    {name:'last_progress',label:'备注/进展',type:'textarea'},
+  ];
+  modal('新增转介绍线索', FIELDS, {status:'潜在线索', discovered_at:dayStr(new Date())}, async function(data){
+    data.customer_id = cid;
+    data.opportunity_type = '转介绍';
+    var r = await callFn('opportunities', {action:'create', data:data});
+    if(r.error) throw new Error(r.error);
+    toast('转介绍线索已记录');
+    showDetail(cid);
+  }, {wide:true});
+}
+
+// AI 转介绍建议（AI 只建议；确认后才创建转介绍线索 + 写入 NBA）
+async function openReferralAdvice(cid){
+  var overlay = el('div', {class:'modal-overlay'});
+  var m = el('div', {class:'modal', style:'max-width:520px'});
+  overlay.appendChild(m);
+  overlay.addEventListener('click', function(e){ if(e.target === overlay) overlay.remove(); });
+  m.appendChild(el('h3', {}, '✨ AI 转介绍建议'));
+  var body = el('div', {class:'loading'}, 'AI 分析中（约十几秒）…');
+  m.appendChild(body);
+  document.getElementById('modal-root').appendChild(overlay);
+  try {
+    var r = await callFn('ai_referral', {customer_id:cid, operator: CONFIG.operator || null});
+    if(r.error) throw new Error(r.error);
+    var s = r.suggestion || {};
+    body.className = '';
+    body.innerHTML = '';
+    body.appendChild(el('div', {style:'display:flex;align-items:center;gap:8px;margin-bottom:10px'}, [
+      el('span', {style:'font-weight:700;font-size:15px'}, s.suitable ? '✅ 适合尝试转介绍' : '⏸ 暂不建议转介绍'),
+      el('span', {style:'font-size:12px;color:var(--muted)'}, '置信度：' + esc(s.confidence || '中')),
+    ]));
+    if(s.reason) body.appendChild(el('p', {style:'font-size:13px;margin:6px 0'}, [el('b',{},'判断依据：'), esc(s.reason)]));
+    if(s.suitable){
+      if(s.timing) body.appendChild(el('p', {style:'font-size:13px;margin:6px 0'}, [el('b',{},'推荐时机：'), esc(s.timing)]));
+      if(s.approach) body.appendChild(el('p', {style:'font-size:13px;margin:6px 0'}, [el('b',{},'切入方式：'), esc(s.approach)]));
+      if(s.message) body.appendChild(el('div', {style:'font-size:13px;margin:8px 0;padding:10px;background:#f0fdf4;border-radius:6px;line-height:1.7'}, [el('b',{},'推荐话术：'), el('br'), esc(s.message)]));
+      var msg = el('div', {style:'color:#c0392b;font-size:13px;margin-top:6px'});
+      var btn = el('button', {class:'btn btn-sm btn-ai', style:'margin-top:10px'}, '确认：创建转介绍线索 + 写入今日 NBA');
+      btn.addEventListener('click', async function(){
+        btn.disabled = true; btn.textContent = '写入中…'; msg.textContent = '';
+        try {
+          // 1. 转介绍线索（潜在线索；被介绍人暂未知，待后续补充/推进）
+          var o1 = await callFn('opportunities', {action:'create', data:{
+            customer_id: cid,
+            opportunity_type: '转介绍',
+            status: '潜在线索',
+            discovered_at: dayStr(new Date()),
+            next_action: s.approach || '',
+            ai_summary: (s.reason || '') + '｜时机：' + (s.timing || ''),
+          }});
+          if(o1.error) throw new Error('线索创建失败：' + o1.error);
+          // 2. NBA（用户确认后的建议落库，goal=推进转介绍）
+          var o2 = await callFn('ai_recommendations', {action:'create', data:{
+            customer_id: cid,
+            recommendation_date: dayStr(new Date()),
+            suggested_message: s.message || '',
+            suggested_strategy: '【转介绍建议】时机：' + (s.timing || '') + '；切入方式：' + (s.approach || '') + '；依据：' + (s.reason || ''),
+            suggested_customer_stage: '转介绍经营',
+            suggested_followup_goal: '推进转介绍',
+            nba: s.nba || {
+              assessment: s.reason || '适合尝试转介绍',
+              goal: '推进转介绍',
+              next_action: s.approach || '选择自然时机向客户提出转介绍请求',
+              topic: '转介绍',
+              avoid: '关系不到位时生硬索要名单，引起客户反感',
+              success_criteria: '客户愿意提供 1 个可联系的介绍对象',
+            },
+          }});
+          if(o2.error) throw new Error('NBA 写入失败：' + o2.error);
+          btn.textContent = '✓ 已确认';
+          toast('已创建转介绍线索并写入 NBA');
+          setTimeout(function(){ overlay.remove(); showDetail(cid); }, 600);
+        } catch(e){
+          msg.textContent = e.message;
+          btn.disabled = false; btn.textContent = '确认：创建转介绍线索 + 写入今日 NBA';
+        }
+      });
+      body.appendChild(el('div', {}, [btn, msg]));
+      body.appendChild(el('p', {style:'font-size:12px;color:var(--muted);margin-top:8px'}, 'AI 仅提供建议，点击确认后才会创建线索和 NBA；线索可在下方编辑补充被介绍人。'));
+    }
+    m.appendChild(el('div', {style:'margin-top:12px;text-align:right'}, [
+      el('button', {class:'btn btn-sm', onclick:function(){ overlay.remove(); }}, '关闭'),
+    ]));
+  } catch(e){
+    body.className = '';
+    body.innerHTML = '';
+    body.appendChild(el('div', {class:'empty'}, '生成失败：' + esc(e.message)));
+    body.appendChild(el('div', {style:'text-align:right;margin-top:10px'}, [
+      el('button', {class:'btn btn-sm', onclick:function(){ overlay.remove(); }}, '关闭'),
+    ]));
+  }
 }
 
 // ---------- 保单检视（11 个险种类别 × 5 个字段的二维短列表 + 检视报告列表） ----------

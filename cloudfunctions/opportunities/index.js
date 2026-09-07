@@ -2,11 +2,15 @@
  * opportunities — 客户经营机会 CRUD（事件云函数，rdb() 版）
  * 入参 event: { action, ... }
  *   list:   { action:'list', customer_id } → { rows }
- *           （进行中[发现/沟通/方案/成交]按 updated_at 倒序在前，关闭在后）
- *   create: { action:'create', data:{ customer_id, opportunity_type, status?, discovered_at?, last_progress?, next_action?, ai_summary? } } → { id }
- *   update: { action:'update', id, data:{ opportunity_type?, status?, discovered_at?, last_progress?, next_action?, ai_summary? } } → { ok }
+ *           （进行中按 updated_at 倒序在前，关闭在后）
+ *   create: { action:'create', data:{ customer_id, opportunity_type, status?, discovered_at?, last_progress?, next_action?, ai_summary?,
+ *                                     referred_name?, referred_relation?（转介绍线索：被介绍人/关系） } } → { id }
+ *   update: { action:'update', id, data:{ ...同上增量 } } → { ok }
  *   close:  { action:'close', id } → { ok }（status 置为'关闭'）
  *   remove: { action:'remove', id } → { ok }（软删除，置 deleted_at）
+ * 转介绍线索（v1.4）：opportunity_type='转介绍' 复用本表，customer_id=来源客户；
+ *   状态机为转介绍专属：潜在线索/已介绍/已联系/已建立关系/成交/关闭（其余类型用 发现/沟通/方案/成交/关闭）；
+ *   referred_name=被介绍人姓名，referred_relation=与来源客户关系，next_action=下一步。
  * 枚举校验：类型/状态超出词表直接报错，不静默改写。
  * 注意：opportunities.created_at / updated_at 有 now() 默认值，仍手动写入保持与 followups 一致。
  */
@@ -16,10 +20,20 @@ const { rdb, nowIso, normFields, assertOk } = require('./db');
 
 var TYPE_ENUM = ['医疗保障', '重疾保障', '养老规划', '教育规划', '财富规划', '家庭保障', '转介绍'];
 var STATUS_ENUM = ['发现', '沟通', '方案', '成交', '关闭'];
+var REF_STATUS_ENUM = ['潜在线索', '已介绍', '已联系', '已建立关系', '成交', '关闭'];
+
+function isReferral(type) { return type === '转介绍'; }
+// 按机会类型校验状态；返回错误串或 null
+function statusError(type, status) {
+  if (!status) return null;
+  var allowed = isReferral(type) ? REF_STATUS_ENUM : STATUS_ENUM;
+  return allowed.indexOf(status) < 0 ? ('无效的机会状态：' + status) : null;
+}
 
 const FIELDS = [
   'customer_id', 'opportunity_type', 'status', 'discovered_at',
   'last_progress', 'next_action', 'ai_summary',
+  'referred_name', 'referred_relation',
 ];
 
 exports.main = async (event, context) => {
@@ -70,14 +84,13 @@ async function create(event) {
   if (TYPE_ENUM.indexOf(data.opportunity_type) < 0) {
     return { error: '无效的机会类型：' + data.opportunity_type };
   }
-  if (data.status && STATUS_ENUM.indexOf(data.status) < 0) {
-    return { error: '无效的机会状态：' + data.status };
-  }
+  var se = statusError(data.opportunity_type, data.status);
+  if (se) return { error: se };
   const c = assertOk(await rdb.from('customers').select('Id').eq('Id', customerId)
     .is('deleted_at', null).maybeSingle());
   if (!c.data) return { error: 'customer not found' };
   data.discovered_at = normDate(data.discovered_at);
-  if (!data.status) data.status = '发现';
+  if (!data.status) data.status = isReferral(data.opportunity_type) ? '潜在线索' : '发现';
   data.created_at = nowIso();
   data.updated_at = nowIso();
   const payload = normFields(data, FIELDS.concat(['created_at', 'updated_at']));
@@ -92,8 +105,15 @@ async function update(event) {
   if (data.opportunity_type && TYPE_ENUM.indexOf(data.opportunity_type) < 0) {
     return { error: '无效的机会类型：' + data.opportunity_type };
   }
-  if (data.status && STATUS_ENUM.indexOf(data.status) < 0) {
-    return { error: '无效的机会状态：' + data.status };
+  // 状态校验按"更新后的类型"：data 带了类型用新类型，否则取记录现有类型
+  var effType = data.opportunity_type;
+  if (!effType && data.status) {
+    const ex = assertOk(await rdb.from('opportunities').select('opportunity_type').eq('id', id).maybeSingle());
+    effType = ex.data ? ex.data.opportunity_type : null;
+  }
+  if (data.status) {
+    var se = statusError(effType, data.status);
+    if (se) return { error: se };
   }
   if (Object.prototype.hasOwnProperty.call(data, 'discovered_at')) {
     data.discovered_at = normDate(data.discovered_at);

@@ -6,15 +6,42 @@
  *              keyword?（客户姓名模糊）, dateField?('recommendation_date'|'suggested_followup_date')+startDate?/endDate?（区间，任一可空） }
  *            → { rows, total }（全量建议，JS 端筛选+排序（null 排后）+ 分页，仿 customers list 模式）
  *   get:     { action:'get', id } → { recommendation }（单条完整字段）
+ *   create:  { action:'create', data:{ customer_id, suggested_message?, suggested_strategy?, suggested_followup_date?,
+ *                                     suggested_customer_stage?, suggested_followup_goal?, nba? } }
+ *            → { id }（用户确认后的建议落库：AI 只建议、必须用户确认，如转介绍建议确认写入 NBA；不做 AI 生成）
  *   update:  { action:'update', id, data:{ suggested_message?, suggested_strategy?, suggested_followup_date?, suggested_customer_stage?, suggested_followup_goal? } }
  *            → { ok }（人工编辑保存；空串转 null，按 id 增量更新）
  *   update_status: { action:'update_status', id, status:'completed'|'skipped', result }
  *            → { ok }（NBA 执行闭环：将 status/executed_at/result merge 进 nba jsonb，不改原始 AI 建议）
- * 建议记录由 ai_recommend 函数写入，本函数读取 + 增量编辑 + 执行状态。
+ * 建议记录由 ai_recommend / ai_referral（经本 create 确认）写入，本函数读取 + 增量编辑 + 执行状态。
  */
 'use strict';
 
 const { rdb, normFields, assertOk, nowIso } = require('./db');
+
+// 与 ai_recommend 一致的枚举词表（PG enum 列，超出值会插入失败）
+var GOAL_ENUM = ['建立联系', '约见面', '邀请活动', '获取家庭信息', '推进签单', '推进招募', '推进转介绍'];
+var STAGE_ENUM = ['新认识', '关系维护', '需求挖掘', '方案沟通', '成交推进', '转介绍经营'];
+function inEnum(v, list) {
+  return (typeof v === 'string' && list.indexOf(v.trim()) >= 0) ? v.trim() : null;
+}
+// NBA jsonb 清洗：仅保留 6 个文本字段；全空返回 null（同 ai_recommend.normNba）
+function normNba(n) {
+  if (!n || typeof n !== 'object' || Array.isArray(n)) return null;
+  var KEYS = ['assessment', 'goal', 'next_action', 'topic', 'avoid', 'success_criteria'];
+  var out = {}, any = false;
+  KEYS.forEach(function (k) {
+    var v = typeof n[k] === 'string' ? n[k].trim().slice(0, 200) : '';
+    out[k] = v;
+    if (v) any = true;
+  });
+  return any ? out : null;
+}
+function normDate(v) {
+  if (v == null || v === '') return null;
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v.trim())) return null;
+  return v.trim();
+}
 
 const SORTABLE = {
   id: 'id',
@@ -38,6 +65,7 @@ exports.main = async (event, context) => {
       case 'list':    return await list(event);
       case 'listAll': return await listAll(event);
       case 'get':     return await get(event);
+      case 'create':  return await create(event);
       case 'update':        return await update(event);
       case 'update_status': return await updateStatus(event);
       default: return { error: 'unknown action: ' + action };
@@ -114,6 +142,29 @@ async function get(event) {
   const r = assertOk(await rdb.from('ai_recommendations').select().eq('id', id).maybeSingle());
   if (!r.data) return { error: 'not found' };
   return { recommendation: r.data };
+}
+
+// 用户确认后的建议落库（AI 只建议、必须用户确认才会调用）：直接写入前端提交的内容，不做 AI 生成
+async function create(event) {
+  const data = Object.assign({}, event.data || {});
+  const customerId = parseInt(data.customer_id, 10);
+  if (!customerId) return { error: 'customer_id required' };
+  const c = assertOk(await rdb.from('customers').select('Id, customer_name').eq('Id', customerId)
+    .is('deleted_at', null).maybeSingle());
+  if (!c.data) return { error: 'customer not found' };
+  const payload = {
+    customer_id: customerId,
+    customer_name: c.data.customer_name || '',
+    recommendation_date: normDate(data.recommendation_date) || new Date().toISOString().slice(0, 10),
+    suggested_followup_date: normDate(data.suggested_followup_date),
+    suggested_message: data.suggested_message ? String(data.suggested_message).slice(0, 1000) : null,
+    suggested_strategy: data.suggested_strategy ? String(data.suggested_strategy).slice(0, 2000) : null,
+    suggested_customer_stage: inEnum(data.suggested_customer_stage, STAGE_ENUM),
+    suggested_followup_goal: inEnum(data.suggested_followup_goal, GOAL_ENUM),
+    nba: normNba(data.nba),
+  };
+  const r = assertOk(await rdb.from('ai_recommendations').insert(payload).select('id'));
+  return { id: r.data[0].id };
 }
 
 // 增量更新：仅写入 EDIT_FIELDS 内的非 undefined 字段；自动更新 updated_at
