@@ -1,7 +1,7 @@
 /**
  * 生成 CRM 架构与功能介绍 Word 文档
  * 运行: node tools/gen-crm-doc.js
- * 输出: docs/CRM系统架构与功能介绍-v1.0.4.docx
+ * 输出: docs/CRM系统架构与功能介绍-v1.0.10.docx
  */
 const {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
@@ -141,12 +141,12 @@ sections.push({
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { before: 400, after: 100 },
-      children: [new TextRun({ text: '版本 v1.0.4', size: 28, color: COLOR_GREEN, bold: true })],
+      children: [new TextRun({ text: 'v1.0.9 已发布 · v1.0.10 开发中', size: 28, color: COLOR_GREEN, bold: true })],
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { before: 60, after: 60 },
-      children: [new TextRun({ text: '2026-09-06', size: 24, color: '6B7280' })],
+      children: [new TextRun({ text: '2026-09-07', size: 24, color: '6B7280' })],
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
@@ -166,7 +166,8 @@ const content = [];
 
 // 一、系统概述
 content.push(heading('一、系统概述'));
-content.push(para('Victor\'s CRM 是一套基于腾讯云 CloudBase 个人版构建的轻量级客户关系管理系统，面向保险行业个人代理人，覆盖客户经营与组织发展（增员）两大核心业务模块。系统采用单文件前端 + 事件云函数 + 共享集群 PostgreSQL 的极简架构，无需构建步骤、零运维负担、单文件部署即可上线。'));
+content.push(para('Victor\'s CRM 是一套基于腾讯云 CloudBase 个人版构建的轻量级客户关系管理系统，面向保险行业个人代理人，覆盖客户经营与组织发展（增员）两大核心业务模块。系统以「AI 辅助经营」为主线：AI 解析客户资料、AI 跟进建议（Next Best Action）、AI 今日经营驾驶舱、AI 沟通记录助手、AI 客户画像五大 AI 能力嵌入日常操作动线，让数据沉淀于沟通过程本身，而非依赖事后手工录入。'));
+content.push(para('技术形态为单文件前端 + 事件云函数 + 共享集群 PostgreSQL：无需构建步骤、零运维负担、单文件部署即可上线。'));
 content.push(spacer());
 
 // 核心数据
@@ -174,12 +175,12 @@ content.push(heading('核心数据', HeadingLevel.HEADING_2, COLOR_GREEN));
 content.push(table(
   ['维度', '数量', '说明'],
   [
-    ['云函数', '16 个', 'CommonJS / Node.js 18.15，含 5 个 AI 函数（hy3 模型）'],
-    ['业务表', '13 张', '客户域 6 + 画像增强 2 + 增员域 5'],
+    ['云函数', '18 个', 'CommonJS / Node.js 18.15，含 6 个 AI 函数（hy3 模型）'],
+    ['业务表', '13 张', '客户域 6 + 画像增强 2 + 增员域 5；近期新增 customers.profile 与 ai_recommendations.nba 两个 jsonb 列'],
     ['数据库视图', '8 个', '6 张 *_view + 2 张增员视图（v_recruit_candidates / _trash）'],
-    ['迁移 SQL', '16 个', '按时间戳命名，含 RLS / 软删除 / 增员模块'],
-    ['前端函数', '120+ 个', 'admin.html 单文件约 3900 行，IIFE + strict mode'],
-    ['版本标签', '5 个', 'v1.0.0 ~ v1.0.4，GitHub 可追溯'],
+    ['迁移 SQL', '18 个', '按时间戳命名，含 RLS / 软删除 / 增员模块 / NBA / 画像'],
+    ['前端函数', '150+ 个', 'admin.html 单文件约 4470 行，IIFE + strict mode'],
+    ['版本标签', '8 个', 'v1.0.0 ~ v1.0.7、v1.0.9（v1.0.8 跳过并入 v1.0.9），GitHub 可追溯'],
   ],
   [15, 12, 73]
 ));
@@ -196,17 +197,17 @@ content.push(richPara([
   { text: '（单页, @cloudbase/js-sdk CDN, callFunction 同域）' },
 ]));
 content.push(para('  ├─ 顶栏 [客户经营] [组织发展] 模块切换器'));
-content.push(para('  ├─ 路由：10 条 hash 路径（客户 6 + 增员 4）'));
+content.push(para('  ├─ 路由：11 条 hash 路径（客户 7 + 增员 4）'));
 content.push(para('  └─ window.APP_CONFIG.envId'));
 content.push(para('        │'));
 content.push(richPara([
-  { text: '事件云函数 ×16', bold: true, color: COLOR_PRIMARY },
+  { text: '事件云函数 ×18', bold: true, color: COLOR_PRIMARY },
   { text: ' (CommonJS, Nodejs18.15)' },
 ]));
 content.push(para('  ├─ _shared/db.js（rdb() 数据访问 + AI(hy3) 封装）'));
 content.push(para('  └─ @cloudbase/node-sdk@^4'));
 content.push(para('       └─ app.rdb()        → 共享集群 PG（RLS fn_only 策略）'));
-content.push(para('       └─ app.ai()          → hy3（5 个 AI 函数）'));
+content.push(para('       └─ app.ai()          → hy3（6 个 AI 函数）'));
 content.push(spacer());
 
 content.push(heading('环境配置', HeadingLevel.HEADING_2, COLOR_GREEN));
@@ -232,17 +233,18 @@ content.push(spacer());
 
 // 3.1 客户经营
 content.push(heading('3.1 客户经营', HeadingLevel.HEADING_2, COLOR_PRIMARY));
-content.push(para('客户经营模块是系统的核心模块，涵盖客户全生命周期管理。'));
+content.push(para('客户经营模块是系统的核心模块，涵盖客户全生命周期管理，并以五个 AI 能力贯穿「获客 → 记录 → 分析 → 行动」闭环。'));
 content.push(spacer());
 
 content.push(heading('路由与页面', HeadingLevel.HEADING_3, COLOR_GREEN));
 content.push(table(
   ['路由', '页面', '功能'],
   [
-    ['#/', '客户工作台', '6 个统计卡（客户总数/今日跟进/逾期/30 天内/长期未联系）+ 客户列表，统计卡可点击筛选'],
+    ['#/', '客户工作台', '6 个统计卡（客户总数/今日跟进/逾期/30 天内/长期未联系/增员中）+ 客户列表，统计卡可点击筛选，支持搜索/排序/分页'],
+    ['#/today', '今日经营（独立页）', 'AI 驾驶舱展示当日 15 名重点客户：优先级/建议动作/NBA 卡片，点击跳详情；当日缓存 + 数据指纹提示 + 重新生成'],
     ['#/customers', '全部客户列表', '支持姓名/电话/职业搜索、排序、分页'],
     ['#/customers/trash', '客户回收站', '批量恢复已软删除客户（含关联子记录）'],
-    ['#/customer/:id', '客户详情', '7 Tab：基本信息/跟进记录/保单检视/伴手礼/照片附件/AI 解析记录/AI 建议'],
+    ['#/customer/:id', '客户详情', '8 Tab：基本信息/客户画像/跟进记录/保单检视/伴手礼/照片附件/AI 解析记录/AI 建议'],
     ['#/ai-suggestions', 'AI 建议库', '三种筛选搜索：按姓名/按给出建议日期/按建议跟进日期'],
     ['#/activity/customer', '客户活动量日报', '今日实时 + 区间查询，含指标卡、趋势表、活动流水'],
   ],
@@ -251,21 +253,60 @@ content.push(table(
 content.push(spacer());
 
 content.push(heading('工具栏', HeadingLevel.HEADING_3, COLOR_GREEN));
-content.push(bullet('客户工作台：搜索框 / 搜索 / + 新增客户（蓝）/ 全部客户（绿）/ AI 解析新增 / AI 建议 / 活动量'));
+content.push(bullet('客户工作台：搜索框 / 搜索 / 今日经营（翠绿）/ + 新增客户（蓝）/ 全部客户（绿）/ AI 解析新增 / AI 建议 / 活动量'));
 content.push(bullet('增员入口已迁至顶部模块切换器「组织发展」'));
 content.push(spacer());
 
-content.push(heading('核心功能', HeadingLevel.HEADING_3, COLOR_GREEN));
-content.push(bullet('客户 CRUD：支持姓名/电话/职业/优先级/阶段/生日等全字段管理'));
+content.push(heading('核心功能（传统操作）', HeadingLevel.HEADING_3, COLOR_GREEN));
+content.push(bullet('客户 CRUD：支持姓名/电话/职业/优先级/阶段/生日等全字段管理；姓名失焦快速查重'));
 content.push(bullet('跟进记录：CRUD + 今日跟进/逾期/30 天内到期/长期未联系智能提醒'));
 content.push(bullet('保单检视：11 类产品额度二维表 + AI 5 段检视报告（标准普尔+双十原则+保险金字塔）'));
 content.push(bullet('伴手礼管理：CRUD + 客户维度关联'));
 content.push(bullet('照片附件：base64 存储，list 懒加载 data URL'));
-content.push(bullet('AI 文本解析：输入文本 → hy3 解析 → 预填客户资料（可存图）'));
-content.push(bullet('AI 跟进建议：hy3 生成 → 写入 ai_recommendations → 库页可筛选搜索'));
-content.push(bullet('OCR 识别记录：Tesseract/pdf.js 前端 OCR + customer_snapshot 回退'));
+content.push(bullet('OCR 识别记录：Tesseract/pdf.js 前端 OCR + customer_snapshot 回退，AI 解析记录可编辑'));
 content.push(bullet('客户回收站：级联软删除 + 逐行/批量恢复'));
 content.push(bullet('活动量日报：今日实时/区间查询，指标含新增/首联/跟进/接触/计划完成率/礼品/照片/OCR/AI 建议/保单检视/产品更新'));
+content.push(spacer());
+
+content.push(heading('AI 能力一：AI 解析新增（ai_parse）', HeadingLevel.HEADING_3, COLOR_GREEN));
+content.push(bullet('文本/名片/图片 → hy3 解析 → 预填客户资料确认表（可存图）；同名客户对比审核更新；解析前快照可一键恢复'));
+content.push(spacer());
+
+content.push(heading('AI 能力二：AI 跟进建议 Next Best Action（ai_recommend）', HeadingLevel.HEADING_3, COLOR_GREEN));
+content.push(bullet('基于客户全量数据生成结构化 NBA 建议（动作 + 话术 + 时机），写入 ai_recommendations.nba（jsonb）'));
+content.push(bullet('客户详情页 / 增员详情页 / 今日经营页三处展示；AI 建议库可按姓名/日期筛选检索'));
+content.push(spacer());
+
+content.push(heading('AI 能力三：AI 今日经营驾驶舱（today_coach）', HeadingLevel.HEADING_3, COLOR_GREEN));
+content.push(bullet('四表规则筛选（跟进到期/逾期/久未联系/高优先级）+ hy3 结构化排序，输出当日 15 名重点客户与建议动作'));
+content.push(bullet('AI 失败自动降级规则版；当日缓存 + 客户数据指纹比对，数据变化时提示重新生成'));
+content.push(bullet('独立功能页 #/today，从工作台翠绿按钮进入'));
+content.push(spacer());
+
+content.push(heading('AI 能力四：AI 沟通记录助手（ai_followup · v1.0.9）', HeadingLevel.HEADING_3, COLOR_GREEN));
+content.push(bullet('客户详情跟进 tab 翠绿按钮「✨ AI 记录本次沟通」：口语一句话描述 → hy3 解析 → 确认页 → 写入跟进记录'));
+content.push(bullet('自动完成：沟通要点提炼、相对日期换算（下周/月底/过两周 → 具体日期）、跟进目标枚举清洗、下一步建议'));
+content.push(bullet('确认页三个建议区（均勾选确认后才生效）：追加客户附加信息（分隔符追加不覆盖）、调整客户阶段（默认不勾选）、更新客户画像'));
+content.push(bullet('原则：只解析不写库、无法确定返回 null 严禁编造、用户确认后才写入'));
+content.push(spacer());
+
+content.push(heading('AI 能力五：轻量客户画像（v1.0.9 + v1.0.10 开发中）', HeadingLevel.HEADING_3, COLOR_GREEN));
+content.push(para('设计原则：不建标签体系、不增加录入负担——画像 8 维度仅新增 1 个 profile jsonb 字段，兴趣爱好/职业/婚姻状况复用基表字段；AI 从沟通记录中提取，用户确认后写入，禁止猜测。'));
+content.push(table(
+  ['维度', '存储', '更新方式'],
+  [
+    ['家庭情况 / 子女情况 / 父母情况 / 职业事业状态 / 当前主要需求 / 与我的关系', 'customers.profile（jsonb）', 'AI 提取 → 确认勾选 → 写入'],
+    ['重要人生事件', 'profile.events（date+text 数组，上限 20 条）', 'AI 提取追加，按文本去重保留历史'],
+    ['兴趣爱好 / 职业 / 婚姻状况', 'hobbies / occupation / marital_status（基表）', '编辑基本信息即联动展示'],
+  ],
+  [40, 30, 30]
+));
+content.push(spacer());
+content.push(bullet('画像 Tab（客户详情第二个 tab）：8 维度信息列表 + 人生事件时间线倒序 + 空维度灰显「待补充」；当前主要需求翠绿加粗'));
+content.push(bullet('AI 沟通确认页画像建议（v1.0.9）：列出「旧值 → 新值」与新增事件，默认勾选可取消，文本维度替换、事件追加去重'));
+content.push(bullet('「✨ AI 补全画像」（v1.0.10 开发中）：通读该客户近 50 条历史跟进 + 附加信息 + 现有画像，一次性生成全量画像建议，逐维度勾选确认后合并写入——解决存量客户冷启动与手工跟进后的画像补全'));
+content.push(bullet('「手动编辑」（v1.0.10 开发中）：6 个文本维度直接修改 + 人生事件行级增删，留空清除，作为 AI 出错/漏提取时的兜底入口'));
+content.push(bullet('v1.0.10 当前状态：云函数 analyze_profile 已部署并实测通过；前端已上传托管；浏览器回归与发布待完成'));
 content.push(spacer());
 
 // 3.2 组织发展
@@ -277,7 +318,7 @@ content.push(heading('路由与页面', HeadingLevel.HEADING_3, COLOR_GREEN));
 content.push(table(
   ['路由', '页面', '功能'],
   [
-    ['#/recruit', '增员工作台', '7 阶段漏斗看板 + 候选人列表'],
+    ['#/recruit', '增员工作台', '7 阶段漏斗看板 + 候选人列表（含增员状态联动客户表）'],
     ['#/recruit/goals', '目标管理', '行业基准对比 + 当月目标对照 + 目标转化率'],
     ['#/recruit/trash', '增员回收站', '批量恢复已软删除候选人'],
     ['#/activity/recruit', '增员活动量日报', '今日实时/区间 + goalProgress 当月目标对照'],
@@ -295,7 +336,7 @@ content.push(bullet('候选人 CRUD + 7 阶段阶段变更 + 候选人时间线�
 content.push(bullet('增员跟进记录：CRUD + contact_method / interest_level / 顾虑记录'));
 content.push(bullet('目标管理：月度目标 + getProgress（与 recruit_goal_benchmarks 对照）+ 7 阶段行业基准（min/avg/good + 来源）'));
 content.push(bullet('AI 高潜评分：hy3 6 维度加权评分（120s）'));
-content.push(bullet('AI 接触建议：hy3 STAR 异议处理 + 称呼规则 + 五步法（120s）'));
+content.push(bullet('AI 接触建议：hy3 STAR 异议处理 + 称呼规则 + 五步法（120s），生成 NBA 结构化建议'));
 content.push(bullet('雷达图/报告附件：私有 bucket recruit，signed URL 1 小时有效'));
 content.push(bullet('增员回收站：级联软删除 + 恢复'));
 content.push(bullet('活动量日报：新增候选人/RC 跟进/接触/计划完成率/暖客/初面/增员活动/深面/申请/入职'));
@@ -309,15 +350,15 @@ content.push(heading('业务表（13 张）', HeadingLevel.HEADING_2, COLOR_GREE
 content.push(table(
   ['业务域', '表名', '主键', '说明'],
   [
-    ['客户域', 'customers', 'Id (int)', '中心表，含优先级/阶段/MBTI 等'],
+    ['客户域', 'customers', 'Id (int)', '中心表；v1.0.9 新增 profile jsonb（8 维度画像）'],
     ['', 'followups', 'Id (int)', '跟进记录，含下次跟进日期/目标'],
     ['', 'products', 'id (bigint)', '保单额度（11 个 ap_* + items JSON）'],
     ['', 'gifts', 'Id (bigint)', '伴手礼'],
     ['', 'photos', 'id (int)', 'base64 存储，无序列手动分配'],
-    ['', 'ai_recommendations', 'id (bigint)', '只读表，由 ai_recommend 写入'],
+    ['', 'ai_recommendations', 'id (bigint)', '只读表；v1.0.7 新增 nba jsonb（NBA 结构化建议）'],
     ['画像增强', 'policy_review_reports', 'id (bigint)', 'AI 5 段检视报告 + edited_* 双写区'],
     ['', 'ocr_records', 'id (bigint)', 'OCR 记录 + customer_snapshot'],
-    ['增员域', 'recruit_candidates', 'id (bigserial)', '7 阶段候选人'],
+    ['增员域', 'recruit_candidates', 'id (bigserial)', '7 阶段候选人（客户唯一性防重索引）'],
     ['', 'recruit_milestones', 'id (bigserial)', '阶段变更事件流'],
     ['', 'recruit_followups', 'id (bigserial)', '增员接触记录'],
     ['', 'recruit_goals', 'id (bigserial)', '月度目标'],
@@ -382,18 +423,20 @@ content.push(bullet('admin.html apiBase 留空（callFunction 同域调用）'))
 content.push(spacer());
 
 // 六、云函数清单
-content.push(heading('六、云函数清单（16 个）'));
+content.push(heading('六、云函数清单（18 个）'));
 content.push(table(
   ['业务域', '云函数', '超时', '说明'],
   [
-    ['客户域 CRUD', 'customers', '10s', '客户 CRUD'],
+    ['客户域 CRUD', 'customers', '10s', '客户 CRUD（profile jsonb 透传）'],
     ['', 'followups', '10s', '跟进记录 CRUD'],
     ['', 'products', '10s', '保单额度 upsert'],
     ['', 'gifts', '10s', '伴手礼 CRUD'],
     ['', 'photos', '10s', '照片存储（base64）'],
-    ['AI 历史', 'ai_recommendations', '10s', 'AI 建议历史（只读，list + listAll）'],
+    ['AI 历史', 'ai_recommendations', '10s', 'AI 建议历史（只读，list + listAll，含 NBA 结构）'],
     ['AI 生成', 'ai_parse', '120s', 'AI 文本解析 → 客户资料'],
-    ['', 'ai_recommend', '120s', 'AI 跟进建议生成'],
+    ['', 'ai_recommend', '120s', 'AI 跟进建议生成（NBA 结构）'],
+    ['', 'ai_followup', '60s', 'AI 沟通记录助手（parse 口语解析 + analyze_profile 画像补全）'],
+    ['', 'today_coach', '120s', 'AI 今日经营驾驶舱（四表筛选 + hy3 排序 + 降级）'],
     ['画像增强', 'policy_review_reports', '120s', '保单检视 5 段 AI 报告'],
     ['', 'ocr_records', '10s', 'OCR 识别记录'],
     ['活动量', 'activity_reports', '10s', 'today/range 双轨聚合'],
@@ -401,7 +444,7 @@ content.push(table(
     ['', 'recruit_followups', '10s', '增员跟进 CRUD'],
     ['', 'recruit_goals', '10s', '月度目标 + getProgress'],
     ['', 'recruit_score', '120s', 'AI 高潜评分'],
-    ['', 'recruit_recommend', '120s', 'AI 接触建议'],
+    ['', 'recruit_recommend', '120s', 'AI 接触建议（NBA 结构）'],
   ],
   [13, 25, 8, 54]
 ));
@@ -412,7 +455,7 @@ content.push(heading('七、部署与运维'));
 content.push(spacer());
 
 content.push(heading('部署步骤（首次）', HeadingLevel.HEADING_2, COLOR_GREEN));
-content.push(bullet('1. 配置环境变量：每个云函数注入 TCB_ENV，5 个 AI 函数额外注入 AI_MODEL=hy3'));
+content.push(bullet('1. 配置环境变量：每个云函数注入 TCB_ENV，AI 函数额外注入 AI_MODEL=hy3'));
 content.push(bullet('2. 打包共享模块：_shared/db.js 复制为各函数 ./db.js'));
 content.push(bullet('3. 部署云函数：MCP manageFunctions 或 tcb fn deploy'));
 content.push(bullet('4. 部署前端：MCP manageHosting 上传 admin.html（禁用 tcb hosting deploy）'));
@@ -454,6 +497,11 @@ content.push(table(
     ['v1.0.2', 'd8868d5', '客户/增员回收站 + RLS 安全加固 + 增员状态列'],
     ['v1.0.3', '9f4b0f7', '活动量日报（客户经营+增员双维度）'],
     ['v1.0.4', '4abdaa5', '双模块导航 + AI 建议库筛选 + 文档全面校对'],
+    ['v1.0.5', 'f4c4ef9', 'AI 今日经营驾驶舱（today_coach + 首页内嵌 + 当日缓存）'],
+    ['v1.0.6', 'b8c1370', '今日经营升级为独立功能页 #/today（15 人 + 缓存 v2）'],
+    ['v1.0.7', '147a026', 'AI 跟进建议升级为 Next Best Action（nba jsonb + 三处展示）'],
+    ['v1.0.9', 'f9d1332', 'AI 沟通记录助手 + 轻量客户画像（ai_followup + profile jsonb，v1.0.8 跳过并入）'],
+    ['v1.0.10', '开发中', '画像 AI 补全（analyze_profile）+ 画像手动编辑；云函数与前端已部署，浏览器回归与发布待完成'],
   ],
   [12, 15, 73]
 ));
@@ -464,8 +512,43 @@ content.push(richPara([
 ]));
 content.push(spacer());
 
-// 八、经验教训
-content.push(heading('八、关键经验教训'));
+// 八、当前待办与后续开发建议
+content.push(heading('八、当前待办与后续开发建议（基于 v1.0.10-dev 现状）'));
+content.push(spacer());
+
+content.push(heading('8.1 最近待办（v1.0.10 收尾）', HeadingLevel.HEADING_2, COLOR_GREEN));
+content.push(bullet('浏览器回归：「✨ AI 补全画像」模态（加载态/建议列表/勾选写入）、「手动编辑」模态（维度修改/事件增删/空画像清除）、AI 沟通确认页三建议区回归'));
+content.push(bullet('发布：release.ps1 提交并打标签 v1.0.10，sync-check 三方体检'));
+content.push(bullet('回归后更新本文档版本口径（v1.0.10 开发中 → 已发布）'));
+content.push(spacer());
+
+content.push(heading('8.2 客户画像方向', HeadingLevel.HEADING_2, COLOR_PRIMARY));
+content.push(bullet('画像完整度运营：客户列表/工作台增加「画像完整度」指示或筛选（如：有跟进记录但画像为空 → 优先补全名单），让 AI 补全画像用在刀刃上'));
+content.push(bullet('批量画像补全（谨慎）：按需触发的批处理（仅限有 N 条以上跟进的客户，逐个确认），明确不做后台静默全量生成——控制 AI 成本且遵守「确认后写入」原则'));
+content.push(bullet('画像变更历史：profile 变更留存时间线（谁/何时/改了什么），便于回溯 AI 写入是否可信'));
+content.push(bullet('增员域画像复用：将 profile 模式移植到 recruit_candidates（候选人家庭/职业动机画像），复用 analyze_profile 的清洗与确认交互'));
+content.push(spacer());
+
+content.push(heading('8.3 AI 能力方向', HeadingLevel.HEADING_2, COLOR_PRIMARY));
+content.push(bullet('NBA 闭环回填：建议 → 是否执行 → 沟通结果（跟进记录）关联，统计「建议采纳率」，反哺 today_coach 排序权重'));
+content.push(bullet('AI 周报/月报：活动量 + 跟进 + 画像数据综合，生成经营周报（可先做静态规则版再叠加 AI 摘要）'));
+content.push(bullet('今日经营策略可配置：优先级权重/过滤条件允许用户微调（当前为固定四表规则）'));
+content.push(spacer());
+
+content.push(heading('8.4 数据与体验方向', HeadingLevel.HEADING_2, COLOR_PRIMARY));
+content.push(bullet('数据导出/备份：客户+跟进+画像一键导出 Excel，作为个人版云环境的异地备份手段'));
+content.push(bullet('移动端体验：手机端画像 tab 与 AI 确认模态的窄屏适配（当前已有 iPhone/iPad 自适应基础）'));
+content.push(bullet('PWA 离线只读：静态托管加 manifest，弱网时至少可查看缓存的今日经营与客户列表'));
+content.push(spacer());
+
+content.push(heading('8.5 工程化方向', HeadingLevel.HEADING_2, COLOR_PRIMARY));
+content.push(bullet('admin.html 已 4471 行，距 6000~8000 行拆分阈值还有空间，但画像/周报等新功能持续加码，建议 v1.1 前评估「源码拆分 → 构建单文件」演进'));
+content.push(bullet('云函数契约测试：为 18 个函数建立最小 invoke 冒烟清单（动作/参数/错误码），降低回归成本'));
+content.push(bullet('迁移 SQL 演练：反向迁移脚本缺失，建议对 profile/nba 等新列补 DROP 反向脚本并归档'));
+content.push(spacer());
+
+// 九、关键经验教训
+content.push(heading('九、关键经验教训'));
 content.push(table(
   ['#', '教训', '影响'],
   [
@@ -474,38 +557,40 @@ content.push(table(
     ['3', '时区 toISOString 回退一天', '改 UTC 算术（new Date(start+T00:00:00Z) + setUTCDate）'],
     ['4', 'MCP ENV_REQUIRED', '调用 manageFunctions 前先 auth set_env envId'],
     ['5', 'PowerShell 不支持 &&/heredoc', '用 ; 和 here-string @\'...\'@'],
-    ['6', '视图不自动包含基表新列', '基表加列后必须重建依赖视图'],
+    ['6', '视图不自动包含基表新列', '基表加列后必须重建依赖视图（profile/nba 均已重建）'],
     ['7', 'tcb hosting deploy 泄露文件', '改用 MCP manageHosting 上传单文件'],
     ['8', 'ai_recommendations feed 重复', '里程碑仅在 STAGE_KEYS 命中时进 feed'],
     ['9', 'PowerShell 5.1 中文乱码', '脚本存为 UTF-8 带 BOM'],
     ['10', '同步靠人工易漂移', '引入 release.ps1 + sync-check.ps1 制度化'],
+    ['11', '云函数部署后首次 invoke 命中旧实例', '部署竞态/旧实例缓存，重试第二次 invoke 验证新代码'],
+    ['12', '云函数超时与 AI 等待不匹配', 'AI 函数统一 60~120s 超时；generateText 传 timeout 参数'],
   ],
   [5, 38, 57]
 ));
 content.push(spacer());
 
-// 九、架构评估
-content.push(heading('九、单文件架构评估'));
+// 十、单文件架构评估
+content.push(heading('十、单文件架构评估'));
 content.push(richPara([
   { text: '结论', bold: true, color: COLOR_GREEN },
-  { text: '：对于当前项目（单用户、内网工具、约 3900 行），单文件结构是合理且近乎最优的选择。' },
+  { text: '：对于当前项目（单用户、内网工具、约 4470 行），单文件结构仍是合理且近乎最优的选择，但已进入「需规划演进」区间。' },
 ]));
 content.push(spacer());
 content.push(heading('优势', HeadingLevel.HEADING_3, COLOR_GREEN));
 content.push(bullet('部署/运维原子化：一个文件上传即发布，无版本错位/缓存混搭问题'));
 content.push(bullet('零构建链：不依赖 npm/webpack，打开即改，MD5 即知线上是否最新'));
 content.push(bullet('git 标签=完整版本快照，回滚即检出'));
-content.push(bullet('gzip 后约 50KB，手机端一次性加载可接受'));
+content.push(bullet('gzip 后约 55KB，手机端一次性加载可接受'));
 content.push(spacer());
 content.push(heading('演进阈值', HeadingLevel.HEADING_3, COLOR_GREEN));
-content.push(bullet('超过 6000~8000 行或出现第二人开发时，按"源码拆分→构建单文件"方式演进'));
-content.push(bullet('引入 Vue/React 或 webpack 对单用户工具是杀鸡用牛刀，不推荐'));
+content.push(bullet('当前 4471 行；超过 6000~8000 行或出现第二人开发时，按「源码拆分 → 构建单文件」方式演进'));
+content.push(bullet('引入 Vue/React 或 webpack 对单用户工具是杀鸡用牛刀，不推荐；若拆分，采用多 JS 源文件 + esbuild 单文件产出即可'));
 content.push(spacer());
 
 // 文档尾部
 content.push(divider());
-content.push(para('本文档由 Victor\'s CRM 项目自动生成', { align: AlignmentType.CENTER, color: '6B7280', size: 20, italic: true }));
-content.push(para('生成时间：2026-09-06 | 版本：v1.0.4 | 对应代码提交：4abdaa5', { align: AlignmentType.CENTER, color: '6B7280', size: 20 }));
+content.push(para('本文档由 Victor\'s CRM 项目自动生成（node tools/gen-crm-doc.js）', { align: AlignmentType.CENTER, color: '6B7280', size: 20, italic: true }));
+content.push(para('生成时间：2026-09-07 | 版本基准：v1.0.9 已发布（f9d1332）+ v1.0.10 开发中 | 云函数与前端均已部署最新代码', { align: AlignmentType.CENTER, color: '6B7280', size: 20 }));
 
 sections.push({
   properties: {
@@ -529,7 +614,7 @@ const doc = new Document({
   },
 });
 
-const outputPath = path.join(__dirname, '..', 'docs', 'CRM系统架构与功能介绍-v1.0.4.docx');
+const outputPath = path.join(__dirname, '..', 'docs', 'CRM系统架构与功能介绍-v1.0.10.docx');
 const buffer = Packer.toBuffer(doc);
 
 // Packer.toBuffer returns a Promise in newer versions
