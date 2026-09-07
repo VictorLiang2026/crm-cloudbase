@@ -1267,7 +1267,7 @@ async function showDetail(id){
 
     // 标签栏
     var tabs = el('div', {class:'tabs'});
-    var tabsDef = [['info','基本信息'],['profile','客户画像'],['followups','跟进记录 ('+r.followups.length+')'],['products','保单检视'],['gifts','伴手礼 ('+r.gifts.length+')'],['photos','照片/附件 ('+r.photos.length+')'],['ocr','AI 解析记录'],['ai','AI 建议']];
+    var tabsDef = [['info','基本信息'],['profile','客户画像'],['opps','经营机会'],['followups','跟进记录 ('+r.followups.length+')'],['products','保单检视'],['gifts','伴手礼 ('+r.gifts.length+')'],['photos','照片/附件 ('+r.photos.length+')'],['ocr','AI 解析记录'],['ai','AI 建议']];
     tabsDef.forEach(function(t){
       var tab = el('div', {class:'tab'+(detailState.tab===t[0]?' active':''), onclick:function(){ detailState.tab=t[0]; showDetail(id); }}, t[1]);
       tabs.appendChild(tab);
