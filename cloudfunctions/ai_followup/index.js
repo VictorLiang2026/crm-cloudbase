@@ -150,10 +150,120 @@ function normProfileUpdates(p) {
   return any ? out : null;
 }
 
+// ---------- 增员候选人画像：10 维度（职业背景/家庭/当前工作/职业诉求/收入诉求/创业动机/保险认知/主要顾虑/关键影响人/人生事件） ----------
+var RC_PROFILE_TEXT_KEYS = ['career_background', 'family', 'work_status', 'career_aspiration', 'income_aspiration', 'entrepreneurship', 'insurance_awareness', 'main_concerns', 'key_influencer'];
+
+function normRecruitProfileUpdates(p) {
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
+  var out = {}, any = false;
+  RC_PROFILE_TEXT_KEYS.forEach(function (k) {
+    var v = clip(p[k], 120);
+    if (v) { out[k] = v; any = true; }
+  });
+  var events = [];
+  if (Array.isArray(p.events)) {
+    p.events.forEach(function (e) {
+      if (!e || typeof e !== 'object') return;
+      var text = clip(e.text, 80);
+      if (!text) return;
+      var date = '';
+      if (typeof e.date === 'string') {
+        var m = e.date.trim().match(/^(\d{4})-(\d{2})/);
+        if (m) date = m[1] + '-' + m[2];
+      }
+      events.push({ date: date, text: text });
+    });
+  }
+  if (events.length) { out.events = events.slice(0, 20); any = true; }
+  return any ? out : null;
+}
+
+// 增员候选人画像补全：基于 recruit_followups + 候选人资料 + 客户附加信息，生成画像建议（只返回不写库）
+async function analyzeRecruitProfile(event) {
+  var candidateId = parseInt(event && event.candidate_id, 10);
+  if (!candidateId) return { error: 'candidate_id required' };
+
+  // 候选人完整信息（视图含 customers 基础字段 + 增员专属字段）
+  var c = assertOk(await rdb.from('v_recruit_candidates')
+    .select('*').eq('candidate_id', candidateId).maybeSingle());
+  if (!c.data) return { error: 'candidate not found' };
+  var cand = c.data;
+
+  // 最近 50 条增员跟进（正序供 AI 通读演变）
+  var rows = assertOk(await rdb.from('recruit_followups')
+    .select('followup_date, followup_notes, contact_method, interest_level, concern_feedback')
+    .eq('candidate_id', candidateId).is('deleted_at', null)
+    .order('followup_date', { ascending: false, nullsFirst: false })
+    .order('id', { ascending: false }).limit(50)).data || [];
+  var folRows = rows.slice().reverse();
+
+  var curProfile = {};
+  try { if (cand.profile) curProfile = typeof cand.profile === 'object' ? cand.profile : JSON.parse(cand.profile); } catch (e) { curProfile = {}; }
+
+  var sys = [
+    '你是保险团队长 Victor 的增员画像助手。下面是某位增员候选人的历史增员跟进记录与已知资料，请通读全部材料，整理出该候选人当前的增员画像。',
+    '【只输出 JSON】字段 profile_updates，结构：',
+    'career_background(职业背景：当前/过往职业、行业、职位、职业成就，一句话归纳)、',
+    'family(家庭情况：婚姻/子女/家庭结构与负担)、',
+    'work_status(当前工作状态：在职/待业/自由职业/创业中，及对现状的满意度)、',
+    'career_aspiration(职业诉求：对职业发展的期待，如成长空间/自主性/社会价值)、',
+    'income_aspiration(收入诉求：期望的收入水平与增长方式)、',
+    'entrepreneurship(创业动机：是否有创业意向、对自主经营的态度)、',
+    'insurance_awareness(保险行业认知：对保险行业/代理人模式的了解与态度)、',
+    'main_concerns(主要顾虑：对加入保险行业的核心顾虑，如收入不稳定/社会评价/考核压力)、',
+    'key_influencer(关键影响人：能影响其决策的人，如配偶/父母/推荐人)、',
+    'events(重要人生事件数组：从材料中找出的、对职业选择有意义的事件，如离职/生子/买房/家人重病/创业失败，每项 {"date":"YYYY-MM 或空字符串","text":"事件"}，按时间先后排列，没有则空数组)。',
+    '【纪律】',
+    '1. 只基于材料中明确出现的内容综合归纳，严禁猜测、严禁补充材料里没有的信息；某维度材料中完全没有依据时给 null。',
+    '2. 文本字段是"当前状况"的一句话归纳（不超过 80 字），不是逐条摘抄；新旧信息冲突时以时间更晚的记录为准。',
+    '3. events 的 date 优先用记录中明确提到的时间，无法确定月份时用空字符串；同一事件不重复列出。',
+    '4. 只输出 JSON，不要解释、不要 markdown 代码块。',
+  ].join('\n');
+
+  var userContent = '候选人：' + (cand.customer_name || '') +
+    (cand.occupation ? '\n现职/行业：' + cand.occupation : '') +
+    (cand.annual_income ? '\n年收入：' + cand.annual_income : '') +
+    (cand.education ? '\n学历：' + cand.education : '') +
+    (cand.marital_status ? '\n婚况：' + cand.marital_status : '') +
+    (cand.hobbies ? '\n爱好：' + cand.hobbies : '') +
+    '\n已知增员资料（仅供参考，可补充纠正）：' +
+    (cand.motivation ? '\n  求职动机：' + clip(cand.motivation, 200) : '') +
+    (cand.concerns ? '\n  顾虑点：' + clip(cand.concerns, 200) : '') +
+    (cand.work_experience ? '\n  工作经历：' + clip(cand.work_experience, 200) : '') +
+    (cand.family_situation ? '\n  家庭情况：' + clip(cand.family_situation, 200) : '') +
+    (cand.career_plan ? '\n  职业规划：' + clip(cand.career_plan, 200) : '') +
+    (cand.additional_info ? '\n客户附加信息：' + cand.additional_info : '') +
+    '\n现有画像（仅供参考，可补充纠正，不要照抄空话）：' + (JSON.stringify(curProfile) === '{}' ? '（空）' : JSON.stringify(curProfile)) +
+    '\n历史增员跟进记录（共 ' + folRows.length + ' 条，按时间正序）：\n' +
+    (folRows.length
+      ? folRows.map(function (f) {
+          var parts = [];
+          if (f.contact_method) parts.push('[' + f.contact_method + ']');
+          if (f.interest_level) parts.push('意向:' + f.interest_level);
+          return '- [' + (f.followup_date || '日期不详') + '] ' + parts.join(' ') + clip(f.followup_notes || '', 300) +
+            (f.concern_feedback ? '（顾虑反馈：' + clip(f.concern_feedback, 100) + '）' : '');
+        }).join('\n')
+      : '（无跟进记录）');
+
+  var gen = await generateText([
+    { role: 'system', content: sys },
+    { role: 'user', content: userContent },
+  ], { timeout: 90000 });
+  var parsed = extractJson(gen.text) || {};
+  var updates = normRecruitProfileUpdates(parsed.profile_updates || parsed);
+
+  return {
+    profile_updates: updates,
+    based_on: { followups_count: folRows.length, has_candidate_info: !!(cand.motivation || cand.concerns || cand.work_experience || cand.family_situation || cand.career_plan) },
+    raw: gen.text,
+  };
+}
+
 exports.main = async (event, context) => {
   try {
     var action = (event && event.action) || 'parse';
     if (action === 'analyze_profile') return await analyzeProfile(event);
+    if (action === 'analyze_recruit_profile') return await analyzeRecruitProfile(event);
     if (action !== 'parse') return { error: 'unknown action: ' + action };
 
     var customerId = parseInt(event && event.customer_id, 10);

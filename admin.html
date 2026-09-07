@@ -1338,6 +1338,33 @@ function renderInfo(c){
 var PROFILE_TEXT_KEYS = ['family','children','parents','career','needs','relationship'];
 var PROFILE_LABELS = {family:'家庭情况', children:'子女情况', parents:'父母情况', career:'职业/事业状态', needs:'当前主要需求', relationship:'与我的关系'};
 
+// ---------- 增员候选人画像（v1.5，10 维度，复用客户画像设计思想） ----------
+var RC_PROFILE_TEXT_KEYS = ['career_background','family','work_status','career_aspiration','income_aspiration','entrepreneurship','insurance_awareness','main_concerns','key_influencer'];
+var RC_PROFILE_LABELS = {career_background:'职业背景', family:'家庭情况', work_status:'当前工作状态', career_aspiration:'职业诉求', income_aspiration:'收入诉求', entrepreneurship:'创业动机', insurance_awareness:'保险行业认知', main_concerns:'主要顾虑', key_influencer:'关键影响人'};
+
+function parseRcProfileObj(c){
+  try { return (c && c.profile) ? (typeof c.profile === 'object' ? c.profile : JSON.parse(c.profile)) : {}; }
+  catch(e){ return {}; }
+}
+// 画像合并：文本维度以用户勾选的新值覆盖；人生事件追加并按 text 去重（上限 20 条）
+function mergeRcProfileUpdates(oldProf, updates){
+  var merged = Object.assign({}, oldProf || {});
+  RC_PROFILE_TEXT_KEYS.forEach(function(k){
+    if(updates[k]) merged[k] = updates[k];
+  });
+  if(Array.isArray(updates.events)){
+    var evs = Array.isArray(merged.events) ? merged.events.slice() : [];
+    var seen = {};
+    evs.forEach(function(ev){ if(ev && ev.text) seen[String(ev.text).trim()] = true; });
+    updates.events.forEach(function(ev){
+      var t = ev && ev.text ? String(ev.text).trim() : '';
+      if(t && !seen[t]){ evs.push({date: ev.date || '', text: t}); seen[t] = true; }
+    });
+    merged.events = evs.slice(-20);
+  }
+  return merged;
+}
+
 // 读取客户 profile 对象（兼容对象/JSON 字符串/null）
 function parseProfileObj(c){
   try { return (c && c.profile) ? (typeof c.profile === 'object' ? c.profile : JSON.parse(c.profile)) : {}; }
@@ -4993,6 +5020,7 @@ async function showCandidateDetail(id, tab){
     var tabs = el('div', {class:'tabs'});
     var tabsDef = [
       ['info','基本信息'],
+      ['profile','候选人画像'],
       ['followups','跟进记录 ('+followups.length+')'],
       ['ai','AI 增员话术'],
       ['milestones','阶段时间线'],
@@ -5007,6 +5035,7 @@ async function showCandidateDetail(id, tab){
     var content = el('div', {});
     switch(rcDetailState.tab){
       case 'info': content.appendChild(renderCandidateInfo(c)); break;
+      case 'profile': content.appendChild(renderRcProfile(c, followups.length)); break;
       case 'followups': content.appendChild(renderRecruitFollowups(id, followups)); break;
       case 'ai':
         var aiArea = el('div', {id:'rc-ai-area'});
@@ -5072,6 +5101,234 @@ function renderCandidateInfo(c){
     onclick:function(){ location.hash='#/customer/'+c.customer_id; }
   }, '查看客户详情 →')));
   return box;
+}
+
+// ---------- 增员候选人画像 tab（v1.5） ----------
+function renderRcProfile(c, followupCount){
+  var box = el('div', {});
+  box.appendChild(el('div', {style:'display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap'}, [
+    el('div', {class:'section-title', style:'margin:0'}, '候选人画像'),
+    el('div', {style:'display:flex;gap:8px'}, [
+      el('button', {class:'btn btn-ai', onclick:function(){ openAiRcProfileAnalyze(c.candidate_id, c.customer_name); }}, '✨ AI 补全画像'),
+      el('button', {class:'btn', onclick:function(){ openRcProfileEditor(c.candidate_id); }}, '手动编辑'),
+    ]),
+  ]));
+  var p = parseRcProfileObj(c);
+  var hasAny = RC_PROFILE_TEXT_KEYS.some(function(k){ return p[k]; }) || (Array.isArray(p.events) && p.events.length > 0);
+  if(!hasAny){
+    box.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:10px 0 0'},
+      '画像还为空。点「✨ AI 补全画像」可从' + (followupCount ? followupCount + ' 条增员跟进' : '增员跟进') + '中自动提取，确认后才写入；也可「手动编辑」。'));
+  }
+  function na(text){ return el('span', {style:'color:#b8bfc9'}, text || '待补充'); }
+  function dimRow(label, node){
+    return el('div', {class:'info-row'}, [
+      el('div', {class:'info-row-label'}, label + '：'),
+      el('div', {class:'info-row-value'}, node),
+    ]);
+  }
+  var grid = el('div', {class:'info-list', style:'margin-top:12px'});
+  grid.appendChild(dimRow('职业背景', p.career_background ? el('span', {}, String(p.career_background)) : na(c.occupation || '职业未填')));
+  grid.appendChild(dimRow('家庭情况', p.family ? el('span', {}, String(p.family)) : na(c.marital_status || '待补充')));
+  grid.appendChild(dimRow('当前工作状态', p.work_status ? el('span', {}, String(p.work_status)) : na()));
+  grid.appendChild(dimRow('职业诉求', p.career_aspiration ? el('span', {}, String(p.career_aspiration)) : na()));
+  grid.appendChild(dimRow('收入诉求', p.income_aspiration ? el('span', {}, String(p.income_aspiration)) : na()));
+  grid.appendChild(dimRow('创业动机', p.entrepreneurship ? el('span', {style:'font-weight:600;color:#047857'}, String(p.entrepreneurship)) : na()));
+  grid.appendChild(dimRow('保险行业认知', p.insurance_awareness ? el('span', {}, String(p.insurance_awareness)) : na()));
+  grid.appendChild(dimRow('主要顾虑', p.main_concerns ? el('span', {style:'color:#b45309'}, String(p.main_concerns)) : na()));
+  grid.appendChild(dimRow('关键影响人', p.key_influencer ? el('span', {}, String(p.key_influencer)) : na()));
+  box.appendChild(grid);
+
+  box.appendChild(el('div', {class:'section-title', style:'margin-top:18px'}, '重要人生事件'));
+  var events = Array.isArray(p.events) ? p.events : [];
+  if(events.length){
+    var evBox = el('div', {});
+    events.slice().reverse().forEach(function(ev){
+      if(!ev || !ev.text) return;
+      evBox.appendChild(el('div', {class:'info-row'}, [
+        el('div', {class:'info-row-label', style:'min-width:70px'}, ev.date ? String(ev.date) : '—'),
+        el('div', {class:'info-row-value'}, String(ev.text)),
+      ]));
+    });
+    box.appendChild(evBox);
+  } else {
+    box.appendChild(el('div', {class:'empty'}, '暂无事件记录'));
+  }
+  box.appendChild(el('p', {style:'font-size:12px;color:var(--muted);margin-top:14px'},
+    '画像由 AI 基于增员跟进记录提取，你确认后才写入；也可随时手动编辑或用「AI 补全画像」重新生成。'));
+  return box;
+}
+
+// AI 补全增员画像：通读历史跟进 → 10 维度建议 → 逐项勾选确认后合并写入
+function openAiRcProfileAnalyze(candidateId, customerName){
+  var overlay = el('div', {class:'modal-overlay'});
+  var m = el('div', {class:'modal', style:'max-width:640px'});
+  overlay.appendChild(m);
+  overlay.addEventListener('click', function(e){ if(e.target===overlay) overlay.remove(); });
+  document.getElementById('modal-root').appendChild(overlay);
+  m.appendChild(el('h3', {}, '✨ AI 补全候选人画像'));
+  var body = el('div', {});
+  m.appendChild(body);
+  body.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:0'},
+    'AI 正在通读「' + esc(customerName) + '」的增员跟进记录与资料，约几秒…'));
+
+  callFn('ai_followup', {action:'analyze_recruit_profile', candidate_id:candidateId}).then(function(r){
+    if(r.error) throw new Error(r.error);
+    body.innerHTML = '';
+    var updates = r.profile_updates;
+    if(!updates){
+      body.appendChild(el('p', {style:'font-size:14px;margin:6px 0 0'},
+        '记录中没有发现可入画像的信息' + (r.based_on ? '（共读取 ' + r.based_on.followups_count + ' 条跟进）' : '') + '。多记录几次沟通后再试，或使用「手动编辑」。'));
+      m.appendChild(el('div', {class:'modal-footer'}, [
+        el('button', {class:'btn', onclick:function(){ overlay.remove(); }}, '关闭'),
+      ]));
+      return;
+    }
+    var oldProf = parseRcProfileObj(rcDetailState.data && rcDetailState.data.candidate);
+    body.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:0 0 10px'},
+      '基于 ' + (r.based_on ? r.based_on.followups_count : '') + ' 条增员跟进生成。勾选要写入的维度，取消勾选的维度保持不变；文本维度替换为最新归纳，人生事件追加去重。'));
+
+    var checks = {};
+    RC_PROFILE_TEXT_KEYS.forEach(function(k){
+      if(!updates[k]) return;
+      var cb = el('input', {type:'checkbox', id:'rca-' + k});
+      cb.checked = true;
+      checks[k] = cb;
+      var old = oldProf[k] && String(oldProf[k]) !== String(updates[k]) ? String(oldProf[k]) : '';
+      body.appendChild(el('div', {class:'aif-suggest'}, [
+        el('div', {class:'aif-item'}, [
+          cb,
+          el('label', {for:'rca-' + k}, [
+            el('span', {class:'aif-suggest-title', style:'display:block'}, RC_PROFILE_LABELS[k]),
+            old ? el('span', {style:'display:block;color:var(--muted);text-decoration:line-through'}, old) : null,
+            el('span', {class:'aif-suggest-text', style:'display:block;white-space:pre-wrap'}, String(updates[k])),
+          ]),
+        ]),
+      ]));
+    });
+    var evCb = null;
+    if(updates.events && updates.events.length){
+      evCb = el('input', {type:'checkbox', id:'rca-events'});
+      evCb.checked = true;
+      body.appendChild(el('div', {class:'aif-suggest'}, [
+        el('div', {class:'aif-item'}, [
+          evCb,
+          el('label', {for:'rca-events'}, [
+            el('span', {class:'aif-suggest-title', style:'display:block'}, '重要人生事件（' + updates.events.length + ' 件，追加去重）'),
+            el('span', {class:'aif-suggest-text', style:'display:block;white-space:pre-wrap'},
+              updates.events.map(function(ev){ return '＋ ' + (ev.date ? ev.date + ' ' : '') + ev.text; }).join('\n')),
+          ]),
+        ]),
+      ]));
+    }
+
+    var errMsg = el('div', {style:'color:#c0392b;font-size:13px;margin-top:8px'});
+    body.appendChild(errMsg);
+    m.appendChild(el('div', {class:'modal-footer'}, [
+      el('button', {class:'btn', onclick:function(){ overlay.remove(); }}, '取消'),
+      el('button', {class:'btn btn-ai', onclick:async function(){
+        var picked = {};
+        RC_PROFILE_TEXT_KEYS.forEach(function(k){ if(checks[k] && checks[k].checked) picked[k] = updates[k]; });
+        if(evCb && evCb.checked) picked.events = updates.events;
+        if(!RC_PROFILE_TEXT_KEYS.some(function(k){ return picked[k]; }) && !picked.events){
+          errMsg.textContent = '请至少勾选一个维度，或取消';
+          return;
+        }
+        var btn = this; btn.disabled = true; btn.textContent = '写入中…';
+        try {
+          var merged = mergeRcProfileUpdates(oldProf, picked);
+          var res = await callFn('recruit_candidates', {action:'update', id:candidateId, data:{profile: merged}});
+          if(res && res.error) throw new Error(res.error);
+          toast('画像已更新');
+          overlay.remove();
+          rcDetailState.tab = 'profile';
+          showCandidateDetail(candidateId, 'profile');
+        } catch(e){
+          errMsg.textContent = '画像更新失败：' + (e.message || e);
+          btn.disabled = false; btn.textContent = '确认写入';
+        }
+      }}, '确认写入'),
+    ]));
+  }).catch(function(e){
+    body.innerHTML = '';
+    body.appendChild(el('p', {style:'color:#c0392b;font-size:14px;margin:6px 0 0'}, 'AI 分析失败：' + (e.message || e)));
+    m.appendChild(el('div', {class:'modal-footer'}, [
+      el('button', {class:'btn', onclick:function(){ overlay.remove(); }}, '关闭'),
+    ]));
+  });
+}
+
+// 手动编辑增员画像：9 个文本维度 + 人生事件增删
+function openRcProfileEditor(candidateId){
+  var c = (rcDetailState.data && rcDetailState.data.candidate) || {};
+  var prof = parseRcProfileObj(c);
+  var overlay = el('div', {class:'modal-overlay'});
+  var m = el('div', {class:'modal', style:'max-width:640px'});
+  overlay.appendChild(m);
+  overlay.addEventListener('click', function(e){ if(e.target===overlay) overlay.remove(); });
+  document.getElementById('modal-root').appendChild(overlay);
+  m.appendChild(el('h3', {}, '手动编辑候选人画像'));
+  m.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:0 0 10px'},
+    '直接修改画像内容，保存后立即生效；留空的维度会被清除。人生事件可添加或删除。'));
+
+  var tas = {};
+  RC_PROFILE_TEXT_KEYS.forEach(function(k){
+    m.appendChild(el('div', {style:'margin-bottom:8px'}, [
+      el('label', {style:'font-size:13px;color:var(--muted)'}, RC_PROFILE_LABELS[k]),
+      el('textarea', {id:'rpe-'+k, class:'form-input', style:'width:100%;height:52px;margin-top:3px'}, String(prof[k] || '')),
+    ]));
+  });
+
+  // 人生事件列表（动态）
+  m.appendChild(el('div', {style:'font-size:13px;color:var(--muted);margin:6px 0 4px'}, '重要人生事件'));
+  var evList = el('div', {});
+  var events = Array.isArray(prof.events) ? prof.events.slice() : [];
+  function renderEvents(){
+    evList.innerHTML = '';
+    events.forEach(function(ev, i){
+      var row = el('div', {style:'display:flex;gap:6px;margin-bottom:6px'}, [
+        el('input', {class:'form-input', style:'width:110px', placeholder:'YYYY-MM', value: ev.date || ''}),
+        el('input', {class:'form-input', style:'flex:1', placeholder:'事件描述', value: ev.text || ''}),
+        el('button', {class:'btn btn-ghost btn-sm', onclick:function(){ events.splice(i,1); renderEvents(); }}, '删除'),
+      ]);
+      var inputs = row.querySelectorAll('input');
+      inputs[0].addEventListener('input', function(){ ev.date = this.value.trim(); });
+      inputs[1].addEventListener('input', function(){ ev.text = this.value.trim(); });
+      evList.appendChild(row);
+    });
+  }
+  renderEvents();
+  m.appendChild(evList);
+  m.appendChild(el('button', {class:'btn btn-sm', style:'margin:4px 0 12px', onclick:function(){ events.push({date:'',text:''}); renderEvents(); }}, '+ 添加事件'));
+
+  var errMsg = el('div', {style:'color:#c0392b;font-size:13px'});
+  m.appendChild(errMsg);
+  m.appendChild(el('div', {class:'modal-footer'}, [
+    el('button', {class:'btn', onclick:function(){ overlay.remove(); }}, '取消'),
+    el('button', {class:'btn btn-primary', onclick:async function(){
+      var out = {};
+      RC_PROFILE_TEXT_KEYS.forEach(function(k){
+        var ta = document.getElementById('rpe-'+k);
+        var v = (ta && ta.value || '').trim();
+        if(v) out[k] = v;
+      });
+      var evs = events.filter(function(e){ return e && e.text; })
+        .map(function(e){ return {date:(e.date||'').trim(), text:e.text.trim()}; })
+        .slice(-20);
+      if(evs.length) out.events = evs;
+      var btn = this; btn.disabled = true; btn.textContent = '保存中…';
+      try {
+        var res = await callFn('recruit_candidates', {action:'update', id:candidateId, data:{profile: Object.keys(out).length ? out : null}});
+        if(res && res.error) throw new Error(res.error);
+        toast('画像已保存');
+        overlay.remove();
+        rcDetailState.tab = 'profile';
+        showCandidateDetail(candidateId, 'profile');
+      } catch(e){
+        errMsg.textContent = '保存失败：' + (e.message || e);
+        btn.disabled = false; btn.textContent = '保存';
+      }
+    }}, '保存'),
+  ]));
 }
 
 // ---------- 候选人阶段时间线 tab ----------
