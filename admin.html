@@ -962,8 +962,13 @@ function renderCoachItems(box, data, stale){
   box.appendChild(el('div', {class:'coach-head'}, [
     el('span', {class:'coach-title'}, '今日经营'),
     el('span', {class:'coach-meta'}, (data.source === 'ai' ? 'AI 排序' : '规则排序') + (genAt ? ' · 生成于 ' + genAt : '')),
+    el('button', {class:'btn btn-sm', onclick:function(){ openCoachReview('today'); }}, '今日复盘'),
+    el('button', {class:'btn btn-sm', onclick:function(){ openCoachReview('7d'); }}, '最近7天复盘'),
     el('button', {class:'btn btn-sm', id:'coach-regen', onclick:function(){ renderTodayCoach(true); }}, '重新生成今日建议'),
   ]));
+  // AI 经营复盘结果容器
+  var reviewBox = el('div', {id:'coach-review-box'});
+  box.appendChild(reviewBox);
   if(stale) box.appendChild(el('div', {class:'coach-stale'}, '今日数据已有更新，建议点击「重新生成今日建议」获取最新排序'));
   // NBA（Next Best Action）取值：空或"信息不足"统一灰显为「信息不足」
   function cv(v){ var s = String(v==null?'':v).trim(); return (!s || s==='信息不足') ? '信息不足' : s; }
@@ -1020,6 +1025,70 @@ async function renderTodayCoach(force){
     box.innerHTML = '';
     box.appendChild(el('div', {class:'coach-stale'}, '今日建议生成失败：' + esc(e.message)));
   }
+}
+
+// ==================== AI 经营复盘（v1.6） ====================
+// 调用 today_coach.daily_review，在今日经营页下方展示 7 段复盘（300~500字）
+var REVIEW_LABELS = {
+  overview: '今日经营概况',
+  best_done: '今天完成得最好的一件事',
+  biggest_gap: '今天最大的经营缺口',
+  key_customers: '重要客户变化',
+  key_recruits: '重要增员变化',
+  advice: '一条经营建议'
+};
+async function openCoachReview(period){
+  var box = document.getElementById('coach-review-box');
+  if(!box) return;
+  var label = period === '7d' ? '最近7天' : '今日';
+  box.innerHTML = '<div class="loading">正在生成' + label + '经营复盘…（约几秒）</div>';
+  try{
+    var r = await callFn('today_coach', {action:'daily_review', period: period});
+    if(r.error) throw new Error(r.error);
+    renderCoachReview(box, r);
+  }catch(e){
+    box.innerHTML = '<div class="coach-stale">' + label + '复盘生成失败：' + esc(e.message) + '</div>';
+  }
+}
+function renderCoachReview(box, data){
+  var rv = data.review || {};
+  var genAt = String(data.generated_at || '').replace('T', ' ').slice(0, 16);
+  var range = (data.start && data.end) ? (data.start + ' ~ ' + data.end) : '';
+  var head = el('div', {class:'coach-head'}, [
+    el('span', {class:'coach-title'}, 'AI 经营复盘' + (data.period === '7d' ? '（最近7天）' : '（今日）')),
+    el('span', {class:'coach-meta'}, (range ? range + ' · ' : '') + '生成于 ' + genAt),
+  ]);
+  var body = el('div', {style:'padding:12px 16px;line-height:1.7;font-size:14px'});
+  ['overview','best_done','biggest_gap','key_customers','key_recruits'].forEach(function(k){
+    var v = String(rv[k] || '').trim();
+    if(!v) return;
+    body.appendChild(el('div', {style:'margin-bottom:10px'}, [
+      el('span', {style:'display:inline-block;min-width:110px;color:#7c3aed;font-weight:600'}, REVIEW_LABELS[k] + '：'),
+      el('span', {}, v),
+    ]));
+  });
+  if(Array.isArray(rv.tomorrow_top3) && rv.tomorrow_top3.some(function(x){return x;})){
+    var t3 = el('div', {style:'margin-bottom:10px'}, [
+      el('span', {style:'display:inline-block;min-width:110px;color:#059669;font-weight:600'}, '明天最重要的3件事：'),
+    ]);
+    var ol = el('ol', {style:'margin:4px 0 0 24px;padding:0'});
+    rv.tomorrow_top3.forEach(function(x){
+      if(x) ol.appendChild(el('li', {style:'margin-bottom:2px'}, String(x)));
+    });
+    t3.appendChild(ol);
+    body.appendChild(t3);
+  }
+  if(rv.advice){
+    body.appendChild(el('div', {style:'margin-top:8px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px'}, [
+      el('span', {style:'color:#d97706;font-weight:600'}, '经营建议：'),
+      el('span', {}, String(rv.advice)),
+    ]));
+  }
+  box.innerHTML = '';
+  var card = el('div', {style:'border:1px solid #e5e7eb;border-radius:12px;margin-top:14px;overflow:hidden'});
+  card.appendChild(head);
+  card.appendChild(body);
+  box.appendChild(card);
 }
 
 // ==================== 今日经营（独立功能页 #/today） ====================

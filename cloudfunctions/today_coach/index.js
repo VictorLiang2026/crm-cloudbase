@@ -54,7 +54,7 @@ function cut(s, n) {
 
 // ---------- 数据读取（全量裁列 + deleted_at 过滤） ----------
 async function loadAll() {
-  const [cust, fol, rc, rf, rm, ai, opp] = await Promise.all([
+  const [cust, fol, rc, rf, rm, ai, opp, act] = await Promise.all([
     rdb.from('customers').select(
       'Id, customer_name, gender, customer_stage, sales_priority, first_contact_date, created_at, updated_at'
     ).is('deleted_at', null),
@@ -73,7 +73,11 @@ async function loadAll() {
       .order('created_at', { ascending: false }),
     // 经营机会（v1.4：转介绍线索进入今日经营）
     rdb.from('opportunities').select(
-      'id, customer_id, opportunity_type, status, referred_name, next_action, discovered_at, updated_at'
+      'id, customer_id, opportunity_type, status, referred_name, next_action, discovered_at, created_at, updated_at'
+    ).is('deleted_at', null),
+    // 活动（v1.6：每日经营复盘用）
+    rdb.from('activities').select(
+      'id, name, activity_date, activity_type, location, description, created_at, updated_at'
     ).is('deleted_at', null),
   ]);
   return {
@@ -84,6 +88,7 @@ async function loadAll() {
     milestones: (rm.data || []),
     aiRecs: (ai.data || []),
     opportunities: (opp.data || []),
+    activities: (act.data || []),
   };
 }
 
@@ -465,11 +470,147 @@ function ensureRefItems(items, custPool, nbaIdx) {
   return items;
 }
 
+// ---------- AI 每日经营复盘（v1.6） ----------
+// period: 'today'（当天）| '7d'（最近7天，含今天）
+// 聚合 10 类经营数据 → AI 生成 7 段结构化复盘（300~500 字，具体不空泛）
+function reviewRange(period, today) {
+  if (period === '7d') {
+    const d = new Date(Date.parse(today) - 6 * 86400000);
+    return { start: d.toISOString().slice(0, 10), end: today };
+  }
+  return { start: today, end: today };
+}
+function inRange(dateStr, start, end) {
+  const d = dayKeyOf(dateStr);
+  if (!d) return false;
+  return d >= start && d <= end;
+}
+function custName(d, id) {
+  for (const c of d.customers) if (c.Id === id) return c.customer_name || ('客户#' + id);
+  return '客户#' + id;
+}
+function recruitName(d, cid) {
+  for (const c of d.customers) if (c.Id === cid) return c.customer_name || ('候选人#' + cid);
+  return '候选人#' + cid;
+}
+
+function buildReviewContext(d, start, end) {
+  const L = [];
+  L.push('统计区间：' + start + ' ~ ' + end);
+  L.push('');
+  const push = (title, rows) => { L.push('【' + title + ' ' + rows.length + '】'); rows.forEach(r => L.push('- ' + r)); L.push(''); };
+
+  // 1. 客户新增
+  push('客户新增', d.customers
+    .filter(c => inRange(c.created_at, start, end))
+    .slice(0, 10)
+    .map(c => c.customer_name + '（' + (c.customer_stage || '新认识') + '）'));
+
+  // 2. 客户沟通（跟进记录）
+  push('客户沟通', d.followups
+    .filter(f => inRange(f.followup_date, start, end))
+    .slice(0, 15)
+    .map(f => custName(d, f.customer_id) + '：' + cut(f.followup_notes, 50)));
+
+  // 3. NBA 推荐
+  push('NBA推荐', d.aiRecs
+    .filter(r => inRange(r.recommendation_date || r.created_at, start, end))
+    .slice(0, 10)
+    .map(r => {
+      const nba = (r.nba && typeof r.nba === 'object') ? r.nba : {};
+      return custName(d, r.customer_id) + '：' + cut(nba.next_action || nba.assessment || '', 50);
+    }));
+
+  // 4. 机会变化
+  const oppChg = d.opportunities.filter(o => inRange(o.updated_at, start, end) || inRange(o.created_at, start, end));
+  push('机会变化', oppChg.slice(0, 10).map(o =>
+    custName(d, o.customer_id) + '：' + (o.opportunity_type || '机会') + '（' + o.status + '）' +
+    (o.referred_name ? ' 被介绍人「' + o.referred_name + '」' : '') +
+    (o.next_action ? ' 下一步：' + cut(o.next_action, 30) : '')
+  ));
+
+  // 5. 活动
+  push('活动', (d.activities || [])
+    .filter(a => inRange(a.activity_date || a.created_at, start, end))
+    .slice(0, 8)
+    .map(a => (a.activity_date ? a.activity_date + ' ' : '') + (a.name || '活动') +
+      (a.activity_type ? '（' + a.activity_type + '）' : '')));
+
+  // 6. 增员新增
+  push('增员新增', d.candidates
+    .filter(r => inRange(r.created_at, start, end))
+    .slice(0, 10)
+    .map(r => recruitName(d, r.customer_id) + '（' + (r.stage || '新增人才') + '）'));
+
+  // 7. 增员沟通
+  push('增员沟通', d.recruitFollowups
+    .filter(f => inRange(f.followup_date, start, end))
+    .slice(0, 12)
+    .map(f => {
+      const cand = d.candidates.find(c => c.id === f.candidate_id);
+      return recruitName(d, cand ? cand.customer_id : null) + '：' + cut(f.followup_notes, 50) +
+        (f.interest_level ? '（意向' + f.interest_level + '）' : '');
+    }));
+
+  // 8. 增员阶段变化
+  push('增员阶段变化', d.candidates
+    .filter(r => inRange(r.stage_changed_at, start, end))
+    .slice(0, 8)
+    .map(r => recruitName(d, r.customer_id) + ' → ' + (r.stage || '')));
+
+  return L.join('\n');
+}
+
+function buildReviewMessages(context) {
+  const system = [
+    '你是保险从业者 Victor 的 AI 经营教练。下面是一段经营区间内的真实经营数据。',
+    '请基于这些数据生成一份简洁的经营复盘，必须满足：',
+    '1. 全部内容控制在 300~500 字以内。',
+    '2. 必须具体：引用真实姓名、事件、数字；严禁泛泛而谈（如"加强客户关系维护"）。',
+    '3. 只使用提供的数据，禁止编造未出现的客户/事件/需求。',
+    '4. 只输出 JSON，不要解释。',
+    '输出格式：',
+    '{"overview":"今日经营概况（1-2句，含关键数字）","best_done":"今天完成得最好的一件事（具体到人+事）","biggest_gap":"今天最大的经营缺口（具体未做什么）","key_customers":"重要客户变化（1-3人，含姓名+变化）","key_recruits":"重要增员变化（1-3人，含姓名+变化）","tomorrow_top3":["明天第1重要的事","明天第2重要的事","明天第3重要的事"],"advice":"一条经营建议（具体可执行，不点泛泛的话）"}',
+  ].join('\n');
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: '经营数据：\n' + context },
+  ];
+}
+
+function normReview(parsed) {
+  if (!parsed || typeof parsed !== 'object') return null;
+  const t3 = Array.isArray(parsed.tomorrow_top3) ? parsed.tomorrow_top3.slice(0, 3).map(x => cut(x, 60)) : [];
+  while (t3.length < 3) t3.push('');
+  return {
+    overview: cut(parsed.overview, 120),
+    best_done: cut(parsed.best_done, 80),
+    biggest_gap: cut(parsed.biggest_gap, 80),
+    key_customers: cut(parsed.key_customers, 120),
+    key_recruits: cut(parsed.key_recruits, 120),
+    tomorrow_top3: t3,
+    advice: cut(parsed.advice, 80),
+  };
+}
+
+async function dailyReview(d, period) {
+  const today = todayStr();
+  const { start, end } = reviewRange(period, today);
+  const context = buildReviewContext(d, start, end);
+  const { text } = await generateText(buildReviewMessages(context), { timeout: 100000 });
+  const parsed = extractJson(text);
+  const review = normReview(parsed);
+  if (!review) throw new Error('AI 输出解析失败：' + cut(text, 120));
+  return { today, period, start, end, review, generated_at: nowIso() };
+}
+
 // ---------- 入口 ----------
 exports.main = async (event, context) => {
   try {
     const action = (event && event.action) || '';
-    if (action !== 'candidates' && action !== 'generate') return { error: 'action must be candidates|generate' };
+    if (action !== 'candidates' && action !== 'generate' && action !== 'daily_review') {
+      return { error: 'action must be candidates|generate|daily_review' };
+    }
 
     const d = await loadAll();
     const today = todayStr();
@@ -480,6 +621,12 @@ exports.main = async (event, context) => {
 
     if (action === 'candidates') {
       return { today, fingerprint, customerPool: custPool, recruitPool: rcPool };
+    }
+
+    if (action === 'daily_review') {
+      const period = (event && event.period) || 'today';
+      if (period !== 'today' && period !== '7d') return { error: 'period must be today|7d' };
+      return await dailyReview(d, period);
     }
 
     // generate：AI 排序 + NBA + 失败降级
