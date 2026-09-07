@@ -38,15 +38,15 @@ exports.main = async (event, context) => {
 
     if (!parts.length) return { analysis: { top3: [], no_followup: [] }, raw: '', message: '暂无参与者' };
 
-    // 批量拉取客户和增员信息
-    var customerIds = parts.filter(function(p){ return p.person_type === 'customer'; }).map(function(p){ return p.person_id; });
-    var recruitIds = parts.filter(function(p){ return p.person_type === 'recruit'; }).map(function(p){ return p.person_id; });
+    // 批量拉取客户和增员信息（仅已关联的参与者有 person_id）
+    var customerIds = parts.filter(function(p){ return p.person_type === 'customer' && p.person_id; }).map(function(p){ return p.person_id; });
+    var recruitIds = parts.filter(function(p){ return p.person_type === 'recruit' && p.person_id; }).map(function(p){ return p.person_id; });
 
     var customerMap = {};
     var recruitMap = {};
 
     if (customerIds.length) {
-      var cs = assertOk(await rdb.from('customers').select('Id, customer_name, customer_stage, sales_priority, occupation, additional_info, next_followup_date')
+      var cs = assertOk(await rdb.from('customers').select('Id, customer_name, customer_stage, sales_priority, occupation, additional_info')
         .in('Id', customerIds).is('deleted_at', null)).data || [];
       cs.forEach(function(c){ customerMap[c.Id] = c; });
     }
@@ -56,20 +56,34 @@ exports.main = async (event, context) => {
       rs.forEach(function(r){ recruitMap[r.id] = r; });
     }
 
-    // 组装参与者信息
+    // 客户"下次跟进日期"在 followups 表（最近一条有 next_followup_date 的记录）
+    var nextFollowMap = {};
+    if (customerIds.length) {
+      var fqs = assertOk(await rdb.from('followups').select('customer_id, followup_date, next_followup_date')
+        .in('customer_id', customerIds).is('deleted_at', null)
+        .not('next_followup_date', 'is', null)
+        .order('followup_date', { ascending: false })).data || [];
+      fqs.forEach(function(f){
+        if (!nextFollowMap[f.customer_id]) nextFollowMap[f.customer_id] = f.next_followup_date;
+      });
+    }
+
+    // 组装参与者信息（未关联的暂存参与者只有姓名和活动现场状态，无客户资料）
     var participantInfo = parts.map(function(p) {
-      var info = p.person_type === 'customer' ? customerMap[p.person_id] : recruitMap[p.person_id];
+      var linked = !!p.person_id;
+      var info = linked ? (p.person_type === 'customer' ? customerMap[p.person_id] : recruitMap[p.person_id]) : null;
       return {
         person_type: p.person_type,
-        person_id: p.person_id,
-        name: info ? (info.customer_name || info.name) : '未知',
+        person_id: linked ? p.person_id : 0,
+        name: info ? (info.customer_name || info.name) : (p.person_name || '未知（待关联）'),
+        linked: linked,
         status: p.status,
         relationship_note: p.relationship_note || '',
         stage: info ? (info.customer_stage || info.stage || '') : '',
         priority: info ? (info.sales_priority || info.priority || '') : '',
         occupation: info ? (info.occupation || '') : '',
         additional_info: info ? (info.additional_info || '') : '',
-        next_followup_date: info ? (info.next_followup_date || '') : '',
+        next_followup_date: linked && p.person_type === 'customer' ? (nextFollowMap[p.person_id] || '') : '',
       };
     });
 
@@ -88,13 +102,15 @@ exports.main = async (event, context) => {
       '2. 优先推荐：参加了活动且与业务有交集/关系有升温/表达了需求的人。',
       '3. 没参加或缺席的人，除非有特殊价值，一般放 no_followup。',
       '4. suggested_message 要自然口语化，像业务员会说的话。',
-      '5. 只输出 JSON，不要解释、不要 markdown。',
+      '5. linked=false 的人是"待关联"状态（库中暂无资料），信息不足，一律放 no_followup，理由注明"库中暂无资料，建议先补充客户信息"。',
+      '6. 只输出 JSON，不要解释、不要 markdown。',
     ].join('\n');
 
     var userContent = '参与者列表（共 ' + participantInfo.length + ' 人）：\n' +
       participantInfo.map(function(p, i) {
-        return (i+1) + '. [' + p.person_type + ' #' + p.person_id + '] ' + p.name +
+        return (i+1) + '. [' + p.person_type + (p.linked ? ' #' + p.person_id : ' #0 待关联') + '] ' + p.name +
           '；参加状态：' + p.status +
+          (p.linked ? '' : '；（库中暂无资料）') +
           (p.stage ? '；阶段：' + p.stage : '') +
           (p.priority ? '；优先级：' + p.priority : '') +
           (p.occupation ? '；职业：' + p.occupation : '') +
@@ -122,6 +138,7 @@ exports.main = async (event, context) => {
           opportunity_type: clip(p.opportunity_type, 10),
         };
       }).filter(function(p){ return p.person_id; }).slice(0, 3) : [],
+      // no_followup 保留待关联者（person_id=0），用于提示"先补资料"
       no_followup: Array.isArray(parsed.no_followup) ? parsed.no_followup.map(function(p) {
         return {
           person_type: p.person_type || 'customer',
@@ -129,7 +146,7 @@ exports.main = async (event, context) => {
           name: clip(p.name, 30),
           reason: clip(p.reason, 60),
         };
-      }).filter(function(p){ return p.person_id; }) : [],
+      }).filter(function(p){ return p.name; }) : [],
     };
 
     return { analysis: analysis, raw: gen.text };
