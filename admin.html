@@ -1274,7 +1274,7 @@ async function showDetail(id){
     var content = el('div', {});
     switch(detailState.tab){
       case 'info': content.appendChild(renderInfo(r.customer)); break;
-      case 'profile': content.appendChild(renderProfile(r.customer)); break;
+      case 'profile': content.appendChild(renderProfile(r.customer, r.followups ? r.followups.length : 0)); break;
       case 'followups': content.appendChild(renderFollowups(id, r.followups)); break;
       case 'products': content.appendChild(renderPolicyReview(id, r.products, r.reports || [])); break;
       case 'gifts': content.appendChild(renderGifts(id, r.gifts)); break;
@@ -1316,11 +1316,49 @@ function renderInfo(c){
 }
 
 // ---------- 客户画像（轻量 8 维度；兴趣爱好/职业复用基表字段，其余在 profile jsonb，AI 自动补充） ----------
-function renderProfile(c){
+var PROFILE_TEXT_KEYS = ['family','children','parents','career','needs','relationship'];
+var PROFILE_LABELS = {family:'家庭情况', children:'子女情况', parents:'父母情况', career:'职业/事业状态', needs:'当前主要需求', relationship:'与我的关系'};
+
+// 读取客户 profile 对象（兼容对象/JSON 字符串/null）
+function parseProfileObj(c){
+  try { return (c && c.profile) ? (typeof c.profile === 'object' ? c.profile : JSON.parse(c.profile)) : {}; }
+  catch(e){ return {}; }
+}
+
+// 画像合并：文本维度以新值覆盖；人生事件追加并按 text 去重（上限 20 条）
+function mergeProfileUpdates(oldProf, updates){
+  var merged = Object.assign({}, oldProf || {});
+  PROFILE_TEXT_KEYS.forEach(function(k){
+    if(updates[k]) merged[k] = updates[k];
+  });
+  if(Array.isArray(updates.events)){
+    var evs = Array.isArray(merged.events) ? merged.events.slice() : [];
+    var seen = {};
+    evs.forEach(function(ev){ if(ev && ev.text) seen[String(ev.text).trim()] = true; });
+    updates.events.forEach(function(ev){
+      var t = ev && ev.text ? String(ev.text).trim() : '';
+      if(t && !seen[t]){ evs.push({date: ev.date || '', text: t}); seen[t] = true; }
+    });
+    merged.events = evs.slice(-20);
+  }
+  return merged;
+}
+
+function renderProfile(c, followupCount){
   var box = el('div', {});
-  box.appendChild(el('div', {class:'section-title'}, '客户画像'));
-  var p = {};
-  try { p = c.profile && typeof c.profile === 'object' ? c.profile : (c.profile ? JSON.parse(c.profile) : {}); } catch(e){ p = {}; }
+  box.appendChild(el('div', {style:'display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap'}, [
+    el('div', {class:'section-title', style:'margin:0'}, '客户画像'),
+    el('div', {style:'display:flex;gap:8px'}, [
+      el('button', {class:'btn btn-ai', onclick:function(){ openAiProfileAnalyze(c.Id, c.customer_name); }}, '✨ AI 补全画像'),
+      el('button', {class:'btn', onclick:function(){ openProfileEditor(c.Id); }}, '手动编辑'),
+    ]),
+  ]));
+  var p = parseProfileObj(c);
+  var hasAny = PROFILE_TEXT_KEYS.some(function(k){ return p[k]; }) || (Array.isArray(p.events) && p.events.length > 0);
+  if(!hasAny){
+    box.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:10px 0 0'},
+      '画像还为空。点「✨ AI 补全画像」可从' + (followupCount ? followupCount + ' 条历史跟进' : '历史跟进') + '中自动提取，确认后才写入；也可「手动编辑」。'));
+  }
   function na(text){ return el('span', {style:'color:#b8bfc9'}, text || '待补充'); }
   function dimRow(label, node){
     return el('div', {class:'info-row'}, [
@@ -1328,7 +1366,7 @@ function renderProfile(c){
       el('div', {class:'info-row-value'}, node),
     ]);
   }
-  var grid = el('div', {class:'info-list'});
+  var grid = el('div', {class:'info-list', style:'margin-top:12px'});
   grid.appendChild(dimRow('家庭情况', p.family ? el('span', {}, String(p.family)) : na(c.marital_status || '待补充')));
   grid.appendChild(dimRow('子女情况', p.children ? el('span', {}, String(p.children)) : na()));
   grid.appendChild(dimRow('父母情况', p.parents ? el('span', {}, String(p.parents)) : na()));
@@ -1343,8 +1381,7 @@ function renderProfile(c){
   box.appendChild(grid);
 
   // 重要人生事件（时间线）
-  var evTitle = el('div', {class:'section-title', style:'margin-top:18px'}, '重要人生事件');
-  box.appendChild(evTitle);
+  box.appendChild(el('div', {class:'section-title', style:'margin-top:18px'}, '重要人生事件'));
   var events = Array.isArray(p.events) ? p.events : [];
   if(events.length){
     var evBox = el('div', {});
@@ -1360,9 +1397,182 @@ function renderProfile(c){
     box.appendChild(el('div', {class:'empty'}, '暂无事件记录'));
   }
   box.appendChild(el('p', {style:'font-size:12px;color:var(--muted);margin-top:14px'},
-    '画像由 AI 在「AI 记录本次沟通」后提出更新建议，你确认后才会写入，无需手工维护。'));
+    '画像由 AI 基于沟通记录提取，你确认后才写入；也可随时手动编辑或用「AI 补全画像」从历史跟进重新生成。'));
   return box;
 }
+
+// ---------- AI 补全画像：通读历史跟进 → 全量画像建议 → 逐项勾选确认后合并写入 ----------
+function openAiProfileAnalyze(cid, customerName){
+  var overlay = el('div', {class:'modal-overlay'});
+  var m = el('div', {class:'modal', style:'max-width:640px'});
+  overlay.appendChild(m);
+  overlay.addEventListener('click', function(e){ if(e.target===overlay) overlay.remove(); });
+  document.getElementById('modal-root').appendChild(overlay);
+  m.appendChild(el('h3', {}, '✨ AI 补全画像'));
+  var body = el('div', {});
+  m.appendChild(body);
+  body.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:0'},
+    'AI 正在通读「' + esc(customerName) + '」的历史跟进记录与附加信息，约几秒…'));
+
+  callFn('ai_followup', {action:'analyze_profile', customer_id:cid}).then(function(r){
+    if(r.error) throw new Error(r.error);
+    body.innerHTML = '';
+    var updates = r.profile_updates;
+    if(!updates){
+      body.appendChild(el('p', {style:'font-size:14px;margin:6px 0 0'},
+        '历史记录中没有发现可入画像的信息' + (r.based_on ? '（共读取 ' + r.based_on.followups_count + ' 条跟进）' : '') + '。多记录几次沟通后再试，或使用「手动编辑」。'));
+      m.appendChild(el('div', {class:'modal-footer'}, [
+        el('button', {class:'btn', onclick:function(){ overlay.remove(); }}, '关闭'),
+      ]));
+      return;
+    }
+    var oldProf = parseProfileObj(detailState.data && detailState.data.customer);
+    body.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:0 0 10px'},
+      '基于 ' + (r.based_on ? r.based_on.followups_count : '') + ' 条历史跟进生成。勾选要写入的维度，取消勾选的维度保持不变；文本维度替换为最新归纳，人生事件追加去重。'));
+
+    var checks = {};
+    PROFILE_TEXT_KEYS.forEach(function(k){
+      if(!updates[k]) return;
+      var cb = el('input', {type:'checkbox', id:'apa-' + k});
+      cb.checked = true;
+      checks[k] = cb;
+      var old = oldProf[k] && String(oldProf[k]) !== String(updates[k]) ? String(oldProf[k]) : '';
+      body.appendChild(el('div', {class:'aif-suggest'}, [
+        el('div', {class:'aif-item'}, [
+          cb,
+          el('label', {for:'apa-' + k}, [
+            el('span', {class:'aif-suggest-title', style:'display:block'}, PROFILE_LABELS[k]),
+            old ? el('span', {style:'display:block;color:var(--muted);text-decoration:line-through'}, old) : null,
+            el('span', {class:'aif-suggest-text', style:'display:block;white-space:pre-wrap'}, String(updates[k])),
+          ]),
+        ]),
+      ]));
+    });
+    var evCb = null;
+    if(updates.events && updates.events.length){
+      evCb = el('input', {type:'checkbox', id:'apa-events'});
+      evCb.checked = true;
+      body.appendChild(el('div', {class:'aif-suggest'}, [
+        el('div', {class:'aif-item'}, [
+          evCb,
+          el('label', {for:'apa-events'}, [
+            el('span', {class:'aif-suggest-title', style:'display:block'}, '重要人生事件（' + updates.events.length + ' 件，追加去重）'),
+            el('span', {class:'aif-suggest-text', style:'display:block;white-space:pre-wrap'},
+              updates.events.map(function(ev){ return '＋ ' + (ev.date ? ev.date + ' ' : '') + ev.text; }).join('\n')),
+          ]),
+        ]),
+      ]));
+    }
+
+    var errMsg = el('div', {style:'color:#c0392b;font-size:13px;margin-top:8px'});
+    body.appendChild(errMsg);
+    m.appendChild(el('div', {class:'modal-footer'}, [
+      el('button', {class:'btn', onclick:function(){ overlay.remove(); }}, '取消'),
+      el('button', {class:'btn btn-ai', onclick:async function(){
+        var picked = {};
+        PROFILE_TEXT_KEYS.forEach(function(k){ if(checks[k] && checks[k].checked) picked[k] = updates[k]; });
+        if(evCb && evCb.checked) picked.events = updates.events;
+        if(!PROFILE_TEXT_KEYS.some(function(k){ return picked[k]; }) && !picked.events){
+          errMsg.textContent = '请至少勾选一个维度，或取消';
+          return;
+        }
+        var btn = this; btn.disabled = true; btn.textContent = '写入中…';
+        try {
+          var merged = mergeProfileUpdates(oldProf, picked);
+          var res = await callFn('customers', {action:'update', id:cid, data:{profile: merged}});
+          if(res && res.error) throw new Error(res.error);
+          toast('画像已更新');
+          overlay.remove();
+          invalidateCustomers();
+          detailState.tab = 'profile';
+          showDetail(cid);
+        } catch(e){
+          errMsg.textContent = '画像更新失败：' + (e.message || e);
+          btn.disabled = false; btn.textContent = '确认写入';
+        }
+      }}, '确认写入'),
+    ]));
+  }).catch(function(e){
+    body.innerHTML = '';
+    body.appendChild(el('p', {style:'color:#c0392b;font-size:14px;margin:6px 0 0'}, 'AI 分析失败：' + (e.message || e)));
+    m.appendChild(el('div', {class:'modal-footer'}, [
+      el('button', {class:'btn', onclick:function(){ overlay.remove(); }}, '关闭'),
+    ]));
+  });
+}
+
+// ---------- 手动编辑画像：6 个文本维度 + 人生事件增删 ----------
+function openProfileEditor(cid){
+  var c = (detailState.data && detailState.data.customer) || {};
+  var prof = parseProfileObj(c);
+  var overlay = el('div', {class:'modal-overlay'});
+  var m = el('div', {class:'modal', style:'max-width:640px'});
+  overlay.appendChild(m);
+  overlay.addEventListener('click', function(e){ if(e.target===overlay) overlay.remove(); });
+  document.getElementById('modal-root').appendChild(overlay);
+  m.appendChild(el('h3', {}, '手动编辑客户画像'));
+  m.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:0 0 10px'},
+    '直接修改画像内容，保存后立即生效；留空的维度会被清除。人生事件可添加或删除。'));
+
+  var tas = {};
+  PROFILE_TEXT_KEYS.forEach(function(k){
+    m.appendChild(el('label', {style:'display:block;font-size:13px;font-weight:600;margin:8px 0 4px'}, PROFILE_LABELS[k]));
+    var ta = el('textarea', {style:'width:100%;min-height:44px'});
+    ta.value = prof[k] ? String(prof[k]) : '';
+    tas[k] = ta;
+    m.appendChild(ta);
+  });
+
+  m.appendChild(el('label', {style:'display:block;font-size:13px;font-weight:600;margin:12px 0 4px'}, '重要人生事件'));
+  var evBox = el('div', {});
+  m.appendChild(evBox);
+  function addEventRow(ev){
+    var row = el('div', {style:'display:flex;gap:6px;margin-bottom:6px'}, [
+      el('input', {style:'width:90px', placeholder:'YYYY-MM', value: (ev && ev.date) || ''}),
+      el('input', {style:'flex:1', placeholder:'事件，如：女儿赴美留学', value: (ev && ev.text) || ''}),
+      el('button', {class:'btn', style:'padding:4px 10px', onclick:function(){ row.remove(); }}, '删除'),
+    ]);
+    evBox.appendChild(row);
+  }
+  (Array.isArray(prof.events) ? prof.events : []).forEach(addEventRow);
+  m.appendChild(el('button', {class:'btn', style:'margin:2px 0 8px', onclick:function(){ addEventRow(null); }}, '＋ 添加事件'));
+
+  var errMsg = el('div', {style:'color:#c0392b;font-size:13px;margin-top:6px'});
+  m.appendChild(errMsg);
+  m.appendChild(el('div', {class:'modal-footer'}, [
+    el('button', {class:'btn', onclick:function(){ overlay.remove(); }}, '取消'),
+    el('button', {class:'btn btn-ai', onclick:async function(){
+      var out = {};
+      PROFILE_TEXT_KEYS.forEach(function(k){
+        var v = tas[k].value.trim();
+        if(v) out[k] = v.slice(0, 100);
+      });
+      var evs = [];
+      Array.prototype.forEach.call(evBox.children, function(row){
+        var inputs = row.querySelectorAll('input');
+        var date = inputs[0].value.trim().match(/^(\d{4}-\d{2})/);
+        var text = inputs[1].value.trim();
+        if(text) evs.push({date: date ? date[1] : '', text: text.slice(0, 80)});
+      });
+      if(evs.length) out.events = evs.slice(-20);
+      var isEmpty = !PROFILE_TEXT_KEYS.some(function(k){ return out[k]; }) && !out.events;
+      var btn = this; btn.disabled = true; btn.textContent = '保存中…';
+      try {
+        var res = await callFn('customers', {action:'update', id:cid, data:{profile: isEmpty ? null : out}});
+        if(res && res.error) throw new Error(res.error);
+        toast('画像已保存');
+        overlay.remove();
+        invalidateCustomers();
+        detailState.tab = 'profile';
+        showDetail(cid);
+      } catch(e){
+        errMsg.textContent = '保存失败：' + (e.message || e);
+        btn.disabled = false; btn.textContent = '保存';
+      }
+    }}, '保存'),
+  ]));
+}
+
 
 // ---------- 跟进记录 ----------
 function renderFollowups(cid, rows){
@@ -1529,15 +1739,10 @@ function openAiFollowup(cid, customerName){
     if(profileUpdates){
       profileCb = el('input', {type:'checkbox', id:'aif-profile'});
       profileCb.checked = true;
-      var oldProf = {};
-      try {
-        var rp = (detailState.data && detailState.data.customer) ? detailState.data.customer.profile : null;
-        if(rp) oldProf = (typeof rp === 'object') ? rp : JSON.parse(rp);
-      } catch(e){ oldProf = {}; }
-      var PL = {family:'家庭情况', children:'子女情况', parents:'父母情况', career:'职业/事业', needs:'当前主要需求', relationship:'与我的关系'};
+      var oldProf = parseProfileObj(detailState.data && detailState.data.customer);
       var profLines = [];
-      ['family','children','parents','career','needs','relationship'].forEach(function(k){
-        if(profileUpdates[k]) profLines.push('· ' + PL[k] + '：' + (oldProf[k] ? oldProf[k] + ' → ' : '') + profileUpdates[k]);
+      PROFILE_TEXT_KEYS.forEach(function(k){
+        if(profileUpdates[k]) profLines.push('· ' + PROFILE_LABELS[k] + '：' + (oldProf[k] ? oldProf[k] + ' → ' : '') + profileUpdates[k]);
       });
       (profileUpdates.events || []).forEach(function(ev){
         if(ev && ev.text) profLines.push('· 人生事件 ＋' + (ev.date ? ev.date + ' ' : '') + ev.text);
@@ -1595,23 +1800,7 @@ function openAiFollowup(cid, customerName){
           }
           // 可选：画像更新（文本维度替换为最新，人生事件追加去重）
           if(profileCb && profileCb.checked && profileUpdates){
-            var baseProf = {};
-            try {
-              var rp0 = (detailState.data && detailState.data.customer) ? detailState.data.customer.profile : null;
-              if(rp0) baseProf = (typeof rp0 === 'object') ? rp0 : JSON.parse(rp0);
-            } catch(e){ baseProf = {}; }
-            var mergedProf = Object.assign({}, baseProf);
-            ['family','children','parents','career','needs','relationship'].forEach(function(k){
-              if(profileUpdates[k]) mergedProf[k] = profileUpdates[k];
-            });
-            var mergedEvents = Array.isArray(mergedProf.events) ? mergedProf.events.slice() : [];
-            var existText = {};
-            mergedEvents.forEach(function(ev){ if(ev && ev.text) existText[String(ev.text).trim()] = true; });
-            (profileUpdates.events || []).forEach(function(ev){
-              var t = ev && ev.text ? String(ev.text).trim() : '';
-              if(t && !existText[t]){ mergedEvents.push({date: ev.date || '', text: t}); existText[t] = true; }
-            });
-            mergedProf.events = mergedEvents;
+            var mergedProf = mergeProfileUpdates(parseProfileObj(detailState.data && detailState.data.customer), profileUpdates);
             var r4 = await callFn('customers', {action:'update', id:cid, data:{profile: mergedProf}});
             if(r4.error) throw new Error('跟进已保存，但画像更新失败：' + r4.error);
           }
