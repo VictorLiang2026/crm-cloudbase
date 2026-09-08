@@ -244,6 +244,8 @@ async function searchPerson(event) {
   let q = rdb.from(cfg.table)
     .select(cfg.idCol + ', ' + cfg.nameCol + ', ' + EXTRA[pt])
     .is('deleted_at', null);
+  // 嘉宾仅可加入启用中的；停用嘉宾不进入联想结果
+  if (pt === 'speaker') q = q.eq('status', 'active');
   // 姓名模糊；客户/嘉宾额外支持电话匹配（仅当关键词含数字时才加电话条件，避免 ilike '%%' 匹配全部）
   let orCond = cfg.nameCol + '.ilike.%' + safeKw + '%';
   if (pt === 'customer') {
@@ -282,7 +284,7 @@ async function addParticipant(event) {
     // 关联已有人员：校验存在并回填姓名
     const p = assertOk(await rdb.from(cfg.table).select(cfg.idCol + ', ' + cfg.nameCol)
       .eq(cfg.idCol, pid).is('deleted_at', null).maybeSingle());
-    if (!p.data) return { error: '未找到该' + (data.person_type === 'customer' ? '客户' : '增员对象') };
+    if (!p.data) return { error: '未找到该' + ({ customer: '客户', recruit: '增员对象', speaker: '嘉宾' }[data.person_type] || '人员') };
     data.person_id = pid;
     data.person_name = p.data[cfg.nameCol];
     // 去重：同一活动同一人不重复添加
@@ -324,7 +326,7 @@ async function linkParticipant(event) {
   const cfg = personTable(rec.data.person_type);
   const p = assertOk(await rdb.from(cfg.table).select(cfg.idCol + ', ' + cfg.nameCol)
     .eq(cfg.idCol, pid).is('deleted_at', null).maybeSingle());
-  if (!p.data) return { error: '未找到该' + (rec.data.person_type === 'customer' ? '客户' : '增员对象') };
+  if (!p.data) return { error: '未找到该' + ({ customer: '客户', recruit: '增员对象', speaker: '嘉宾' }[rec.data.person_type] || '人员') };
   // 同活动同人已关联则不重复
   const dup = assertOk(await rdb.from('activity_participants').select('id')
     .eq('activity_id', rec.data.activity_id).eq('person_type', rec.data.person_type)

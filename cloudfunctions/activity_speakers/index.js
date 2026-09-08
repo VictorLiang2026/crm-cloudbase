@@ -126,10 +126,12 @@ async function remove(event) {
 async function search(event) {
   const kw = String(event.keyword || '').trim();
   if (kw.length < 1) return { rows: [] };
+  // 供添加参与者联想：仅返回启用中的嘉宾（停用嘉宾不在管理页 list 过滤，但不可加入活动）
   const r = assertOk(await rdb.from('activity_speakers')
     .select('id, name, organization, position, phone, expertise, topic_summary')
     .or(kwOrCond(kw))
     .is('deleted_at', null)
+    .eq('status', 'active')
     .limit(10));
   return { rows: r.data || [] };
 }
