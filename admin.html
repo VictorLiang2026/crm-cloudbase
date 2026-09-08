@@ -4354,6 +4354,13 @@ async function showActivityDetail(id){
     card.appendChild(tasksBox);
     renderActivityTasks(id, tasksBox);
 
+    // AI 筹备助手区块（v1.7.2）：AI 只出建议，用户确认后调 activity_tasks.create
+    card.appendChild(el('div', {style:'margin-bottom:12px'}, [
+      el('button', {class:'btn btn-ai', style:'margin-right:8px', onclick:function(){ runActivityPrepare(id, 'prepare', this); }}, '✨ AI 筹备助手'),
+      el('button', {class:'btn btn-ai', onclick:function(){ runActivityPrepare(id, 'decompose', this); }}, '✨ AI 任务拆解'),
+    ]));
+    card.appendChild(el('div', {id:'activity-prepare-box'}));
+
     // AI 分析按钮
     card.appendChild(el('div', {style:'margin-bottom:12px'}, [
       el('button', {class:'btn btn-ai', onclick:async function(){
@@ -4708,6 +4715,116 @@ function openReviewModal(activityId){
 }
 
 // AI 分析结果渲染 + 确认写入
+// ===== AI 筹备助手（v1.7.2）：AI 只出建议，采纳后由前端调 activity_tasks.create 写入 =====
+async function runActivityPrepare(activityId, mode, btn){
+  var box = document.getElementById('activity-prepare-box');
+  if(!box) return;
+  var oldText = btn.textContent;
+  btn.disabled = true; btn.textContent = 'AI 分析中…（约几秒）';
+  box.innerHTML = '<div class="loading">AI 正在生成筹备建议…</div>';
+  try {
+    var r = await callFn('ai_activity', {action: mode, activity_id: activityId});
+    if(r.error) throw new Error(r.error);
+    renderActivityPrepare(activityId, r.plan || {});
+  } catch(e){
+    box.innerHTML = '';
+    box.appendChild(el('div', {class:'empty'}, 'AI 暂时无法生成建议：' + esc(e.message)));
+  } finally {
+    btn.disabled = false; btn.textContent = oldText;
+  }
+}
+
+function renderActivityPrepare(activityId, plan){
+  var box = document.getElementById('activity-prepare-box');
+  if(!box) return;
+  box.innerHTML = '';
+  var card = el('div', {class:'card', style:'margin-bottom:12px;padding:12px;background:#f5f3ff;border-left:3px solid #7c3aed'});
+  card.appendChild(el('div', {style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:6px'}, [
+    el('div', {style:'font-weight:600;color:#7c3aed'}, '✨ AI 筹备助手'),
+    el('a', {class:'btn-sm', onclick:function(){ box.innerHTML=''; }}, '收起'),
+  ]));
+  card.appendChild(el('p', {style:'font-size:13px;margin:0 0 4px'}, '摘要：' + esc(plan.summary || '信息不足')));
+  card.appendChild(el('p', {style:'font-size:13px;margin:0 0 6px'}, '当前阶段：' + esc(plan.current_stage || '信息不足')));
+  if(plan.risks && plan.risks.length){
+    var ul1 = el('ul', {style:'font-size:13px;margin:4px 0;padding-left:18px'});
+    plan.risks.forEach(function(r){ ul1.appendChild(el('li', {}, esc(r))); });
+    card.appendChild(ul1);
+  }
+  if(plan.priorities && plan.priorities.length){
+    var ul2 = el('ul', {style:'font-size:13px;margin:4px 0 0;padding-left:18px'});
+    plan.priorities.forEach(function(p){ ul2.appendChild(el('li', {}, esc(p))); });
+    card.appendChild(ul2);
+  }
+  var tasks = plan.suggested_tasks || [];
+  if(!tasks.length){
+    card.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:6px 0 0'}, '暂无建议任务（信息不足或已有待办已覆盖）。'));
+  } else {
+    var list = el('div', {style:'margin-top:8px'});
+    tasks.forEach(function(t){
+      var ti = taskTypeInfo(t.task_type);
+      var pi = taskPriorityInfo(t.priority);
+      var row = el('div', {class:'card', style:'margin-bottom:6px;padding:8px;background:#fff'});
+      row.appendChild(el('div', {style:'display:flex;justify-content:space-between;align-items:center;gap:6px'}, [
+        el('div', {}, [
+          el('span', {style:'font-size:11px;color:#fff;background:'+ti.color+';padding:1px 6px;border-radius:8px;margin-right:6px'}, ti.label),
+          el('span', {style:'font-size:11px;color:#fff;background:'+pi.color+';padding:1px 6px;border-radius:8px;margin-right:6px'}, pi.label + '优先'),
+          el('strong', {}, esc(t.task_title)),
+          t.due_date ? el('span', {style:'font-size:12px;color:var(--muted);margin-left:6px'}, '截止 ' + t.due_date) : null,
+        ]),
+        el('div', {style:'flex-shrink:0'}, [
+          el('a', {class:'btn-sm btn-green', style:'margin-right:6px', onclick:function(){ adoptPrepareTask(activityId, t, row); }}, '采纳'),
+          el('a', {class:'btn-sm', onclick:function(){ row.remove(); }}, '忽略'),
+        ]),
+      ]));
+      if(t.reason) row.appendChild(el('p', {style:'font-size:12px;color:var(--muted);margin:4px 0 0'}, '理由：' + esc(t.reason)));
+      list.appendChild(row);
+    });
+    card.appendChild(list);
+    card.appendChild(el('div', {style:'margin-top:8px'}, [
+      el('button', {class:'btn btn-ai btn-sm', onclick:function(){
+        if(!confirm('将全部建议任务创建为活动待办？')) return;
+        adoptAllPrepareTasks(activityId, tasks, list);
+      }}, '全部采纳'),
+    ]));
+  }
+  box.appendChild(card);
+}
+
+async function createPrepareTask(activityId, t){
+  return await callFn('activity_tasks', {action:'create', data:{
+    activity_id: activityId, task_title: t.task_title, task_type: t.task_type,
+    priority: t.priority, due_date: t.due_date || null, note: t.reason || '', source: 'ai_prepare',
+  }});
+}
+
+function refreshActivityTasksBox(activityId){
+  var tasksBox = document.getElementById('activity-tasks-box');
+  if(tasksBox) renderActivityTasks(activityId, tasksBox);
+}
+
+async function adoptPrepareTask(activityId, t, row){
+  if(t.__adopted) return;
+  var r = await createPrepareTask(activityId, t);
+  if(r && r.error){ toast('创建失败：' + r.error); return; }
+  t.__adopted = true;
+  toast('已创建待办');
+  if(row && row.remove) row.remove();
+  refreshActivityTasksBox(activityId);
+}
+
+async function adoptAllPrepareTasks(activityId, tasks, list){
+  var todo = tasks.filter(function(t){ return !t.__adopted; });
+  if(!todo.length){ toast('没有可采纳的建议任务'); return; }
+  var ok = 0, fail = 0;
+  for(var i = 0; i < todo.length; i++){
+    var r = await createPrepareTask(activityId, todo[i]);
+    if(r && r.error) fail++; else { ok++; todo[i].__adopted = true; }
+  }
+  toast('已创建 ' + ok + ' 条待办' + (fail ? ('，失败 ' + fail + ' 条') : ''));
+  if(list) list.innerHTML = '';
+  refreshActivityTasksBox(activityId);
+}
+
 function renderActivityAnalysis(activityId, act, parts, analysis){
   var aiBox = $('activity-ai-box');
   if(!aiBox) return;

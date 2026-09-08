@@ -1,7 +1,10 @@
 /**
  * ai_activity — AI 活动分析（事件云函数，超时 60s，rdb() 版）
- * 入参 event: { action:'analyze', activity_id }
- *   流程：拉取活动 + 参与者 → 逐个补充客户/增员信息 → hy3 分析 → 返回建议（不写库）
+ * 入参 event: { action:'analyze'|'prepare'|'decompose', activity_id }
+ *   analyze:   活动后参与者跟进分析（v1.3）
+ *   prepare:   AI 筹备助手（v1.7.2）：综合评估 → summary/current_stage/risks/priorities/suggested_tasks
+ *   decompose: AI 筹备任务拆解（v1.7.2）：聚焦把筹备工作拆解为建议任务，输出结构同 prepare
+ *   prepare/decompose 只返回建议，绝不写 activity_tasks；用户在前端确认后由前端调 activity_tasks.create
  * 出参: { analysis, raw }
  *   analysis: {
  *     top3: [{ person_type, person_id, name, reason, suggested_action, suggested_message, suggested_date, opportunity_type? }],
@@ -20,6 +23,8 @@ function clip(v, n) { return typeof v === 'string' ? v.trim().slice(0, n) : ''; 
 exports.main = async (event, context) => {
   try {
     var action = (event && event.action) || 'analyze';
+    if (action === 'prepare') return await prepare(event, false);
+    if (action === 'decompose') return await prepare(event, true);
     if (action !== 'analyze') return { error: 'unknown action: ' + action };
 
     var activityId = parseInt(event && event.activity_id, 10);
@@ -178,3 +183,148 @@ exports.main = async (event, context) => {
     return { error: e.message };
   }
 };
+
+
+
+// ========== v1.7.2 AI 活动筹备助手（prepare / decompose 共用数据拉取，只读不写） ==========
+var PREPARE_TYPE_ENUM = ['preparation', 'invitation', 'speaker', 'onsite', 'followup', 'review', 'other'];
+var PREPARE_PRIORITY_ENUM = ['high', 'medium', 'low'];
+
+async function loadActivityContext(activityId) {
+  var a = assertOk(await rdb.from('activities').select()
+    .eq('id', activityId).is('deleted_at', null).maybeSingle());
+  if (!a.data) return { error: 'activity not found' };
+  var activity = a.data;
+
+  var parts = assertOk(await rdb.from('activity_participants').select()
+    .eq('activity_id', activityId).is('deleted_at', null)
+    .order('created_at', { ascending: true })).data || [];
+
+  var tasks = assertOk(await rdb.from('activity_tasks').select()
+    .eq('activity_id', activityId)
+    .order('created_at', { ascending: true })).data || [];
+
+  var customerIds = parts.filter(function(p){ return p.person_type === 'customer' && p.person_id; }).map(function(p){ return p.person_id; });
+  var recruitIds = parts.filter(function(p){ return p.person_type === 'recruit' && p.person_id; }).map(function(p){ return p.person_id; });
+  var nameMap = {};
+  if (customerIds.length) {
+    var cs = assertOk(await rdb.from('customers').select('Id, customer_name, customer_stage, sales_priority, occupation')
+      .in('Id', customerIds).is('deleted_at', null)).data || [];
+    cs.forEach(function(c){ nameMap['customer:' + c.Id] = c; });
+  }
+  if (recruitIds.length) {
+    var rs = assertOk(await rdb.from('recruit_candidates').select('id, name, stage, priority, occupation')
+      .in('id', recruitIds).is('deleted_at', null)).data || [];
+    rs.forEach(function(rc){ nameMap['recruit:' + rc.id] = rc; });
+  }
+
+  var participants = parts.map(function(p) {
+    var info = p.person_id ? nameMap[p.person_type + ':' + p.person_id] : null;
+    return {
+      name: info ? (info.customer_name || info.name) : (p.person_name || '未知'),
+      person_type: p.person_type,
+      linked: !!p.person_id,
+      status: p.status,
+      participant_role: p.participant_role || 'attendee',
+      stage: info ? (info.customer_stage || info.stage || '') : '',
+      priority: info ? (info.sales_priority || info.priority || '') : '',
+      occupation: info ? (info.occupation || '') : '',
+    };
+  });
+
+  var taskItems = tasks.map(function(t) {
+    return { task_title: t.task_title, task_type: t.task_type, status: t.status, priority: t.priority, due_date: t.due_date };
+  });
+
+  return { activity: activity, participants: participants, tasks: taskItems };
+}
+
+// 规范化 AI 返回的建议任务：枚举白名单归一化 + due_date 格式校验，非法值不透传
+function normSuggestedTasks(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr.map(function(t) {
+    if (!t || !t.task_title || !String(t.task_title).trim()) return null;
+    var type = PREPARE_TYPE_ENUM.indexOf(t.task_type) >= 0 ? t.task_type : 'other';
+    var pri = PREPARE_PRIORITY_ENUM.indexOf(t.priority) >= 0 ? t.priority : 'medium';
+    var due = /^\d{4}-\d{2}-\d{2}$/.test(String(t.due_date || '')) ? String(t.due_date) : null;
+    return {
+      task_title: clip(t.task_title, 30),
+      task_type: type,
+      priority: pri,
+      due_date: due,
+      reason: clip(t.reason, 50),
+    };
+  }).filter(function(t){ return t; }).slice(0, 8);
+}
+
+// AI 筹备主流程：prepare（综合评估） / decompose（任务拆解）共用；只读不写 activity_tasks
+async function prepare(event, decomposeOnly) {
+  try {
+    var activityId = parseInt(event && event.activity_id, 10);
+    if (!activityId) return { error: 'activity_id required' };
+
+    var ctx = await loadActivityContext(activityId);
+    if (ctx.error) return ctx;
+    var activity = ctx.activity;
+    var today = todayStr();
+
+    // 信息缺口检测：如实告知 AI，不编造
+    var gaps = [];
+    if (!activity.activity_date) gaps.push('活动日期未定');
+    if (!Array.isArray(activity.goal_types) || !activity.goal_types.length) gaps.push('活动目标未设');
+    if (!activity.location) gaps.push('地点未定');
+    if (!activity.target_participants) gaps.push('计划人数未设');
+    if (!ctx.participants.length) gaps.push('暂无参与者');
+
+    var STATUS_LABEL = { idea: '想法', preparing: '筹备中', confirmed: '已确定', in_progress: '进行中', ended: '已结束', reviewed: '已复盘' };
+    var actStatus = activity.status ? (STATUS_LABEL[activity.status] || activity.status) : '未设';
+    var goalTypes = Array.isArray(activity.goal_types) && activity.goal_types.length ? activity.goal_types.join('/') : '未设';
+
+    var partLines = ctx.participants.map(function(p) {
+      return (p.person_type === 'customer' ? '客户' : '增员') + ' ' + p.name
+        + '（' + (p.linked ? '已关联' : '待关联')
+        + (p.stage ? '；阶段：' + p.stage : '')
+        + (p.priority ? '；优先级：' + p.priority : '')
+        + '；身份：' + p.participant_role + '）';
+    }).join('\n');
+
+    var taskLines = ctx.tasks.map(function(t) {
+      return '- [' + t.status + '] ' + t.task_title + '（类型：' + t.task_type + '；优先级：' + t.priority + (t.due_date ? '；截止：' + t.due_date : '') + '）';
+    }).join('\n');
+
+    var focus = decomposeOnly
+      ? '重点：把这场活动的筹备工作拆解为具体可执行的待办任务清单；summary/current_stage/risks/priorities 仍需给出，可简短。'
+      : '重点：综合评估筹备现状（摘要/阶段/风险/优先事项），并给出筹备任务建议。';
+
+    var sys = [
+      '你是保险业务员的活动筹备助手。' + focus,
+      '【活动信息】名称：' + activity.name + '；日期：' + (activity.activity_date || '未定') + '；类型：' + (activity.activity_type || '未分类') + '；地点：' + (activity.location || '未定') + '；状态：' + actStatus + '；目标：' + goalTypes + (activity.description ? '；描述：' + clip(activity.description, 100) : ''),
+      '【今天】' + today,
+      '【已有参与者】' + (partLines || '暂无'),
+      '【已有任务】' + (taskLines || '暂无'),
+      gaps.length ? '【已知缺口】' + gaps.join('；') + '。涉及缺口的内容注明"信息不足"，严禁编造。' : '',
+      '【去重纪律】suggested_tasks 不得与【已有任务】中未完成（pending/in_progress）的重复。',
+      '【只输出 JSON】结构：{summary, current_stage, risks[], priorities[], suggested_tasks:[{task_title, task_type, priority, due_date, reason}]}',
+      'summary≤80字；current_stage≤40字；risks≤6条各≤40字；priorities≤5条各≤40字；suggested_tasks≤8条；task_title≤30字；reason≤50字；due_date 格式 YYYY-MM-DD，无法确定给 null。',
+      'task_type 仅允许：preparation/invitation/speaker/onsite/followup/review/other；priority 仅允许：high/medium/low。',
+      '【纪律】只基于已知信息，严禁编造客户/增员/活动信息；信息不足时在对应字段写"信息不足"。',
+    ].filter(Boolean).join('\n');
+
+    var gen = await generateText([
+      { role: 'system', content: sys },
+      { role: 'user', content: '请生成' + (decomposeOnly ? '筹备任务拆解' : '活动筹备建议') + '。' },
+    ], { timeout: 55000 });
+
+    var parsed = extractJson(gen.text) || {};
+    var plan = {
+      summary: clip(parsed.summary, 80) || '信息不足',
+      current_stage: clip(parsed.current_stage, 40) || '信息不足',
+      risks: Array.isArray(parsed.risks) ? parsed.risks.map(function(r){ return clip(r, 40); }).filter(Boolean).slice(0, 6) : [],
+      priorities: Array.isArray(parsed.priorities) ? parsed.priorities.map(function(p){ return clip(p, 40); }).filter(Boolean).slice(0, 5) : [],
+      suggested_tasks: normSuggestedTasks(parsed.suggested_tasks),
+    };
+    return { plan: plan, raw: gen.text };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
