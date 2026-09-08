@@ -4118,6 +4118,40 @@ function followupStatusInfo(v) {
   return f || {v: v || 'none', label: v || '无需跟进', color:'#6b7280'};
 }
 
+// ===== 活动待办（v1.7.1）=====
+var TASK_TYPES = [
+  {v:'preparation', label:'筹备', color:'#d97706'},
+  {v:'invitation', label:'邀约', color:'#2563eb'},
+  {v:'speaker', label:'嘉宾', color:'#7c3aed'},
+  {v:'onsite', label:'现场', color:'#059669'},
+  {v:'followup', label:'跟进', color:'#0891b2'},
+  {v:'review', label:'复盘', color:'#db2777'},
+  {v:'other', label:'其他', color:'#6b7280'},
+];
+var TASK_STATUS = [
+  {v:'pending', label:'待办', color:'#d97706'},
+  {v:'in_progress', label:'进行中', color:'#2563eb'},
+  {v:'completed', label:'已完成', color:'#059669'},
+  {v:'skipped', label:'已跳过', color:'#9ca3af'},
+];
+var TASK_PRIORITY = [
+  {v:'high', label:'高', color:'#dc2626'},
+  {v:'medium', label:'中', color:'#d97706'},
+  {v:'low', label:'低', color:'#6b7280'},
+];
+function taskTypeInfo(v) {
+  var f = TASK_TYPES.find(function(x){ return x.v === v; });
+  return f || {v: v || 'other', label: v || '其他', color: '#6b7280'};
+}
+function taskStatusInfo(v) {
+  var f = TASK_STATUS.find(function(x){ return x.v === v; });
+  return f || {v: v || 'pending', label: v || '待办', color: '#d97706'};
+}
+function taskPriorityInfo(v) {
+  var f = TASK_PRIORITY.find(function(x){ return x.v === v; });
+  return f || {v: v || 'medium', label: v || '中', color: '#d97706'};
+}
+
 async function showActivities(){
   var view = $('view');
   view.innerHTML = '';
@@ -4315,6 +4349,11 @@ async function showActivityDetail(id){
       card.appendChild(reviewCard);
     }
 
+    // 活动待办区块（v1.7.1）
+    var tasksBox = el('div', {id:'activity-tasks-box'});
+    card.appendChild(tasksBox);
+    renderActivityTasks(id, tasksBox);
+
     // AI 分析按钮
     card.appendChild(el('div', {style:'margin-bottom:12px'}, [
       el('button', {class:'btn btn-ai', onclick:async function(){
@@ -4384,6 +4423,231 @@ async function showActivityDetail(id){
     card.innerHTML = '';
     card.appendChild(el('div', {class:'empty'}, '加载失败：' + esc(e.message)));
   }
+}
+
+// ===== 活动待办（v1.7.1）=====
+async function renderActivityTasks(activityId, box){
+  box.innerHTML = '<div class="loading">加载待办…</div>';
+  var r = await callFn('activity_tasks', {action:'list', activity_id: activityId});
+  if(r.error){ box.innerHTML = ''; box.appendChild(el('div', {class:'empty'}, '待办加载失败：' + esc(r.error))); return; }
+  var allTasks = r.rows || [];
+  var filterStatus = '';
+  box.innerHTML = '';
+
+  // 标题行
+  box.appendChild(el('h3', {style:'margin:12px 0 6px'}, '活动待办 (' + allTasks.length + ')'));
+  box.appendChild(el('button', {class:'btn btn-primary btn-sm', style:'margin-bottom:8px', onclick:function(){ openTaskForm(activityId, null); }}, '+ 新增待办'));
+
+  // 筛选条
+  var filterBar = el('div', {style:'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px'});
+  function fbtn(label, val){
+    filterBar.appendChild(el('button', {
+      class:'btn-sm ' + (filterStatus === val ? 'btn-primary' : ''),
+      style: filterStatus === val ? '' : 'background:#fff',
+      onclick:function(){ filterStatus = val; renderList(); }
+    }, label));
+  }
+  fbtn('全部', '');
+  TASK_STATUS.forEach(function(s){ fbtn(s.label, s.v); });
+  box.appendChild(filterBar);
+
+  var listDiv = el('div', {});
+  box.appendChild(listDiv);
+
+  function renderList(){
+    var rows = filterStatus ? allTasks.filter(function(t){ return t.status === filterStatus; }) : allTasks;
+    listDiv.innerHTML = '';
+    if(!rows.length){
+      listDiv.appendChild(el('div', {class:'empty'}, filterStatus ? '该状态下暂无待办' : '暂无待办。点击"+ 新增待办"创建。'));
+      return;
+    }
+    var today = new Date(Date.now() + 8*3600*1000).toISOString().slice(0,10);
+    rows.forEach(function(t){
+      var ti = taskTypeInfo(t.task_type);
+      var si = taskStatusInfo(t.status);
+      var pi = taskPriorityInfo(t.priority);
+      var done = (t.status === 'completed' || t.status === 'skipped');
+      var overdue = (!done && t.due_date && t.due_date < today);
+      var tc = el('div', {class:'card', style:'margin-bottom:6px;padding:8px'});
+      // 顶行：徽章 + 操作
+      var actions = [];
+      if(!done){
+        actions.push(el('a', {class:'btn-sm btn-green', style:'margin-right:6px', onclick:async function(){
+          var rr = await callFn('activity_tasks', {action:'complete', id:t.id});
+          if(rr.error){ toast('操作失败：'+rr.error); return; }
+          toast('已完成'); renderActivityTasks(activityId, box);
+        }}, '✓ 完成'));
+        actions.push(el('a', {class:'btn-sm', style:'margin-right:6px', onclick:async function(){
+          if(!confirm('标记为跳过？')) return;
+          var rr = await callFn('activity_tasks', {action:'skip', id:t.id});
+          if(rr.error){ toast('操作失败：'+rr.error); return; }
+          toast('已跳过'); renderActivityTasks(activityId, box);
+        }}, '跳过'));
+      }
+      actions.push(el('a', {class:'btn-sm', style:'margin-right:6px', onclick:function(){ openTaskForm(activityId, t); }}, '编辑'));
+      actions.push(el('a', {class:'btn-sm btn-danger', onclick:async function(){
+        if(!confirm('删除该待办？')) return;
+        var rr = await callFn('activity_tasks', {action:'remove', id:t.id});
+        if(rr.error){ toast('删除失败：'+rr.error); return; }
+        toast('已删除'); renderActivityTasks(activityId, box);
+      }}, '删除'));
+
+      tc.appendChild(el('div', {style:'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px'}, [
+        el('div', {style:'display:flex;align-items:center;gap:6px;flex-wrap:wrap'}, [
+          el('span', {style:'font-size:11px;color:#fff;background:'+ti.color+';padding:1px 6px;border-radius:8px'}, ti.label),
+          el('span', {style:'font-size:11px;color:#fff;background:'+si.color+';padding:1px 6px;border-radius:8px'}, si.label),
+          el('span', {style:'font-size:11px;color:'+pi.color+';border:1px solid '+pi.color+';padding:0 5px;border-radius:8px'}, '优先级:'+pi.label),
+        ]),
+        el('div', {}, actions),
+      ]));
+      // 标题
+      tc.appendChild(el('div', {style:'margin-top:4px;font-size:14px;' + (done ? 'text-decoration:line-through;color:var(--muted);' : 'font-weight:600;')}, esc(t.task_title)));
+      // meta
+      var meta = [];
+      if(t.due_date){
+        meta.push(el('span', {style: overdue ? 'color:#dc2626;font-weight:600;' : 'color:var(--muted);'}, '截止 ' + t.due_date + (overdue ? '（已逾期）' : '')));
+      }
+      if(t.related_type === 'customer' || t.related_type === 'recruit'){
+        var rl = t.related_name || ('#'+t.related_id+'（待确认）');
+        meta.push(el('span', {style:'color:var(--muted)'}, (t.related_type === 'customer' ? '客户：' : '增员：') + rl));
+      }
+      if(meta.length) tc.appendChild(el('div', {style:'font-size:12px;margin-top:3px;display:flex;gap:12px;flex-wrap:wrap'}, meta));
+      if(t.note) tc.appendChild(el('p', {style:'font-size:12px;margin:4px 0 0;color:var(--muted)'}, esc(t.note)));
+      listDiv.appendChild(tc);
+    });
+  }
+  renderList();
+}
+
+// 新增/编辑待办弹窗
+function openTaskForm(activityId, task){
+  var isEdit = !!task;
+  var overlay = el('div', {class:'modal-overlay', onclick:function(e){ if(e.target === overlay) overlay.remove(); }});
+  var m = el('div', {class:'modal', style:'max-width:520px'});
+  m.appendChild(el('h3', {style:'margin-top:0'}, isEdit ? '编辑待办' : '新增待办'));
+
+  var titleInput = el('input', {type:'text', class:'input', placeholder:'待办事项（必填）'});
+  if(isEdit) titleInput.value = task.task_title || '';
+  m.appendChild(el('div', {class:'field'}, [el('label', {}, '任务标题'), titleInput]));
+
+  var typeSel = el('select', {class:'input'}, TASK_TYPES.map(function(t){ return el('option', {value:t.v}, t.label); }));
+  typeSel.value = isEdit ? (task.task_type || 'other') : 'other';
+  m.appendChild(el('div', {class:'field'}, [el('label', {}, '类型'), typeSel]));
+
+  var priSel = el('select', {class:'input'}, TASK_PRIORITY.map(function(p){ return el('option', {value:p.v}, p.label + '优先级'); }));
+  priSel.value = isEdit ? (task.priority || 'medium') : 'medium';
+  m.appendChild(el('div', {class:'field'}, [el('label', {}, '优先级'), priSel]));
+
+  var dueInput = el('input', {type:'date', class:'input'});
+  if(isEdit && task.due_date) dueInput.value = String(task.due_date).slice(0,10);
+  m.appendChild(el('div', {class:'field'}, [el('label', {}, '截止日期'), dueInput]));
+
+  // 关联类型 + 姓名搜索
+  var relSel = el('select', {class:'input'}, [
+    el('option', {value:'none'}, '不关联'),
+    el('option', {value:'customer'}, '关联客户'),
+    el('option', {value:'recruit'}, '关联增员对象'),
+  ]);
+  relSel.value = isEdit ? (task.related_type === 'customer' || task.related_type === 'recruit' ? task.related_type : 'none') : 'none';
+  m.appendChild(el('div', {class:'field'}, [el('label', {}, '关联人员'), relSel]));
+
+  var nameInput = el('input', {type:'text', class:'input', placeholder:'输入姓名搜索，从下拉结果点选', autocomplete:'off', style:'display:none'});
+  var suggestBox = el('div', {style:'border:1px solid var(--border);border-radius:6px;max-height:160px;overflow-y:auto;margin-top:4px;display:none;background:var(--card)'});
+  var pickedHint = el('div', {style:'font-size:13px;color:#047857;margin-top:6px;display:none'});
+  m.appendChild(el('div', {class:'field', id:'task-rel-field', style:'display:none'}, [nameInput, suggestBox, pickedHint]));
+  var picked = null;
+  if(isEdit && (task.related_type === 'customer' || task.related_type === 'recruit') && task.related_id){
+    picked = {id: task.related_id, name: task.related_name || ('#'+task.related_id)};
+  }
+
+  function toggleRel(){
+    var show = relSel.value !== 'none';
+    document.getElementById('task-rel-field').style.display = show ? '' : 'none';
+    nameInput.style.display = show ? '' : 'none';
+    if(!show){ picked = null; pickedHint.style.display = 'none'; suggestBox.style.display = 'none'; }
+    else if(picked){ pickedHint.style.display = ''; pickedHint.textContent = '✓ 已选择：' + picked.name + ' #' + picked.id; }
+  }
+  relSel.addEventListener('change', function(){
+    picked = null; pickedHint.style.display = 'none'; nameInput.value = ''; suggestBox.style.display = 'none';
+    toggleRel();
+  });
+  toggleRel();
+
+  var searchTimer = null;
+  async function doTaskSearch(){
+    var kw = nameInput.value.trim();
+    if(kw.length < 1){ suggestBox.style.display = 'none'; return; }
+    var r = await callFn('activities', {action:'searchPerson', person_type: relSel.value, keyword: kw});
+    if(r.error) return;
+    suggestBox.innerHTML = '';
+    var rows = r.rows || [];
+    if(!rows.length){
+      suggestBox.appendChild(el('div', {style:'padding:8px 10px;font-size:13px;color:var(--muted)'}, '库中未找到'));
+    } else {
+      rows.forEach(function(row){
+        suggestBox.appendChild(el('div', {style:'padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px', onmouseenter:function(){ this.style.background='#f1f5f9'; }, onmouseleave:function(){ this.style.background=''; }, onclick:function(){
+          picked = {id: row.id, name: row.name};
+          nameInput.value = row.name;
+          suggestBox.style.display = 'none';
+          pickedHint.style.display = '';
+          pickedHint.textContent = '✓ 已选择：' + row.name + (row.occupation ? '（' + row.occupation + '）' : '') + ' #' + row.id;
+        }}, [
+          el('strong', {}, esc(row.name)),
+          row.occupation ? el('span', {style:'margin-left:6px;color:var(--muted)'}, esc(row.occupation)) : null,
+          el('span', {style:'float:right;color:var(--muted)'}, '#' + row.id),
+        ]));
+      });
+    }
+    suggestBox.style.display = '';
+  }
+  nameInput.addEventListener('input', function(){
+    picked = null; pickedHint.style.display = 'none';
+    if(searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(doTaskSearch, 300);
+  });
+
+  var noteInput = el('textarea', {class:'input', rows:'2', placeholder:'可选'});
+  if(isEdit && task.note) noteInput.value = task.note;
+  m.appendChild(el('div', {class:'field'}, [el('label', {}, '备注'), noteInput]));
+
+  var msg = el('div', {style:'color:#c0392b;font-size:13px;margin-top:6px'});
+  var submitBtn = el('button', {class:'btn btn-primary', style:'width:100%'}, isEdit ? '保存' : '新增');
+  submitBtn.addEventListener('click', async function(){
+    var title = titleInput.value.trim();
+    if(!title){ msg.textContent = '请输入任务标题'; return; }
+    var data = {
+      task_title: title,
+      task_type: typeSel.value,
+      priority: priSel.value,
+      due_date: dueInput.value || null,
+      note: noteInput.value.trim() || null,
+    };
+    if(relSel.value === 'none'){
+      data.related_type = 'none'; data.related_id = null;
+    } else {
+      if(!picked){ msg.textContent = '请从搜索结果中点选要关联的人员'; return; }
+      data.related_type = relSel.value;
+      data.related_id = picked.id;
+    }
+    submitBtn.disabled = true; submitBtn.textContent = '提交中…'; msg.textContent = '';
+    try {
+      var r = isEdit
+        ? await callFn('activity_tasks', {action:'update', id: task.id, data: data})
+        : await callFn('activity_tasks', {action:'create', data: Object.assign({activity_id: activityId}, data)});
+      if(r.error) throw new Error(r.error);
+      toast(isEdit ? '已保存' : '已新增');
+      overlay.remove();
+      var box = document.getElementById('activity-tasks-box');
+      if(box) renderActivityTasks(activityId, box);
+    } catch(e){
+      msg.textContent = e.message || e;
+      submitBtn.disabled = false; submitBtn.textContent = isEdit ? '保存' : '新增';
+    }
+  });
+  m.appendChild(el('div', {style:'margin-top:10px'}, [submitBtn, msg]));
+  overlay.appendChild(m);
+  document.getElementById('modal-root').appendChild(overlay);
+  setTimeout(function(){ titleInput.focus(); }, 50);
 }
 
 // 写复盘弹窗：填入摘要/评分/备注/实际人数，提交时把活动状态改为 reviewed

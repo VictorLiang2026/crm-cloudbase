@@ -9,6 +9,12 @@
       "handler": "index.main"
     },
     {
+      "name": "activity_tasks",
+      "timeout": 10,
+      "runtime": "Nodejs20.19",
+      "handler": "index.main"
+    },
+    {
       "name": "ai_activity",
       "timeout": 60,
       "runtime": "Nodejs20.19",
