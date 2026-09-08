@@ -4793,7 +4793,7 @@ function renderActivityPrepare(activityId, plan){
 async function createPrepareTask(activityId, t){
   return await callFn('activity_tasks', {action:'create', data:{
     activity_id: activityId, task_title: t.task_title, task_type: t.task_type,
-    priority: t.priority, due_date: t.due_date || null, note: t.reason || '', source: 'ai_prepare',
+    priority: t.priority, due_date: t.due_date || null, note: t.reason || '', source: 'ai',
   }});
 }
 
