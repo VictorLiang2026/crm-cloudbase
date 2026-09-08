@@ -18,10 +18,16 @@
 
 const { rdb, nowIso, normFields, assertOk } = require('./db');
 
-const ACT_FIELDS = ['name', 'activity_date', 'activity_type', 'location', 'description'];
-const PART_FIELDS = ['activity_id', 'person_type', 'person_id', 'person_name', 'status', 'relationship_note', 'ai_followup_suggestion'];
-var PT_ENUM = ['customer', 'recruit'];
+const ACT_FIELDS = ['name', 'activity_date', 'activity_type', 'location', 'description',
+  'status', 'goal_types', 'target_participants', 'actual_participants', 'topic_ids',
+  'review_summary', 'review_notes', 'review_score', 'reviewed_at'];
+const PART_FIELDS = ['activity_id', 'person_type', 'person_id', 'person_name', 'status', 'relationship_note', 'ai_followup_suggestion',
+  'participant_role', 'followup_status'];
+var PT_ENUM = ['customer', 'recruit', 'speaker'];
 var ST_ENUM = ['invited', 'attended', 'absent'];
+var ACT_STATUS_ENUM = ['idea', 'preparing', 'confirmed', 'in_progress', 'ended', 'reviewed'];
+var PARTICIPANT_ROLE_ENUM = ['attendee', 'speaker', 'organizer', 'partner', 'guest'];
+var FOLLOWUP_STATUS_ENUM = ['none', 'pending', 'done', 'not_needed'];
 
 // 人员表映射：customers 主键 Id、姓名 customer_name；recruit_candidates 主键 id、姓名 name
 function personTable(pt) {
@@ -38,6 +44,8 @@ exports.main = async (event, context) => {
       case 'get':             return await get(event);
       case 'create':          return await create(event);
       case 'update':          return await update(event);
+      case 'updateStatus':    return await updateStatus(event);
+      case 'getSummary':      return await getSummary(event);
       case 'remove':          return await remove(event);
       case 'addParticipant':     return await addParticipant(event);
       case 'searchPerson':      return await searchPerson(event);
@@ -107,6 +115,17 @@ async function enrichParticipants(parts) {
 async function create(event) {
   const data = Object.assign({}, event.data || {});
   if (!data.name) return { error: 'name required' };
+  // 校验 status
+  if (data.status && ACT_STATUS_ENUM.indexOf(data.status) < 0) return { error: '无效 status，允许: ' + ACT_STATUS_ENUM.join('/') };
+  // goal_types 字符串 → 数组
+  if (typeof data.goal_types === 'string') {
+    data.goal_types = data.goal_types.split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+  }
+  // 校验 target/actual participants
+  if (data.target_participants != null) {
+    data.target_participants = parseInt(data.target_participants, 10);
+    if (isNaN(data.target_participants) || data.target_participants < 0) return { error: 'target_participants 必须是非负整数' };
+  }
   data.created_at = nowIso();
   data.updated_at = nowIso();
   const payload = normFields(data, ACT_FIELDS.concat(['created_at', 'updated_at']));
@@ -117,13 +136,83 @@ async function create(event) {
 async function update(event) {
   const id = parseInt(event.id, 10);
   if (!id) return { error: 'id required' };
+  const data = Object.assign({}, event.data || {});
+  // 校验 status
+  if (data.status && ACT_STATUS_ENUM.indexOf(data.status) < 0) return { error: '无效 status，允许: ' + ACT_STATUS_ENUM.join('/') };
+  // 校验 goal_types（字符串 → 数组）
+  if (typeof data.goal_types === 'string') {
+    data.goal_types = data.goal_types.split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+  }
+  if (Array.isArray(data.goal_types) && !data.goal_types.every(function(g){ return typeof g === 'string'; })) {
+    return { error: 'goal_types 必须是字符串数组' };
+  }
+  // 校验 target/actual participants
+  if (data.target_participants != null) {
+    data.target_participants = parseInt(data.target_participants, 10);
+    if (isNaN(data.target_participants) || data.target_participants < 0) return { error: 'target_participants 必须是非负整数' };
+  }
+  if (data.actual_participants != null) {
+    data.actual_participants = parseInt(data.actual_participants, 10);
+    if (isNaN(data.actual_participants) || data.actual_participants < 0) return { error: 'actual_participants 必须是非负整数' };
+  }
+  // 校验 review_score
+  if (data.review_score != null) {
+    data.review_score = parseInt(data.review_score, 10);
+    if (isNaN(data.review_score) || data.review_score < 1 || data.review_score > 5) return { error: 'review_score 必须是 1-5' };
+  }
   const payload = normFields(
-    Object.assign({}, event.data || {}, { updated_at: nowIso() }),
+    Object.assign({}, data, { updated_at: nowIso() }),
     ACT_FIELDS.concat(['updated_at'])
   );
   if (!Object.keys(payload).length) return { ok: true, updated: false };
   const r = assertOk(await rdb.from('activities').update(payload).eq('id', id).select('id'));
   return { ok: (r.data || []).length === 1 };
+}
+
+// 更新活动状态（切到 reviewed 时自动记录 reviewed_at）
+async function updateStatus(event) {
+  const id = parseInt(event.id, 10);
+  if (!id) return { error: 'id required' };
+  const status = event.status;
+  if (!status || ACT_STATUS_ENUM.indexOf(status) < 0) return { error: '无效的 status，允许: ' + ACT_STATUS_ENUM.join('/') };
+  const payload = { status: status, updated_at: nowIso() };
+  if (status === 'reviewed') payload.reviewed_at = nowIso();
+  const r = assertOk(await rdb.from('activities').update(payload).eq('id', id).select('id'));
+  return { ok: (r.data || []).length === 1 };
+}
+
+// 活动摘要：基础信息 + 参与者人数统计（按角色/按跟进状态）
+async function getSummary(event) {
+  const id = parseInt(event.id, 10);
+  if (!id) return { error: 'id required' };
+  const a = assertOk(await rdb.from('activities').select()
+    .eq('id', id).is('deleted_at', null).maybeSingle());
+  if (!a.data) return { error: 'activity not found' };
+  const activity = a.data;
+  // 统计参与者人数
+  const p = assertOk(await rdb.from('activity_participants').select('id, participant_role, followup_status')
+    .eq('activity_id', id).is('deleted_at', null));
+  const parts = p.data || [];
+  const participant_counts = {
+    total: parts.length,
+    by_role: {},
+    by_followup_status: {},
+  };
+  PARTICIPANT_ROLE_ENUM.forEach(function (r) { participant_counts.by_role[r] = 0; });
+  FOLLOWUP_STATUS_ENUM.forEach(function (r) { participant_counts.by_followup_status[r] = 0; });
+  parts.forEach(function (it) {
+    if (it.participant_role && participant_counts.by_role[it.participant_role] !== undefined) {
+      participant_counts.by_role[it.participant_role]++;
+    } else if (!it.participant_role) {
+      participant_counts.by_role.attendee++;
+    }
+    if (it.followup_status && participant_counts.by_followup_status[it.followup_status] !== undefined) {
+      participant_counts.by_followup_status[it.followup_status]++;
+    } else if (!it.followup_status) {
+      participant_counts.by_followup_status.none++;
+    }
+  });
+  return { activity: activity, participant_counts: participant_counts };
 }
 
 async function remove(event) {
@@ -202,6 +291,9 @@ async function addParticipant(event) {
     if (dup.data && dup.data.length) return { error: '已添加该参与者（待关联）', id: dup.data[0].id };
   }
   if (!data.status) data.status = 'invited';
+  if (data.participant_role && PARTICIPANT_ROLE_ENUM.indexOf(data.participant_role) < 0) return { error: '无效 participant_role' };
+  if (!data.participant_role) data.participant_role = 'attendee';
+  if (!data.followup_status) data.followup_status = 'none';
   data.created_at = nowIso();
   const payload = normFields(data, PART_FIELDS.concat(['created_at']));
   const r = assertOk(await rdb.from('activity_participants').insert(payload).select('id'));
@@ -238,7 +330,12 @@ async function updateParticipant(event) {
   if (!id) return { error: 'id required' };
   const data = Object.assign({}, event.data || {});
   if (data.status && ST_ENUM.indexOf(data.status) < 0) return { error: '无效 status' };
-  const payload = normFields(data, ['status', 'relationship_note', 'ai_followup_suggestion']);
+  if (data.participant_role && PARTICIPANT_ROLE_ENUM.indexOf(data.participant_role) < 0) return { error: '无效 participant_role' };
+  if (data.followup_status && FOLLOWUP_STATUS_ENUM.indexOf(data.followup_status) < 0) return { error: '无效 followup_status' };
+  const payload = normFields(
+    Object.assign({}, data, { updated_at: nowIso() }),
+    ['status', 'relationship_note', 'ai_followup_suggestion', 'participant_role', 'followup_status', 'updated_at']
+  );
   if (!Object.keys(payload).length) return { ok: true, updated: false };
   const r = assertOk(await rdb.from('activity_participants').update(payload).eq('id', id).select('id'));
   return { ok: (r.data || []).length === 1 };

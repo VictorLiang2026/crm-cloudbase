@@ -643,8 +643,11 @@ function makeField(f, value){
   } else if(f.type==='select'){
     input = el('select', {name:f.name});
     (f.options||['']).forEach(function(o){
-      var opt = el('option', {value:o}, o || '(空)');
-      if(o===val) opt.selected = true;
+      // 兼容字符串和 {v,label} 对象两种形式
+      var ov = (typeof o === 'object' && o !== null) ? o.v : o;
+      var ol = (typeof o === 'object' && o !== null) ? o.label : o;
+      var opt = el('option', {value:ov}, ol || '(空)');
+      if(ov===val) opt.selected = true;
       input.appendChild(opt);
     });
   } else {
@@ -4081,6 +4084,39 @@ async function showCustomerActivity(){
 
 // ==================== 活动经营（v1.3：轻量活动入口） ====================
 var ACT_TYPES = ['', '客户答谢', '产说会', '沙龙', '酒会', '增员活动', '联谊会', '其他'];
+var ACT_STATUS = [
+  {v:'idea', label:'想法', color:'#6b7280'},
+  {v:'preparing', label:'筹备中', color:'#d97706'},
+  {v:'confirmed', label:'已确定', color:'#2563eb'},
+  {v:'in_progress', label:'进行中', color:'#059669'},
+  {v:'ended', label:'已结束', color:'#6b7280'},
+  {v:'reviewed', label:'已复盘', color:'#7c3aed'},
+];
+var PARTICIPANT_ROLES = [
+  {v:'attendee', label:'参与者'},
+  {v:'speaker', label:'嘉宾'},
+  {v:'organizer', label:'组织者'},
+  {v:'partner', label:'合作方'},
+  {v:'guest', label:'宾客'},
+];
+var FOLLOWUP_STATUSES = [
+  {v:'none', label:'无需跟进', color:'#6b7280'},
+  {v:'pending', label:'待跟进', color:'#d97706'},
+  {v:'done', label:'已跟进', color:'#059669'},
+  {v:'not_needed', label:'不需要', color:'#9ca3af'},
+];
+function actStatusInfo(s) {
+  var f = ACT_STATUS.find(function(x){ return x.v === s; });
+  return f || {v: s || 'idea', label: s || '未设', color: '#6b7280'};
+}
+function partRoleInfo(v) {
+  var f = PARTICIPANT_ROLES.find(function(x){ return x.v === v; });
+  return f || {v: v || 'attendee', label: v || '参与者'};
+}
+function followupStatusInfo(v) {
+  var f = FOLLOWUP_STATUSES.find(function(x){ return x.v === v; });
+  return f || {v: v || 'none', label: v || '无需跟进', color:'#6b7280'};
+}
 
 async function showActivities(){
   var view = $('view');
@@ -4098,28 +4134,54 @@ async function showActivities(){
     var r = await callFn('activities', {action:'list'});
     if(r.error) throw new Error(r.error);
     card.innerHTML = '';
-    var rows = r.rows || [];
+    var allRows = r.rows || [];
     card.appendChild(el('h2', {}, '活动经营'));
-    if(!rows.length){
-      card.appendChild(el('div', {class:'empty'}, '暂无活动。点击"新增活动"创建。'));
-      return;
-    }
-    rows.forEach(function(a){
-      var item = el('div', {class:'card', style:'margin-bottom:8px;padding:12px;cursor:pointer', onclick:function(){ location.hash='#/activity/'+a.id; }});
-      item.appendChild(el('div', {style:'display:flex;justify-content:space-between;align-items:center'}, [
-        el('div', {}, [
-          el('strong', {}, a.name),
-          a.activity_type ? el('span', {style:'margin-left:8px;font-size:12px;color:var(--muted)'}, a.activity_type) : null,
-        ]),
-        el('div', {style:'display:flex;gap:12px;align-items:center'}, [
-          el('span', {style:'font-size:13px;color:var(--muted)'}, a.activity_date ? String(a.activity_date).slice(0,10) : '日期未定'),
-          el('a', {class:'btn-sm btn-danger', onclick:function(e){ e.stopPropagation(); if(confirm('删除活动？')){ (async function(){ var rr=await callFn('activities',{action:'remove',id:a.id}); if(rr.error){toast('删除失败');return;} toast('已删除'); showActivities(); })(); } }}, '删除'),
-        ]),
-      ]));
-      if(a.location) item.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:4px 0 0'}, '地点：' + esc(a.location)));
-      if(a.description) item.appendChild(el('p', {style:'font-size:13px;margin:4px 0 0'}, esc(a.description)));
-      card.appendChild(item);
+
+    // 状态筛选条
+    var filterStatus = '';
+    var filterBar = el('div', {style:'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px'});
+    filterBar.appendChild(el('button', {
+      class:'btn ' + (filterStatus === '' ? 'btn-primary' : ''),
+      onclick: function(){ filterStatus = ''; renderFiltered(); }
+    }, '全部'));
+    ACT_STATUS.forEach(function(s) {
+      filterBar.appendChild(el('button', {
+        class:'btn ' + (filterStatus === s.v ? 'btn-primary' : ''),
+        onclick: function(){ filterStatus = s.v; renderFiltered(); }
+      }, s.label));
     });
+    card.appendChild(filterBar);
+
+    var listDiv = el('div');
+    card.appendChild(listDiv);
+
+    function renderFiltered() {
+      var rows = filterStatus ? allRows.filter(function(a){ return a.status === filterStatus; }) : allRows;
+      listDiv.innerHTML = '';
+      if (!rows.length) {
+        listDiv.appendChild(el('div', {class:'empty'}, filterStatus ? '该状态下暂无活动' : '暂无活动。点击"新增活动"创建。'));
+        return;
+      }
+      rows.forEach(function(a){
+        var si = actStatusInfo(a.status);
+        var item = el('div', {class:'card', style:'margin-bottom:8px;padding:12px;cursor:pointer', onclick:function(){ location.hash='#/activity/'+a.id; }});
+        item.appendChild(el('div', {style:'display:flex;justify-content:space-between;align-items:center'}, [
+          el('div', {}, [
+            el('strong', {}, a.name),
+            a.activity_type ? el('span', {style:'margin-left:8px;font-size:12px;color:var(--muted)'}, a.activity_type) : null,
+          ]),
+          el('div', {style:'display:flex;gap:12px;align-items:center'}, [
+            el('span', {style:'font-size:11px;color:#fff;background:'+si.color+';padding:1px 6px;border-radius:8px'}, si.label),
+            el('span', {style:'font-size:13px;color:var(--muted)'}, a.activity_date ? String(a.activity_date).slice(0,10) : '日期未定'),
+            el('a', {class:'btn-sm btn-danger', onclick:function(e){ e.stopPropagation(); if(confirm('删除活动？')){ (async function(){ var rr=await callFn('activities',{action:'remove',id:a.id}); if(rr.error){toast('删除失败');return;} toast('已删除'); showActivities(); })(); } }}, '删除'),
+          ]),
+        ]));
+        if(a.location) item.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:4px 0 0'}, '地点：' + esc(a.location)));
+        if(a.description) item.appendChild(el('p', {style:'font-size:13px;margin:4px 0 0'}, esc(a.description)));
+        listDiv.appendChild(item);
+      });
+    }
+    renderFiltered();
   } catch(e){
     card.innerHTML = '';
     card.appendChild(el('div', {class:'empty'}, '加载失败：' + esc(e.message)));
@@ -4132,10 +4194,24 @@ function openActivityForm(activity){
     {name:'activity_date',label:'日期',type:'date'},
     {name:'activity_type',label:'类型',type:'select',options:ACT_TYPES},
     {name:'location',label:'地点',type:'text'},
+    {name:'status',label:'活动状态',type:'select', options: ACT_STATUS.map(function(s){return {v:s.v, label:s.label};})},
+    {name:'goal_types_text',label:'活动目标',type:'text', placeholder:'可填：customer,recruit,relationship,referral,brand,content（逗号分隔）'},
+    {name:'target_participants',label:'计划人数',type:'text', placeholder:'数字'},
     {name:'description',label:'备注',type:'textarea'},
   ];
-  modal(activity?'编辑活动':'新增活动', FIELDS, activity || {}, async function(data){
+  // 预填：编辑时把 goal_types 数组拼成文本
+  var pref = activity ? Object.assign({}, activity) : {};
+  if(pref.goal_types && Array.isArray(pref.goal_types)) pref.goal_types_text = pref.goal_types.join(',');
+  modal(activity?'编辑活动':'新增活动', FIELDS, pref, async function(data){
     if(!data.name) throw new Error('请输入活动名称');
+    if(data.goal_types_text) {
+      data.goal_types = data.goal_types_text.split(',').map(function(s){return s.trim();}).filter(Boolean);
+    } else {
+      data.goal_types = [];
+    }
+    delete data.goal_types_text;
+    // 空字符串按 null 处理
+    if(data.target_participants === '') data.target_participants = null;
     if(activity){
       var r = await callFn('activities', {action:'update', id:activity.id, data:data});
       if(r.error) throw new Error(r.error);
@@ -4170,16 +4246,74 @@ async function showActivityDetail(id){
     card.innerHTML = '';
 
     // 活动信息
-    card.appendChild(el('h2', {}, act.name));
+    var si = actStatusInfo(act.status);
+    card.appendChild(el('div', {style:'display:flex;align-items:center;gap:10px;margin-bottom:6px'}, [
+      el('h2', {style:'margin:0'}, act.name),
+      el('span', {style:'font-size:12px;color:#fff;background:'+si.color+';padding:2px 8px;border-radius:8px'}, si.label),
+    ]));
     var meta = [];
     if(act.activity_date) meta.push('日期：' + String(act.activity_date).slice(0,10));
     if(act.activity_type) meta.push('类型：' + act.activity_type);
     if(act.location) meta.push('地点：' + act.location);
     if(meta.length) card.appendChild(el('p', {style:'color:var(--muted);font-size:13px;margin:0 0 8px'}, meta.join(' · ')));
     if(act.description) card.appendChild(el('p', {style:'font-size:13px;margin:0 0 10px'}, esc(act.description)));
+
+    // 活动目标 chips
+    if(act.goal_types && act.goal_types.length) {
+      var goalChips = el('div', {style:'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px'});
+      act.goal_types.forEach(function(g) {
+        goalChips.appendChild(el('span', {style:'font-size:11px;color:#4338ca;background:#eef2ff;padding:1px 6px;border-radius:8px'}, g));
+      });
+      card.appendChild(goalChips);
+    }
+    // 计划/实际人数
+    if(act.target_participants != null || act.actual_participants != null) {
+      var tParts = act.target_participants != null ? act.target_participants : '?';
+      var aParts = act.actual_participants != null ? act.actual_participants : '?';
+      card.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:0 0 10px'}, '计划 ' + tParts + ' 人 / 实际 ' + aParts + ' 人'));
+    }
+
     card.appendChild(el('div', {style:'margin-bottom:12px'}, [
       el('a', {class:'btn-sm', style:'margin-right:8px', onclick:function(){ openActivityForm(act); }}, '编辑'),
+      // 更新状态下拉
+      (function(){
+        var sel = el('select', {class:'btn-sm', style:'margin-right:8px', onchange: function(){
+          var newStatus = this.value;
+          if(!newStatus) return;
+          if(confirm('确认将活动状态改为：' + newStatus + '？')) {
+            (async function(){
+              var rr = await callFn('activities', {action:'updateStatus', id: id, status: newStatus});
+              if(rr && rr.error) { toast('更新失败：' + rr.error); return; }
+              toast('状态已更新');
+              showActivityDetail(id);
+            })();
+          } else {
+            this.value = '';
+          }
+        }}, [].concat(
+          [el('option', {value:''}, '更新状态 ▾')],
+          ACT_STATUS.map(function(s){ return el('option', {value:s.v}, '→ ' + s.label); })
+        ));
+        return sel;
+      })(),
+      el('button', {class:'btn-sm', onclick:function(){ openReviewModal(id); }}, '写复盘'),
     ]));
+
+    // 复盘区（如有复盘数据）
+    if(act.review_summary || act.review_score) {
+      var reviewCard = el('div', {class:'card', style:'margin-bottom:12px;padding:12px;background:#f5f3ff;border-left:3px solid #7c3aed'});
+      reviewCard.appendChild(el('div', {style:'font-weight:600;color:#7c3aed;margin-bottom:6px'}, '复盘'));
+      if(act.review_score != null) {
+        reviewCard.appendChild(el('p', {style:'font-size:13px;margin:0 0 6px'}, '评分：' + act.review_score + ' / 5'));
+      }
+      if(act.review_summary) {
+        reviewCard.appendChild(el('p', {style:'font-size:13px;margin:0 0 6px'}, esc(act.review_summary)));
+      }
+      if(act.review_notes) {
+        reviewCard.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:0'}, '备注：' + esc(act.review_notes)));
+      }
+      card.appendChild(reviewCard);
+    }
 
     // AI 分析按钮
     card.appendChild(el('div', {style:'margin-bottom:12px'}, [
@@ -4210,6 +4344,8 @@ async function showActivityDetail(id){
         var stColor = p.status === 'attended' ? '#047857' : (p.status === 'absent' ? '#9ca3af' : '#2563eb');
         var stLabel = p.status === 'attended' ? '已参加' : (p.status === 'absent' ? '缺席' : '已邀请');
         var linked = !!p.person_id;
+        var ri = partRoleInfo(p.participant_role);
+        var fi = followupStatusInfo(p.followup_status);
         var actions = [];
         if(linked){
           actions.push(p.person_type === 'customer'
@@ -4226,7 +4362,9 @@ async function showActivityDetail(id){
           el('div', {}, [
             el('span', {style:'font-size:11px;color:#fff;background:'+(p.person_type==='customer'?'#2563eb':'#d97706')+';padding:1px 6px;border-radius:8px;margin-right:6px'}, p.person_type === 'customer' ? '客户' : '增员'),
             el('strong', {}, esc(p.person_name || '（未命名）')),
+            p.participant_role ? el('span', {style:'font-size:11px;color:var(--muted);border:1px solid #ddd;padding:0 4px;border-radius:4px;margin-left:4px'}, ri.label) : null,
             el('span', {style:'margin-left:8px;color:#fff;background:'+stColor+';padding:1px 6px;border-radius:8px;font-size:11px'}, stLabel),
+            p.followup_status ? el('span', {style:'font-size:11px;color:#fff;background:'+fi.color+';padding:1px 6px;border-radius:8px;margin-left:4px'}, fi.label) : null,
             linked ? null : el('span', {style:'margin-left:6px;color:#92400e;background:#fef3c7;padding:1px 6px;border-radius:8px;font-size:11px'}, '待关联'),
           ]),
           el('div', {}, actions),
@@ -4246,6 +4384,63 @@ async function showActivityDetail(id){
     card.innerHTML = '';
     card.appendChild(el('div', {class:'empty'}, '加载失败：' + esc(e.message)));
   }
+}
+
+// 写复盘弹窗：填入摘要/评分/备注/实际人数，提交时把活动状态改为 reviewed
+function openReviewModal(activityId){
+  var overlay = el('div', {class:'modal-overlay'});
+  var m = el('div', {class:'modal', style:'max-width:560px'});
+  overlay.appendChild(m);
+  overlay.addEventListener('click', function(e){ if(e.target === overlay) overlay.remove(); });
+
+  m.appendChild(el('h3', {}, '写复盘'));
+
+  var summaryInput = el('textarea', {class:'input', rows:'4', placeholder:'本次活动的成效、亮点与不足（必填）'});
+  m.appendChild(el('div', {class:'field'}, [el('label', {}, '复盘摘要 *'), summaryInput]));
+
+  var scoreSel = el('select', {class:'input'}, [
+    el('option', {value:''}, '— 请选择 —'),
+    el('option', {value:'1'}, '1 - 很差'),
+    el('option', {value:'2'}, '2 - 不及预期'),
+    el('option', {value:'3'}, '3 - 一般'),
+    el('option', {value:'4'}, '4 - 良好'),
+    el('option', {value:'5'}, '5 - 优秀'),
+  ]);
+  m.appendChild(el('div', {class:'field'}, [el('label', {}, '评分（1-5）'), scoreSel]));
+
+  var notesInput = el('textarea', {class:'input', rows:'3', placeholder:'其他备注：改进点、可复用经验、下次注意事项等'});
+  m.appendChild(el('div', {class:'field'}, [el('label', {}, '备注'), notesInput]));
+
+  var actualInput = el('input', {type:'number', min:'0', class:'input', placeholder:'实际到场人数'});
+  m.appendChild(el('div', {class:'field'}, [el('label', {}, '实际参加人数'), actualInput]));
+
+  var msg = el('div', {style:'color:#c0392b;font-size:13px;margin-top:6px'});
+  var submitBtn = el('button', {class:'btn btn-primary', style:'width:100%'}, '提交复盘');
+  submitBtn.addEventListener('click', async function(){
+    var summary = summaryInput.value.trim();
+    if(!summary){ msg.textContent = '请填写复盘摘要'; return; }
+    var data = {
+      review_summary: summary,
+      review_score: scoreSel.value ? Number(scoreSel.value) : null,
+      review_notes: notesInput.value.trim() || null,
+      actual_participants: actualInput.value ? Number(actualInput.value) : null,
+      status: 'reviewed',
+    };
+    submitBtn.disabled = true; submitBtn.textContent = '提交中…'; msg.textContent = '';
+    try {
+      var r = await callFn('activities', {action:'update', id: activityId, data: data});
+      if(r && r.error) throw new Error(r.error);
+      toast('复盘已保存');
+      overlay.remove();
+      showActivityDetail(activityId);
+    } catch(e){
+      msg.textContent = e.message || e;
+      submitBtn.disabled = false; submitBtn.textContent = '提交复盘';
+    }
+  });
+  m.appendChild(el('div', {style:'margin-top:10px'}, [submitBtn, msg]));
+  document.getElementById('modal-root').appendChild(overlay);
+  setTimeout(function(){ summaryInput.focus(); }, 50);
 }
 
 // AI 分析结果渲染 + 确认写入
@@ -4486,9 +4681,14 @@ function openLinkParticipant(activityId, p){
 function openParticipantForm(activityId, p){
   var FIELDS = [
     {name:'status',label:'状态',type:'select',options:['invited','attended','absent']},
+    {name:'participant_role',label:'角色',type:'select',options:PARTICIPANT_ROLES.map(function(r){return {v:r.v, label:r.label};})},
+    {name:'followup_status',label:'跟进状态',type:'select',options:FOLLOWUP_STATUSES.map(function(r){return {v:r.v, label:r.label};})},
     {name:'relationship_note',label:'备注',type:'textarea'},
   ];
   modal('编辑参与者', FIELDS, p, async function(data){
+    // 空字符串按 null 处理
+    if(data.participant_role === '') data.participant_role = null;
+    if(data.followup_status === '') data.followup_status = null;
     var r = await callFn('activities', {action:'updateParticipant', id:p.id, data:data});
     if(r.error) throw new Error(r.error);
     toast('已保存');
