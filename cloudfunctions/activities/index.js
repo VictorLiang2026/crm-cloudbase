@@ -93,7 +93,7 @@ async function enrichParticipants(parts) {
   const nameMap = {};
   for (const pt of PT_ENUM) {
     const ids = needByType[pt];
-    if (!ids.length) continue;
+    if (!ids || !ids.length) continue;
     const cfg = personTable(pt);
     const q = await rdb.from(cfg.table).select(cfg.idCol + ',' + cfg.nameCol)
       .in(cfg.idCol, ids).is('deleted_at', null);
