@@ -746,6 +746,7 @@ function route(){
   if(hash === '#/customers') return showList();
   if(hash === '#/customers/trash') return showCustomerTrash();
   if(hash === '#/activities') return showActivities();
+  if(hash === '#/speakers') return showSpeakers();
   var ra = hash.match(/^#\/activity\/(\d+)$/);
   if(ra) return showActivityDetail(parseInt(ra[1],10));
   showDashboard();
@@ -4357,7 +4358,8 @@ async function showActivityDetail(id){
     // AI 筹备助手区块（v1.7.2）：AI 只出建议，用户确认后调 activity_tasks.create
     card.appendChild(el('div', {style:'margin-bottom:12px'}, [
       el('button', {class:'btn btn-ai', style:'margin-right:8px', onclick:function(){ runActivityPrepare(id, 'prepare', this); }}, '✨ AI 筹备助手'),
-      el('button', {class:'btn btn-ai', onclick:function(){ runActivityPrepare(id, 'decompose', this); }}, '✨ AI 任务拆解'),
+      el('button', {class:'btn btn-ai', style:'margin-right:8px', onclick:function(){ runActivityPrepare(id, 'decompose', this); }}, '✨ AI 任务拆解'),
+      el('button', {class:'btn btn-ai', onclick:function(){ runSpeakerRecommend(id, this); }}, '✨ AI 推荐嘉宾'),
     ]));
     card.appendChild(el('div', {id:'activity-prepare-box'}));
 
@@ -5033,6 +5035,8 @@ function openAddParticipant(activityId){
       if(d.person_id) data.person_id = d.person_id;
       if(d.status) data.status = d.status;
       if(d.relationship_note) data.relationship_note = d.relationship_note;
+      // 从嘉宾池选择时默认嘉宾角色（仍可在"编辑参与者"里改）
+      if(d.person_type === 'speaker') data.participant_role = 'speaker';
       var r = await callFn('activities', {action:'addParticipant', data:data});
       if(r.error) throw new Error(r.error);
       toast(r.linked ? '已添加并关联' : '已按姓名暂存，后续可关联');
@@ -5095,6 +5099,202 @@ function openActivityFollowup(activityId, p){
     toast('沟通已记录（关联活动 #' + activityId + '）');
     showActivityDetail(activityId);
   }, {wide:true});
+}
+
+
+// ==================== 嘉宾资源池（v1.7.3 Activity Speaker Pool） ====================
+
+var SP_STAGE = [
+  {v:'new', label:'新', color:'#6b7280'},
+  {v:'contacted', label:'已联系', color:'#2563eb'},
+  {v:'cooperated', label:'已合作', color:'#d97706'},
+  {v:'stable', label:'稳定', color:'#047857'},
+  {v:'deep', label:'深度', color:'#7c3aed'},
+  {v:'inactive', label:'不活跃', color:'#9ca3af'},
+];
+function spStageInfo(v){ return SP_STAGE.find(function(s){ return s.v === v; }) || {v:v, label:v, color:'#6b7280'}; }
+
+// 嘉宾资源列表页：搜索（姓名/机构/专业/主题，云函数 list/search 同源）+ 状态/阶段筛选
+async function showSpeakers(){
+  var view = $('view');
+  view.innerHTML = '';
+  var toolbar = el('div', {class:'toolbar'}, [
+    el('button', {class:'btn btn-primary', onclick:function(){ openSpeakerForm(null); }}, '+ 新增嘉宾'),
+    el('button', {class:'btn', onclick:function(){ location.hash='#/activities'; }}, '返回活动列表'),
+  ]);
+  view.appendChild(toolbar);
+
+  var card = el('div', {class:'card'});
+  card.appendChild(el('h2', {}, '嘉宾资源'));
+  view.appendChild(card);
+
+  var kw = '', st = '', stage = '';
+  var kwInput = el('input', {type:'text', class:'input', placeholder:'搜索：姓名 / 机构 / 专业 / 主题', style:'max-width:260px', autocomplete:'off'});
+  var stSel = el('select', {class:'input'}, [
+    el('option', {value:''}, '全部状态'),
+    el('option', {value:'active'}, '可用'),
+    el('option', {value:'inactive'}, '停用'),
+  ]);
+  var stageSel = el('select', {class:'input'}, (function(){
+    var arr = [el('option', {value:''}, '全部阶段')];
+    SP_STAGE.forEach(function(s){ arr.push(el('option', {value:s.v}, s.label)); });
+    return arr;
+  })());
+  var listDiv = el('div');
+  card.appendChild(el('div', {style:'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px'}, [kwInput, stSel, stageSel]));
+  card.appendChild(listDiv);
+
+  var timer = null;
+  function reload(){
+    listDiv.innerHTML = '';
+    listDiv.appendChild(el('div', {class:'loading'}, '加载中…'));
+    callFn('activity_speakers', {action:'list', keyword:kw, status:st, stage:stage}).then(function(r){
+      listDiv.innerHTML = '';
+      if(r.error){ listDiv.appendChild(el('div', {class:'empty'}, '加载失败：' + esc(r.error))); return; }
+      var rows = r.rows || [];
+      if(!rows.length){
+        listDiv.appendChild(el('div', {class:'empty'}, (kw || st || stage) ? '没有符合条件的嘉宾。' : '暂无嘉宾。点击"新增嘉宾"建立你的嘉宾资源池。'));
+        return;
+      }
+      rows.forEach(function(s){ listDiv.appendChild(speakerCard(s)); });
+    }).catch(function(){
+      listDiv.innerHTML = '';
+      listDiv.appendChild(el('div', {class:'empty'}, '加载失败，请稍后重试。'));
+    });
+  }
+  kwInput.addEventListener('input', function(){ kw = kwInput.value.trim(); if(timer) clearTimeout(timer); timer = setTimeout(reload, 300); });
+  stSel.addEventListener('change', function(){ st = stSel.value; reload(); });
+  stageSel.addEventListener('change', function(){ stage = stageSel.value; reload(); });
+  reload();
+}
+
+function speakerCard(s){
+  var si = spStageInfo(s.relationship_stage);
+  var c = el('div', {class:'card', style:'margin-bottom:8px;padding:12px'});
+  c.appendChild(el('div', {style:'display:flex;justify-content:space-between;align-items:center'}, [
+    el('div', {}, [
+      el('strong', {}, esc(s.name || '')),
+      s.organization ? el('span', {style:'margin-left:8px;font-size:13px;color:var(--muted)'}, esc(s.organization) + (s.position ? ' · ' + esc(s.position) : '')) : null,
+      el('span', {style:'font-size:11px;color:#fff;background:'+si.color+';padding:1px 6px;border-radius:8px;margin-left:8px'}, si.label),
+      s.status === 'inactive' ? el('span', {style:'font-size:11px;color:#6b7280;border:1px solid #ddd;padding:0 4px;border-radius:4px;margin-left:6px'}, '已停用') : null,
+    ]),
+    el('div', {}, [
+      el('a', {class:'btn-sm', style:'margin-right:6px', onclick:function(){ openSpeakerForm(s); }}, '编辑'),
+      el('a', {class:'btn-sm btn-danger', onclick:async function(){
+        if(!confirm('删除嘉宾「' + (s.name || '') + '」？（软删除，不影响其已参加的活动记录）')) return;
+        var r = await callFn('activity_speakers', {action:'remove', id:s.id});
+        if(r.error){ toast('删除失败'); return; }
+        toast('已删除');
+        showSpeakers();
+      }}, '删除'),
+    ]),
+  ]));
+  var infos = [];
+  if(s.expertise) infos.push('专业：' + s.expertise);
+  if(s.topic_summary) infos.push('主题：' + s.topic_summary);
+  if(s.cooperation_count) infos.push('合作 ' + s.cooperation_count + ' 次');
+  if(s.last_contact_date) infos.push('最近联系 ' + String(s.last_contact_date).slice(0,10));
+  if(s.next_contact_date) infos.push('下次联系 ' + String(s.next_contact_date).slice(0,10));
+  if(infos.length) c.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:6px 0 0'}, esc(infos.join(' ｜ '))));
+  if(s.preferred_format) c.appendChild(el('p', {style:'font-size:12px;color:var(--muted);margin:4px 0 0'}, '偏好形式：' + esc(s.preferred_format)));
+  if(s.phone || s.wechat) c.appendChild(el('p', {style:'font-size:12px;color:var(--muted);margin:4px 0 0'}, [s.phone ? '电话 ' + s.phone : '', s.wechat ? '微信 ' + s.wechat : ''].filter(Boolean).join(' ｜ ')));
+  return c;
+}
+
+// 新增/编辑嘉宾（cooperation_count 及关联 ID 传文本，由云函数 parseInt 校验；空串不提交）
+function openSpeakerForm(s){
+  var FIELDS = [
+    {name:'name', label:'姓名', type:'text', req:true},
+    {name:'phone', label:'电话', type:'text'},
+    {name:'wechat', label:'微信', type:'text'},
+    {name:'organization', label:'机构', type:'text'},
+    {name:'position', label:'职务', type:'text'},
+    {name:'relationship_stage', label:'关系阶段', type:'select', options:SP_STAGE.map(function(x){ return {v:x.v, label:x.label}; })},
+    {name:'status', label:'状态', type:'select', options:[{v:'active', label:'可用'}, {v:'inactive', label:'停用'}]},
+    {name:'expertise', label:'专业领域', type:'text'},
+    {name:'topic_summary', label:'可分享主题', type:'textarea'},
+    {name:'preferred_format', label:'偏好形式（如线上/线下/专题分享）', type:'text'},
+    {name:'source', label:'来源', type:'text'},
+    {name:'last_contact_date', label:'最近联系日期', type:'date'},
+    {name:'last_contact_note', label:'最近联系备注', type:'textarea'},
+    {name:'next_contact_date', label:'下次联系日期', type:'date'},
+    {name:'cooperation_count', label:'合作次数', type:'text'},
+    {name:'customer_id', label:'关联客户ID（可选）', type:'text'},
+    {name:'recruit_candidate_id', label:'关联增员ID（可选）', type:'text'},
+    {name:'notes', label:'备注', type:'textarea'},
+  ];
+  modal(s ? '编辑嘉宾：' + s.name : '新增嘉宾', FIELDS, s || {}, async function(data){
+    ['cooperation_count','customer_id','recruit_candidate_id'].forEach(function(k){
+      if(data[k] === '' || data[k] == null) delete data[k];
+    });
+    var r = s
+      ? await callFn('activity_speakers', {action:'update', id:s.id, data:data})
+      : await callFn('activity_speakers', {action:'create', data:data});
+    if(r.error) throw new Error(r.error);
+    toast(s ? '已保存' : '已创建嘉宾');
+    showSpeakers();
+  }, {wide:true});
+}
+
+// ===== AI 推荐嘉宾（v1.7.3）：AI 只推荐，用户点「加入活动」才调 activities.addParticipant 写入 =====
+async function runSpeakerRecommend(activityId, btn){
+  var box = document.getElementById('activity-prepare-box');
+  if(!box) return;
+  if(btn){ btn.disabled = true; btn.textContent = 'AI 匹配中…（约几秒）'; }
+  box.innerHTML = '';
+  box.appendChild(el('div', {class:'loading'}, 'AI 正在从嘉宾资源池匹配合适人选…'));
+  try {
+    var r = await callFn('ai_activity', {action:'recommendSpeakers', activity_id:activityId});
+    if(r.error) throw new Error(r.error);
+    box.innerHTML = '';
+    var recs = r.recommendations || [];
+    var card = el('div', {class:'card', style:'margin-bottom:12px;border:1px solid #ddd6fe;background:#faf5ff'});
+    card.appendChild(el('div', {style:'font-weight:600;color:#7c3aed;margin-bottom:6px'}, '✨ AI 嘉宾推荐'));
+    if(r.note) card.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:0 0 8px'}, esc(r.note)));
+    if(!recs.length){
+      if(!r.note) card.appendChild(el('div', {class:'empty'}, '嘉宾池暂无合适人选。可先完善嘉宾档案（机构/专业/主题越全，推荐越准）。'));
+    } else {
+      recs.forEach(function(rec){
+        var rc = el('div', {style:'border:1px solid #e9d5ff;border-radius:8px;padding:10px;margin-bottom:8px;background:#fff'});
+        rc.appendChild(el('div', {style:'display:flex;justify-content:space-between;align-items:center'}, [
+          el('div', {}, [
+            el('strong', {}, esc(rec.speaker_name || ('#' + rec.speaker_id))),
+            el('span', {style:'font-size:12px;color:#7c3aed;margin-left:8px'}, '匹配度 ' + rec.score),
+          ]),
+          el('button', {class:'btn', onclick:function(){ addRecommendedSpeaker(activityId, rec, this); }}, '加入活动'),
+        ]));
+        rc.appendChild(el('p', {style:'font-size:13px;margin:6px 0 0'}, esc(rec.reason || '')));
+        rc.appendChild(el('p', {style:'font-size:13px;margin:4px 0 0'}, [el('span', {style:'color:#7c3aed'}, '建议主题：'), esc(rec.suggested_topic || '信息不足')]));
+        rc.appendChild(el('p', {style:'font-size:13px;margin:4px 0 0'}, [el('span', {style:'color:#7c3aed'}, '联系建议：'), esc(rec.contact_suggestion || '信息不足')]));
+        card.appendChild(rc);
+      });
+    }
+    box.appendChild(card);
+  } catch(e){
+    box.innerHTML = '';
+    box.appendChild(el('div', {class:'empty'}, 'AI 暂时无法生成推荐，请稍后重试。'));
+  }
+  if(btn){ btn.disabled = false; btn.textContent = '✨ AI 推荐嘉宾'; }
+}
+
+// 用户确认后把推荐嘉宾加入活动（唯一写路径；AI 永远只推荐）
+async function addRecommendedSpeaker(activityId, rec, btn){
+  if(!confirm('把「' + (rec.speaker_name || ('嘉宾#' + rec.speaker_id)) + '」加入本场活动（角色：嘉宾）？')) return;
+  if(btn){ btn.disabled = true; btn.textContent = '加入中…'; }
+  var r = await callFn('activities', {action:'addParticipant', data:{
+    activity_id: activityId,
+    person_type: 'speaker',
+    person_id: rec.speaker_id,
+    person_name: rec.speaker_name,
+    participant_role: 'speaker',
+  }});
+  if(r.error){
+    toast('加入失败：' + r.error);
+    if(btn){ btn.disabled = false; btn.textContent = '加入活动'; }
+    return;
+  }
+  toast('已加入活动');
+  showActivityDetail(activityId);
 }
 
 

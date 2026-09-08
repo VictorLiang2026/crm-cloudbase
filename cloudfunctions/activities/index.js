@@ -29,11 +29,11 @@ var ACT_STATUS_ENUM = ['idea', 'preparing', 'confirmed', 'in_progress', 'ended',
 var PARTICIPANT_ROLE_ENUM = ['attendee', 'speaker', 'organizer', 'partner', 'guest'];
 var FOLLOWUP_STATUS_ENUM = ['none', 'pending', 'done', 'not_needed'];
 
-// 人员表映射：customers 主键 Id、姓名 customer_name；recruit_candidates 主键 id、姓名 name
+// 人员表映射：customers 主键 Id、姓名 customer_name；recruit_candidates/activity_speakers 主键 id、姓名 name
 function personTable(pt) {
-  return pt === 'recruit'
-    ? { table: 'recruit_candidates', idCol: 'id', nameCol: 'name' }
-    : { table: 'customers', idCol: 'Id', nameCol: 'customer_name' };
+  if (pt === 'recruit') return { table: 'recruit_candidates', idCol: 'id', nameCol: 'name' };
+  if (pt === 'speaker') return { table: 'activity_speakers', idCol: 'id', nameCol: 'name' };
+  return { table: 'customers', idCol: 'Id', nameCol: 'customer_name' };
 }
 
 exports.main = async (event, context) => {
@@ -82,9 +82,9 @@ async function get(event) {
   return { activity: a.data, participants: parts };
 }
 
-// 老记录 person_name 为空但已关联 person_id 时，批量从客户/增员表回填姓名
+// 老记录 person_name 为空但已关联 person_id 时，批量从客户/增员/嘉宾表回填姓名
 async function enrichParticipants(parts) {
-  const needByType = { customer: [], recruit: [] };
+  const needByType = { customer: [], recruit: [], speaker: [] };
   parts.forEach(function (it) {
     if (it.person_id && !it.person_name && needByType[it.person_type]) {
       needByType[it.person_type].push(it.person_id);
@@ -233,14 +233,25 @@ async function searchPerson(event) {
   const kw = String(event.keyword || '').trim();
   if (kw.length < 1) return { rows: [] };
   const cfg = personTable(pt);
+  // 各类型的附加展示列：客户=职业+电话；增员=职业；嘉宾=机构+职务+电话
+  const EXTRA = {
+    customer: 'occupation, phone',
+    recruit: 'occupation',
+    speaker: 'organization, position, phone',
+  };
   // 转义 postgrest 保留字符
   const safeKw = kw.replace(/[%,_()\\]/g, function (c) { return '\\' + c; });
   let q = rdb.from(cfg.table)
-    .select(cfg.idCol + ', ' + cfg.nameCol + (pt === 'customer' ? ', occupation, phone' : ', occupation'))
+    .select(cfg.idCol + ', ' + cfg.nameCol + ', ' + EXTRA[pt])
     .is('deleted_at', null);
-  // 姓名模糊；客户额外支持电话匹配（仅当关键词含数字时才加电话条件，避免 ilike '%%' 匹配全部）
+  // 姓名模糊；客户/嘉宾额外支持电话匹配（仅当关键词含数字时才加电话条件，避免 ilike '%%' 匹配全部）
   let orCond = cfg.nameCol + '.ilike.%' + safeKw + '%';
   if (pt === 'customer') {
+    const digits = kw.replace(/[^0-9]/g, '');
+    if (digits) orCond += ',phone.ilike.%' + digits + '%';
+  } else if (pt === 'speaker') {
+    // 嘉宾：姓名/机构/专业/主题任一命中
+    orCond += ',organization.ilike.%' + safeKw + '%,expertise.ilike.%' + safeKw + '%,topic_summary.ilike.%' + safeKw + '%';
     const digits = kw.replace(/[^0-9]/g, '');
     if (digits) orCond += ',phone.ilike.%' + digits + '%';
   }
@@ -250,7 +261,7 @@ async function searchPerson(event) {
     return {
       id: row[cfg.idCol],
       name: row[cfg.nameCol],
-      occupation: row.occupation || '',
+      occupation: row.occupation || row.organization || '',
       phone: row.phone || '',
     };
   });

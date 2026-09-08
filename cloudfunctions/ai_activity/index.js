@@ -1,10 +1,12 @@
 /**
  * ai_activity — AI 活动分析（事件云函数，超时 60s，rdb() 版）
- * 入参 event: { action:'analyze'|'prepare'|'decompose', activity_id }
+ * 入参 event: { action:'analyze'|'prepare'|'decompose'|'recommendSpeakers', activity_id }
  *   analyze:   活动后参与者跟进分析（v1.3）
  *   prepare:   AI 筹备助手（v1.7.2）：综合评估 → summary/current_stage/risks/priorities/suggested_tasks
  *   decompose: AI 筹备任务拆解（v1.7.2）：聚焦把筹备工作拆解为建议任务，输出结构同 prepare
- *   prepare/decompose 只返回建议，绝不写 activity_tasks；用户在前端确认后由前端调 activity_tasks.create
+ *   recommendSpeakers: AI 推荐嘉宾（v1.7.3）：从嘉宾资源池为活动推荐合适嘉宾
+ *                      → recommendations:[{speaker_id, score, reason, suggested_topic, contact_suggestion}]
+ *   prepare/decompose/recommendSpeakers 只返回建议，绝不写库；用户确认后由前端调 activity_tasks/activities 写入
  * 出参: { analysis, raw }
  *   analysis: {
  *     top3: [{ person_type, person_id, name, reason, suggested_action, suggested_message, suggested_date, opportunity_type? }],
@@ -25,6 +27,7 @@ exports.main = async (event, context) => {
     var action = (event && event.action) || 'analyze';
     if (action === 'prepare') return await prepare(event, false);
     if (action === 'decompose') return await prepare(event, true);
+    if (action === 'recommendSpeakers') return await recommendSpeakers(event);
     if (action !== 'analyze') return { error: 'unknown action: ' + action };
 
     var activityId = parseInt(event && event.activity_id, 10);
@@ -206,6 +209,7 @@ async function loadActivityContext(activityId) {
 
   var customerIds = parts.filter(function(p){ return p.person_type === 'customer' && p.person_id; }).map(function(p){ return p.person_id; });
   var recruitIds = parts.filter(function(p){ return p.person_type === 'recruit' && p.person_id; }).map(function(p){ return p.person_id; });
+  var speakerIds = parts.filter(function(p){ return p.person_type === 'speaker' && p.person_id; }).map(function(p){ return p.person_id; });
   var nameMap = {};
   if (customerIds.length) {
     var cs = assertOk(await rdb.from('customers').select('Id, customer_name, customer_stage, sales_priority, occupation')
@@ -217,6 +221,11 @@ async function loadActivityContext(activityId) {
       .in('id', recruitIds).is('deleted_at', null)).data || [];
     rs.forEach(function(rc){ nameMap['recruit:' + rc.id] = rc; });
   }
+  if (speakerIds.length) {
+    var sps = assertOk(await rdb.from('activity_speakers').select('id, name, organization, position, expertise, topic_summary, relationship_stage, cooperation_count')
+      .in('id', speakerIds).is('deleted_at', null)).data || [];
+    sps.forEach(function(s){ nameMap['speaker:' + s.id] = s; });
+  }
 
   var participants = parts.map(function(p) {
     var info = p.person_id ? nameMap[p.person_type + ':' + p.person_id] : null;
@@ -226,9 +235,10 @@ async function loadActivityContext(activityId) {
       linked: !!p.person_id,
       status: p.status,
       participant_role: p.participant_role || 'attendee',
-      stage: info ? (info.customer_stage || info.stage || '') : '',
+      stage: info ? (info.customer_stage || info.stage || info.relationship_stage || '') : '',
       priority: info ? (info.sales_priority || info.priority || '') : '',
-      occupation: info ? (info.occupation || '') : '',
+      occupation: info ? (info.occupation || info.organization || '') : '',
+      expertise: info ? (info.expertise || '') : '',
     };
   });
 
@@ -237,6 +247,84 @@ async function loadActivityContext(activityId) {
   });
 
   return { activity: activity, participants: participants, tasks: taskItems };
+}
+
+// ============ AI 推荐嘉宾（v1.7.3）============
+// 从嘉宾资源池（active）为指定活动推荐嘉宾。只读：绝不创建/修改嘉宾，也绝不把嘉宾加入活动；
+// 用户在前端点「加入活动」后才由前端调 activities.addParticipant。
+async function recommendSpeakers(event) {
+  var activityId = parseInt(event && event.activity_id, 10);
+  if (!activityId) return { error: 'activity_id required' };
+
+  var ctx = await loadActivityContext(activityId);
+  if (ctx.error) return ctx;
+  var activity = ctx.activity;
+
+  // 嘉宾池：仅 active 且未删除；排除已是本场参与者（speaker 类型已关联）的人
+  var pool = assertOk(await rdb.from('activity_speakers').select()
+    .eq('status', 'active').is('deleted_at', null)
+    .order('updated_at', { ascending: false }).limit(50)).data || [];
+  var parts = assertOk(await rdb.from('activity_participants').select('person_type, person_id')
+    .eq('activity_id', activityId).is('deleted_at', null)).data || [];
+  var existingIds = {};
+  parts.forEach(function(p){ if (p.person_type === 'speaker' && p.person_id) existingIds[p.person_id] = true; });
+  var candidates = pool.filter(function(s){ return !existingIds[s.id]; });
+  if (!candidates.length) {
+    return { recommendations: [], note: '嘉宾池中没有可推荐的新嘉宾（池子为空或可用嘉宾均已在本场参与者中）' };
+  }
+
+  var poolDesc = candidates.map(function(s, i) {
+    return (i + 1) + '. #' + s.id + ' ' + s.name
+      + '｜机构：' + (s.organization || '未知')
+      + '｜职务：' + (s.position || '未知')
+      + '｜专业：' + (s.expertise || '未知')
+      + '｜代表主题：' + (s.topic_summary || '未知')
+      + '｜关系阶段：' + (s.relationship_stage || 'new')
+      + '｜历史合作：' + (s.cooperation_count || 0) + '次'
+      + '｜偏好形式：' + (s.preferred_format || '未知')
+      + '｜最近联系：' + (s.last_contact_date || '未记录');
+  }).join('\n');
+
+  var sys = [
+    '你是保险业务员的活动嘉宾推荐助手。基于活动信息和嘉宾资源池，推荐最合适的嘉宾（最多5位，按匹配度从高到低）。',
+    '【活动信息】名称：' + activity.name + '；日期：' + (activity.activity_date || '未定') + '；类型：' + (activity.activity_type || '未知') + '；地点：' + (activity.location || '未知') + '；目标：' + (Array.isArray(activity.goal_types) && activity.goal_types.length ? activity.goal_types.join('、') : '未设') + '；说明：' + (activity.description || '无'),
+    '【已有参与者】' + (ctx.participants.length ? ctx.participants.map(function(p){ return p.name + '(' + p.person_type + ')'; }).join('、') : '暂无'),
+    '【嘉宾资源池】\n' + poolDesc,
+    '只能从资源池中推荐（speaker_id 必须是池中真实存在的 #编号），严禁编造不存在的人。若池中无人匹配，recommendations 返回空数组，并在 note 说明原因。',
+    '【只输出 JSON】结构：{recommendations:[{speaker_id, score, reason, suggested_topic, contact_suggestion}], note}',
+    'score 为 0-100 整数匹配度；reason ≤40字（为何适合本场）；suggested_topic ≤30字（建议分享主题，需贴合其专业）；contact_suggestion ≤40字（联系邀约要点，最近未联系的建议先重建联系）',
+  ].join('\n');
+
+  var gen = await generateText([
+    { role: 'system', content: sys },
+    { role: 'user', content: '请推荐嘉宾。' },
+  ], { timeout: 55000 });
+
+  var parsed = extractJson(gen.text) || {};
+  var byId = {};
+  candidates.forEach(function(s){ byId[s.id] = s; });
+  var recommendations = (Array.isArray(parsed.recommendations) ? parsed.recommendations : [])
+    .map(function(r) {
+      var sid = parseInt(r && r.speaker_id, 10);
+      if (!sid || !byId[sid]) return null; // AI 编造的 ID 直接丢弃
+      var score = parseInt(r.score, 10);
+      if (isNaN(score)) score = 0;
+      if (score < 0) score = 0;
+      if (score > 100) score = 100;
+      return {
+        speaker_id: sid,
+        speaker_name: byId[sid].name,
+        score: score,
+        reason: clip(r.reason, 40) || '信息不足',
+        suggested_topic: clip(r.suggested_topic, 30) || '信息不足',
+        contact_suggestion: clip(r.contact_suggestion, 40) || '信息不足',
+      };
+    })
+    .filter(Boolean)
+    .sort(function(a, b){ return b.score - a.score; })
+    .slice(0, 5);
+
+  return { recommendations: recommendations, note: clip(parsed.note, 60) || '' };
 }
 
 // 规范化 AI 返回的建议任务：枚举白名单归一化 + due_date 格式校验，非法值不透传
