@@ -4353,6 +4353,14 @@ async function showActivityDetail(id){
       card.appendChild(reviewCard);
     }
 
+    // AI 活动复盘按钮（v1.7.5）：仅 ended/reviewed 显示；AI 只建议，确认后才落库
+    if(act.status === 'ended' || act.status === 'reviewed') {
+      card.appendChild(el('div', {style:'margin-bottom:12px'}, [
+        el('button', {class:'btn btn-ai', onclick:function(){ runActivityPostReview(id, this); }}, '✨ AI 活动复盘'),
+      ]));
+      card.appendChild(el('div', {id:'activity-postreview-box'}));
+    }
+
     // 活动主题区块（v1.7.4）：选择主题 / AI 推荐主题；采用后走 activities.applyTopics 计数
     var topicsBox = el('div', {id:'activity-topics-box'});
     card.appendChild(topicsBox);
@@ -5565,6 +5573,321 @@ async function adoptRecommendedTopic(activityId, rec, btn){
   if(r.error){ toast('采用失败：' + r.error); if(btn){ btn.disabled = false; btn.textContent = '采用'; } return; }
   toast('已采用主题');
   showActivityDetail(activityId);
+}
+
+
+// ==================== AI 活动复盘（v1.7.5 Activity Post Review） ====================
+// 6 维度建议：客户经营 / 组织发展（增员）/ 嘉宾经营 / 主题复用 / 业务机会 / 下一场活动
+// AI 只建议；采纳后由前端调 followups/ai_recommendations/opportunities/recruit_followups/activity_speakers/activities
+function prPriorityInfo(v){
+  if(v === 'high') return {label:'高', color:'#dc2626'};
+  if(v === 'low') return {label:'低', color:'#6b7280'};
+  return {label:'中', color:'#d97706'};
+}
+
+async function runActivityPostReview(activityId, btn){
+  var box = document.getElementById('activity-postreview-box');
+  if(!box) return;
+  if(btn){ btn.disabled = true; btn.textContent = 'AI 复盘分析中…（约几秒）'; }
+  box.innerHTML = '';
+  box.appendChild(el('div', {class:'loading'}, 'AI 正在从 6 个维度发现经营机会…'));
+  try {
+    var r = await callFn('ai_activity', {action:'postReview', activity_id:activityId});
+    if(r.error) throw new Error(r.error);
+    renderActivityPostReview(activityId, r);
+  } catch(e){
+    box.innerHTML = '';
+    box.appendChild(el('div', {class:'empty'}, 'AI 暂时无法生成复盘建议：' + esc(e.message)));
+  }
+  if(btn){ btn.disabled = false; btn.textContent = '✨ AI 活动复盘'; }
+}
+
+function renderActivityPostReview(activityId, result){
+  var box = document.getElementById('activity-postreview-box');
+  if(!box) return;
+  box.innerHTML = '';
+  var card = el('div', {class:'card', style:'margin-bottom:12px;border:1px solid #ddd6fe;background:#faf5ff;padding:14px'});
+  card.appendChild(el('div', {style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'}, [
+    el('div', {style:'font-weight:700;color:#7c3aed'}, '✨ AI 活动复盘'),
+    el('a', {class:'btn-sm', onclick:function(){ box.innerHTML=''; }}, '收起'),
+  ]));
+  card.appendChild(el('p', {style:'font-size:13px;margin:0 0 10px;padding:8px;background:#fff;border-radius:6px;border-left:3px solid #7c3aed'}, '复盘摘要：' + esc(result.summary || '信息不足')));
+
+  // 1. 客户经营
+  appendPrSection(card, '客户经营', '#2563eb', result.customer_actions, function(sug, row){
+    return buildPrRow(sug, sug.person_name || ('#' + sug.person_id), sug.priority, [
+      el('span', {style:'font-size:11px;color:#fff;background:#2563eb;padding:1px 6px;border-radius:8px;margin-right:6px'}, '客户'),
+      el('strong', {}, esc(sug.person_name || ('#' + sug.person_id))),
+    ], [
+      sug.reason && el('p', {style:'font-size:13px;margin:4px 0'}, '理由：' + esc(sug.reason)),
+      sug.suggested_action && el('p', {style:'font-size:13px;margin:2px 0'}, '推荐动作：' + esc(sug.suggested_action)),
+      sug.suggested_message && el('div', {style:'font-size:13px;margin:2px 0;padding:6px;background:#eff6ff;border-radius:4px'}, '话术：' + esc(sug.suggested_message)),
+      el('p', {style:'font-size:12px;color:var(--muted);margin:2px 0'}, '跟进日期：' + (sug.suggested_followup_date || '未定') + '；目标：' + (sug.suggested_followup_goal || '未定')),
+    ], [
+      el('a', {class:'btn-sm btn-green', style:'margin-right:6px', onclick:function(){ adoptPostReviewCustomer(activityId, sug, row); }}, '采纳'),
+      el('a', {class:'btn-sm', onclick:function(){ row.remove(); }}, '忽略'),
+    ]);
+  });
+
+  // 2. 组织发展（增员）
+  appendPrSection(card, '组织发展（增员）', '#d97706', result.recruit_actions, function(sug, row){
+    return buildPrRow(sug, sug.person_name || ('#' + sug.person_id), sug.priority, [
+      el('span', {style:'font-size:11px;color:#fff;background:#d97706;padding:1px 6px;border-radius:8px;margin-right:6px'}, '增员'),
+      el('strong', {}, esc(sug.person_name || ('#' + sug.person_id))),
+    ], [
+      sug.reason && el('p', {style:'font-size:13px;margin:4px 0'}, '理由：' + esc(sug.reason)),
+      sug.suggested_action && el('p', {style:'font-size:13px;margin:2px 0'}, '推荐动作：' + esc(sug.suggested_action)),
+      el('p', {style:'font-size:12px;color:var(--muted);margin:2px 0'}, '跟进日期：' + (sug.suggested_followup_date || '未定')),
+    ], [
+      el('a', {class:'btn-sm btn-green', style:'margin-right:6px', onclick:function(){ adoptPostReviewRecruit(activityId, sug, row); }}, '采纳'),
+      el('a', {class:'btn-sm', onclick:function(){ row.remove(); }}, '忽略'),
+    ]);
+  });
+
+  // 3. 嘉宾经营
+  appendPrSection(card, '嘉宾经营', '#7c3aed', result.speaker_actions, function(sug, row){
+    return buildPrRow(sug, sug.speaker_name || ('#' + sug.speaker_id), sug.priority, [
+      el('span', {style:'font-size:11px;color:#fff;background:#7c3aed;padding:1px 6px;border-radius:8px;margin-right:6px'}, '嘉宾'),
+      el('strong', {}, esc(sug.speaker_name || ('#' + sug.speaker_id))),
+    ], [
+      sug.reason && el('p', {style:'font-size:13px;margin:4px 0'}, '理由：' + esc(sug.reason)),
+      sug.suggested_action && el('p', {style:'font-size:13px;margin:2px 0'}, '推荐动作：' + esc(sug.suggested_action)),
+      el('p', {style:'font-size:12px;color:var(--muted);margin:2px 0'}, '联系日期：' + (sug.suggested_contact_date || '未定')),
+    ], [
+      el('a', {class:'btn-sm btn-green', style:'margin-right:6px', onclick:function(){ adoptPostReviewSpeaker(activityId, sug, row); }}, '采纳'),
+      el('a', {class:'btn-sm', onclick:function(){ row.remove(); }}, '忽略'),
+    ]);
+  });
+
+  // 4. 主题复用
+  appendPrSection(card, '主题复用', '#4338ca', result.topic_actions, function(sug, row){
+    return buildPrRow(sug, sug.topic_name || ('#' + sug.topic_id), null, [
+      el('span', {style:'font-size:11px;color:#fff;background:#4338ca;padding:1px 6px;border-radius:8px;margin-right:6px'}, '主题'),
+      el('strong', {}, esc(sug.topic_name || ('#' + sug.topic_id))),
+    ], [
+      sug.recommendation && el('p', {style:'font-size:13px;margin:4px 0'}, '建议：' + esc(sug.recommendation)),
+      sug.reason && el('p', {style:'font-size:13px;margin:2px 0'}, '理由：' + esc(sug.reason)),
+    ], [
+      el('a', {class:'btn-sm btn-green', style:'margin-right:6px', onclick:function(){ adoptPostReviewTopic(activityId, sug, row); }}, '采纳'),
+      el('a', {class:'btn-sm', onclick:function(){ row.remove(); }}, '忽略'),
+    ]);
+  });
+
+  // 5. 业务机会
+  appendPrSection(card, '业务机会', '#059669', result.opportunity_suggestions, function(sug, row){
+    return buildPrRow(sug, sug.customer_name || ('#' + sug.customer_id), null, [
+      el('span', {style:'font-size:11px;color:#fff;background:#059669;padding:1px 6px;border-radius:8px;margin-right:6px'}, '机会'),
+      el('strong', {}, esc(sug.customer_name || ('#' + sug.customer_id))),
+      el('span', {style:'font-size:11px;color:#fff;background:#4338ca;padding:1px 6px;border-radius:8px;margin-left:6px'}, esc(sug.opportunity_type)),
+    ], [
+      sug.reason && el('p', {style:'font-size:13px;margin:4px 0'}, '理由：' + esc(sug.reason)),
+    ], [
+      el('a', {class:'btn-sm btn-green', style:'margin-right:6px', onclick:function(){ adoptPostReviewOpportunity(activityId, sug, row); }}, '采纳'),
+      el('a', {class:'btn-sm', onclick:function(){ row.remove(); }}, '忽略'),
+    ]);
+  });
+
+  // 6. 下一场活动
+  appendPrSection(card, '下一场活动', '#db2777', result.next_activity_suggestions, function(sug, row){
+    return buildPrRow(sug, sug.topic || '未命名', null, [
+      el('span', {style:'font-size:11px;color:#fff;background:#db2777;padding:1px 6px;border-radius:8px;margin-right:6px'}, '下场'),
+      el('strong', {}, esc(sug.topic || '未命名')),
+    ], [
+      el('p', {style:'font-size:13px;margin:4px 0'}, '类型：' + esc(sug.activity_type) + '；目标人群：' + esc(sug.target_audience)),
+      sug.reason && el('p', {style:'font-size:13px;margin:2px 0'}, '理由：' + esc(sug.reason)),
+    ], [
+      el('a', {class:'btn-sm btn-green', style:'margin-right:6px', onclick:function(){ adoptPostReviewNextActivity(activityId, sug, row); }}, '采纳'),
+      el('a', {class:'btn-sm', onclick:function(){ row.remove(); }}, '忽略'),
+    ]);
+  });
+
+  // 确认完成复盘按钮
+  card.appendChild(el('div', {style:'margin-top:12px;padding-top:10px;border-top:1px solid #e9d5ff'}, [
+    el('button', {class:'btn btn-primary', onclick:function(){ confirmActivityPostReview(activityId, result.summary || '', this); }}, '确认完成复盘'),
+    el('span', {style:'font-size:12px;color:var(--muted);margin-left:8px'}, '确认后将活动状态置为"已复盘"并保存复盘摘要'),
+  ]));
+  box.appendChild(card);
+}
+
+// 复盘建议区块通用构造器
+function appendPrSection(parent, title, color, arr, rowBuilder){
+  var count = Array.isArray(arr) ? arr.length : 0;
+  parent.appendChild(el('p', {style:'font-weight:600;margin:10px 0 4px;color:'+color}, title + ' (' + count + ')'));
+  if(!count){
+    parent.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:0 0 6px'}, '暂无建议'));
+    return;
+  }
+  arr.forEach(function(sug){
+    var row = el('div', {class:'card', style:'margin-bottom:6px;padding:10px;background:#fff;border-left:3px solid '+color});
+    var built = rowBuilder(sug, row);
+    // built is {header:[...], body:[...], actions:[...]}
+    row.appendChild(el('div', {style:'display:flex;justify-content:space-between;align-items:flex-start;gap:6px'}, [
+      el('div', {}, built.header),
+      el('div', {style:'flex-shrink:0'}, built.actions),
+    ]));
+    built.body.forEach(function(node){ if(node) row.appendChild(node); });
+    parent.appendChild(row);
+  });
+}
+
+// 单条建议行构造器（返回 {header, body, actions}）
+function buildPrRow(sug, fallbackName, priority, headerNodes, bodyNodes, actionNodes){
+  // priority badge
+  if(priority){
+    var pi = prPriorityInfo(priority);
+    headerNodes.push(el('span', {style:'font-size:11px;color:#fff;background:'+pi.color+';padding:1px 6px;border-radius:8px;margin-left:6px'}, pi.label + '优先'));
+  }
+  return { header: headerNodes, body: bodyNodes, actions: actionNodes };
+}
+
+// 采纳客户建议 → 写入 NBA（ai_recommendations） + 跟进记录（followups，关联 activity_id + recommendation_id）
+async function adoptPostReviewCustomer(activityId, sug, row){
+  if(sug.__adopted) return;
+  var btns = row.querySelectorAll('.btn-sm');
+  btns.forEach(function(b){ b.disabled = true; });
+  try {
+    // 1. NBA（ai_recommendations.create，用户确认后建议落库，不做 AI 生成）
+    var nbaR = await callFn('ai_recommendations', {action:'create', data:{
+      customer_id: sug.person_id,
+      recommendation_date: dayStr(new Date()),
+      suggested_followup_date: sug.suggested_followup_date || null,
+      suggested_message: sug.suggested_message || '',
+      suggested_strategy: sug.reason || '',
+      suggested_followup_goal: sug.suggested_followup_goal || null,
+    }});
+    if(nbaR && nbaR.error) throw new Error('NBA 写入失败：' + nbaR.error);
+    var nbaId = nbaR && nbaR.id ? nbaR.id : null;
+    // 2. 跟进记录（followups.create，关联 activity_id + recommendation_id）
+    var fqR = await callFn('followups', {action:'create', data:{
+      customer_id: sug.person_id,
+      followup_notes: '[AI复盘] ' + (sug.suggested_action || sug.reason || ''),
+      followup_date: dayStr(new Date()),
+      next_followup_date: sug.suggested_followup_date || null,
+      next_followup_goal: sug.suggested_followup_goal || null,
+      activity_id: activityId,
+      recommendation_id: nbaId,
+    }});
+    if(fqR && fqR.error) throw new Error('跟进记录写入失败：' + fqR.error);
+    sug.__adopted = true;
+    toast('已写入 NBA + 跟进记录');
+    if(row && row.remove) row.remove();
+  } catch(e){
+    btns.forEach(function(b){ b.disabled = false; });
+    toast('采纳失败：' + e.message);
+  }
+}
+
+// 采纳增员建议 → 写入增员跟进（recruit_followups.create）
+async function adoptPostReviewRecruit(activityId, sug, row){
+  if(sug.__adopted) return;
+  var btns = row.querySelectorAll('.btn-sm');
+  btns.forEach(function(b){ b.disabled = true; });
+  try {
+    var r = await callFn('recruit_followups', {action:'create', data:{
+      candidate_id: sug.person_id,
+      followup_notes: '[AI复盘] ' + (sug.suggested_action || sug.reason || ''),
+      followup_date: dayStr(new Date()),
+      next_followup_date: sug.suggested_followup_date || null,
+    }});
+    if(r && r.error) throw new Error(r.error);
+    sug.__adopted = true;
+    toast('已写入增员跟进记录');
+    if(row && row.remove) row.remove();
+  } catch(e){
+    btns.forEach(function(b){ b.disabled = false; });
+    toast('采纳失败：' + e.message);
+  }
+}
+
+// 采纳嘉宾建议 → 更新嘉宾 next_contact_date
+async function adoptPostReviewSpeaker(activityId, sug, row){
+  if(sug.__adopted) return;
+  var btns = row.querySelectorAll('.btn-sm');
+  btns.forEach(function(b){ b.disabled = true; });
+  try {
+    var data = { next_contact_date: sug.suggested_contact_date || null };
+    var r = await callFn('activity_speakers', {action:'update', id:sug.speaker_id, data:data});
+    if(r && r.error) throw new Error(r.error);
+    sug.__adopted = true;
+    toast('已更新嘉宾下次联系日期');
+    if(row && row.remove) row.remove();
+  } catch(e){
+    btns.forEach(function(b){ b.disabled = false; });
+    toast('采纳失败：' + e.message);
+  }
+}
+
+// 采纳主题建议 → 仅视觉确认（无 DB 写入；用户创建下场活动时自行选用）
+async function adoptPostReviewTopic(activityId, sug, row){
+  if(sug.__adopted) return;
+  sug.__adopted = true;
+  toast('已记入复用清单（创建下场活动时选用该主题）');
+  if(row && row.remove) row.remove();
+}
+
+// 采纳业务机会建议 → 写入机会（opportunities.create）
+async function adoptPostReviewOpportunity(activityId, sug, row){
+  if(sug.__adopted) return;
+  var btns = row.querySelectorAll('.btn-sm');
+  btns.forEach(function(b){ b.disabled = true; });
+  try {
+    var r = await callFn('opportunities', {action:'create', data:{
+      customer_id: sug.customer_id,
+      opportunity_type: sug.opportunity_type,
+      discovered_at: dayStr(new Date()),
+      ai_summary: sug.reason || '',
+    }});
+    if(r && r.error) throw new Error(r.error);
+    sug.__adopted = true;
+    toast('已创建经营机会');
+    if(row && row.remove) row.remove();
+  } catch(e){
+    btns.forEach(function(b){ b.disabled = false; });
+    toast('采纳失败：' + e.message);
+  }
+}
+
+// 采纳下一场活动建议 → 创建新活动（status='idea'）
+async function adoptPostReviewNextActivity(activityId, sug, row){
+  if(sug.__adopted) return;
+  if(!confirm('创建下一场活动「' + (sug.topic || '新活动') + '」（状态：想法）？')) return;
+  var btns = row.querySelectorAll('.btn-sm');
+  btns.forEach(function(b){ b.disabled = true; });
+  try {
+    var r = await callFn('activities', {action:'create', data:{
+      name: sug.topic || '新活动（AI建议）',
+      activity_type: sug.activity_type || null,
+      status: 'idea',
+    }});
+    if(r && r.error) throw new Error(r.error);
+    sug.__adopted = true;
+    toast('已创建活动 #' + (r.id || '') + '（状态：想法）');
+    if(row && row.remove) row.remove();
+  } catch(e){
+    btns.forEach(function(b){ b.disabled = false; });
+    toast('采纳失败：' + e.message);
+  }
+}
+
+// 确认完成复盘 → 保存 review_summary + 置 status=reviewed（updateStatus 自动写 reviewed_at）
+async function confirmActivityPostReview(activityId, summary, btn){
+  if(!confirm('确认完成本场活动复盘？将保存复盘摘要并置活动状态为"已复盘"。')) return;
+  if(btn){ btn.disabled = true; btn.textContent = '提交中…'; }
+  try {
+    // 1. 保存 review_summary
+    if(summary){
+      var ur = await callFn('activities', {action:'update', id:activityId, data:{review_summary: summary}});
+      if(ur && ur.error) throw new Error('摘要保存失败：' + ur.error);
+    }
+    // 2. 置 status=reviewed（updateStatus 自动写 reviewed_at=now()）
+    var sr = await callFn('activities', {action:'updateStatus', id:activityId, status:'reviewed'});
+    if(sr && sr.error) throw new Error('状态更新失败：' + sr.error);
+    toast('复盘已完成，活动状态已置为"已复盘"');
+    showActivityDetail(activityId);
+  } catch(e){
+    if(btn){ btn.disabled = false; btn.textContent = '确认完成复盘'; }
+    toast('复盘确认失败：' + e.message);
+  }
 }
 
 

@@ -1,12 +1,17 @@
 /**
  * ai_activity — AI 活动分析（事件云函数，超时 60s，rdb() 版）
- * 入参 event: { action:'analyze'|'prepare'|'decompose'|'recommendSpeakers', activity_id }
+ * 入参 event: { action:'analyze'|'prepare'|'decompose'|'recommendSpeakers'|'recommendTopics'|'postReview', activity_id }
  *   analyze:   活动后参与者跟进分析（v1.3）
  *   prepare:   AI 筹备助手（v1.7.2）：综合评估 → summary/current_stage/risks/priorities/suggested_tasks
  *   decompose: AI 筹备任务拆解（v1.7.2）：聚焦把筹备工作拆解为建议任务，输出结构同 prepare
  *   recommendSpeakers: AI 推荐嘉宾（v1.7.3）：从嘉宾资源池为活动推荐合适嘉宾
  *                      → recommendations:[{speaker_id, score, reason, suggested_topic, contact_suggestion}]
- *   prepare/decompose/recommendSpeakers 只返回建议，绝不写库；用户确认后由前端调 activity_tasks/activities 写入
+ *   recommendTopics: AI 推荐主题（v1.7.4）：从主题资源池推荐 → recommendations:[{topic_id, score, reason, suggested_speaker}]
+ *   postReview: AI 活动复盘（v1.7.5）：活动 ended/reviewed 后从 6 维度发现经营机会
+ *               → {summary, customer_actions[], recruit_actions[], speaker_actions[], topic_actions[],
+ *                  opportunity_suggestions[], next_activity_suggestions[]}
+ *   prepare/decompose/recommendSpeakers/recommendTopics/postReview 只返回建议，绝不写库；
+ *   用户确认后由前端调 ai_recommend/followups/opportunities/recruit_followups/activity_speakers/activities 写入
  * 出参: { analysis, raw }
  *   analysis: {
  *     top3: [{ person_type, person_id, name, reason, suggested_action, suggested_message, suggested_date, opportunity_type? }],
@@ -29,6 +34,7 @@ exports.main = async (event, context) => {
     if (action === 'decompose') return await prepare(event, true);
     if (action === 'recommendSpeakers') return await recommendSpeakers(event);
     if (action === 'recommendTopics') return await recommendTopics(event);
+    if (action === 'postReview') return await postReview(event);
     if (action !== 'analyze') return { error: 'unknown action: ' + action };
 
     var activityId = parseInt(event && event.activity_id, 10);
@@ -503,6 +509,338 @@ async function prepare(event, decomposeOnly) {
       suggested_tasks: normSuggestedTasks(parsed.suggested_tasks),
     };
     return { plan: plan, raw: gen.text };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+// ============ AI 活动复盘（v1.7.5）============
+// 活动 ended/reviewed 后从 6 维度发现经营机会。只读不写：绝不写库；用户确认后由前端调
+// followups/ai_recommendations/opportunities/recruit_followups/activity_speakers/activities 写入
+var POSTREVIEW_PRIORITY_ENUM = ['high', 'medium', 'low'];
+var POSTREVIEW_GOAL_ENUM = ['建立联系', '约见面', '邀请活动', '获取家庭信息', '推进签单', '推进招募', '推进转介绍'];
+var POSTREVIEW_OPP_TYPE_ENUM = ['医疗保障', '重疾保障', '养老规划', '教育规划', '财富规划', '家庭保障', '转介绍'];
+
+function validDate(v) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : '';
+}
+
+async function postReview(event) {
+  try {
+    var activityId = parseInt(event && event.activity_id, 10);
+    if (!activityId) return { error: 'activity_id required' };
+
+    // 1. 活动
+    var a = assertOk(await rdb.from('activities').select()
+      .eq('id', activityId).is('deleted_at', null).maybeSingle());
+    if (!a.data) return { error: 'activity not found' };
+    var activity = a.data;
+
+    // 2. 参与者
+    var pRes = assertOk(await rdb.from('activity_participants').select()
+      .eq('activity_id', activityId).is('deleted_at', null)
+      .order('created_at', { ascending: true })).data || [];
+
+    var customerIds = [], recruitIds = [], speakerIds = [];
+    pRes.forEach(function (p) {
+      if (!p.person_id) return;
+      if (p.person_type === 'customer') customerIds.push(p.person_id);
+      else if (p.person_type === 'recruit') recruitIds.push(p.person_id);
+      else if (p.person_type === 'speaker') speakerIds.push(p.person_id);
+    });
+
+    var customerMap = {}, recruitMap = {}, speakerMap = {};
+    if (customerIds.length) {
+      var cs = assertOk(await rdb.from('customers')
+        .select('Id, customer_name, customer_stage, sales_priority, occupation, additional_info')
+        .in('Id', customerIds).is('deleted_at', null)).data || [];
+      cs.forEach(function (c) { customerMap[c.Id] = c; });
+    }
+    if (recruitIds.length) {
+      var rs = assertOk(await rdb.from('recruit_candidates')
+        .select('id, name, stage, priority, occupation')
+        .in('id', recruitIds).is('deleted_at', null)).data || [];
+      rs.forEach(function (r) { recruitMap[r.id] = r; });
+    }
+    if (speakerIds.length) {
+      var sps = assertOk(await rdb.from('activity_speakers')
+        .select('id, name, organization, position, expertise, topic_summary, relationship_stage, cooperation_count, last_contact_date, next_contact_date')
+        .in('id', speakerIds).is('deleted_at', null)).data || [];
+      sps.forEach(function (s) { speakerMap[s.id] = s; });
+    }
+
+    // 3. 客户最近跟进（每客户最多3条，避免上下文膨胀）
+    var followupMap = {};
+    if (customerIds.length) {
+      var fqs = assertOk(await rdb.from('followups')
+        .select('customer_id, followup_date, next_followup_date, next_followup_goal')
+        .in('customer_id', customerIds).is('deleted_at', null)
+        .order('followup_date', { ascending: false }).limit(60)).data || [];
+      fqs.forEach(function (f) {
+        if (!followupMap[f.customer_id]) followupMap[f.customer_id] = [];
+        if (followupMap[f.customer_id].length < 3) followupMap[f.customer_id].push(f);
+      });
+    }
+
+    // 4. 客户进行中机会（避免重复建议）
+    var oppMap = {};
+    if (customerIds.length) {
+      var opps = assertOk(await rdb.from('opportunities')
+        .select('customer_id, opportunity_type, status')
+        .in('customer_id', customerIds).is('deleted_at', null)).data || [];
+      opps.forEach(function (o) {
+        if (o.status === '关闭') return;
+        if (!oppMap[o.customer_id]) oppMap[o.customer_id] = [];
+        oppMap[o.customer_id].push(o.opportunity_type);
+      });
+    }
+
+    // 5. 客户未完成 NBA（避免重复建议）
+    var nbaCountMap = {};
+    if (customerIds.length) {
+      var nbas = assertOk(await rdb.from('ai_recommendations')
+        .select('id, customer_id, nba')
+        .in('customer_id', customerIds)).data || [];
+      nbas.forEach(function (n) {
+        var nba = n.nba && typeof n.nba === 'object' ? n.nba : {};
+        if (nba.status === 'completed' || nba.status === 'skipped') return;
+        nbaCountMap[n.customer_id] = (nbaCountMap[n.customer_id] || 0) + 1;
+      });
+    }
+
+    // 6. 主题池（active）
+    var topicPool = assertOk(await rdb.from('activity_topics').select()
+      .eq('status', 'active').is('deleted_at', null)
+      .order('use_count', { ascending: false }).limit(30)).data || [];
+    var topicMap = {};
+    topicPool.forEach(function (t) { topicMap[t.id] = t; });
+
+    // 7. 嘉宾池（active，含本场已参与嘉宾；speaker_actions 可涉及池中任何人）
+    var speakerPool = assertOk(await rdb.from('activity_speakers').select()
+      .eq('status', 'active').is('deleted_at', null)
+      .order('updated_at', { ascending: false }).limit(30)).data || [];
+    var speakerPoolMap = {};
+    speakerPool.forEach(function (s) { speakerPoolMap[s.id] = s; });
+
+    // 8. 近期活动
+    var recentActs = assertOk(await rdb.from('activities')
+      .select('id, name, activity_type, activity_date, goal_types, topic_ids')
+      .is('deleted_at', null).neq('id', activityId)
+      .order('activity_date', { ascending: false }).limit(5)).data || [];
+
+    var today = todayStr();
+    var STATUS_LABEL = { idea: '想法', preparing: '筹备中', confirmed: '已确定', in_progress: '进行中', ended: '已结束', reviewed: '已复盘' };
+    var ROLE_LABEL = { attendee: '参与者', speaker: '嘉宾', organizer: '组织者', partner: '合作方', guest: '宾客' };
+
+    // 参与者描述
+    var partLines = pRes.map(function (p, i) {
+      var linked = !!p.person_id;
+      var info = linked
+        ? (p.person_type === 'customer' ? customerMap[p.person_id]
+          : (p.person_type === 'recruit' ? recruitMap[p.person_id] : speakerMap[p.person_id]))
+        : null;
+      var name = info ? (info.customer_name || info.name) : (p.person_name || '未知（待关联）');
+      var role = p.participant_role ? (ROLE_LABEL[p.participant_role] || p.participant_role) : '参与者';
+      var line = (i + 1) + '. [' + p.person_type + (linked ? ' #' + p.person_id : ' #0 待关联') + '] ' + name
+        + '；角色：' + role + '；参加状态：' + p.status;
+      if (linked && p.person_type === 'customer') {
+        if (info.customer_stage) line += '；阶段：' + info.customer_stage;
+        if (info.sales_priority) line += '；优先级：' + info.sales_priority;
+        if (info.occupation) line += '；职业：' + info.occupation;
+        if (info.additional_info) line += '；附加信息：' + clip(info.additional_info, 80);
+        var fqs = followupMap[p.person_id];
+        if (fqs && fqs.length) {
+          line += '；最近跟进：' + fqs.map(function (f) {
+            return (f.followup_date || '').slice(0, 10) + (f.next_followup_date ? '→下次' + f.next_followup_date : '');
+          }).join('、');
+        }
+        var opps = oppMap[p.person_id];
+        if (opps && opps.length) line += '；进行中机会：' + opps.join('、');
+        if (nbaCountMap[p.person_id]) line += '；未完成NBA：' + nbaCountMap[p.person_id] + '条';
+      } else if (linked && p.person_type === 'recruit') {
+        if (info.stage) line += '；阶段：' + info.stage;
+        if (info.priority) line += '；优先级：' + info.priority;
+        if (info.occupation) line += '；职业：' + info.occupation;
+      } else if (linked && p.person_type === 'speaker') {
+        if (info.organization) line += '；机构：' + info.organization;
+        if (info.position) line += '；职务：' + info.position;
+        if (info.expertise) line += '；专业：' + info.expertise;
+        if (info.topic_summary) line += '；代表主题：' + clip(info.topic_summary, 40);
+        if (info.relationship_stage) line += '；关系：' + info.relationship_stage;
+        if (info.cooperation_count) line += '；合作' + info.cooperation_count + '次';
+      }
+      if (p.relationship_note) line += '；关系备注：' + clip(p.relationship_note, 60);
+      return line;
+    }).join('\n');
+
+    var topicPoolDesc = topicPool.map(function (t, i) {
+      return (i + 1) + '. #' + t.id + ' ' + t.topic_name
+        + '｜分类：' + (t.category || '未分类')
+        + '｜目标人群：' + (t.target_audience || '未知')
+        + '｜使用：' + (t.use_count || 0) + '次'
+        + (t.last_used_date ? '｜最近' + String(t.last_used_date).slice(0, 10) : '');
+    }).join('\n');
+
+    var speakerPoolDesc = speakerPool.map(function (s, i) {
+      return (i + 1) + '. #' + s.id + ' ' + s.name
+        + '｜机构：' + (s.organization || '未知')
+        + '｜专业：' + (s.expertise || '未知')
+        + '｜主题：' + (s.topic_summary || '未知')
+        + '｜关系：' + (s.relationship_stage || 'new')
+        + '｜合作：' + (s.cooperation_count || 0) + '次'
+        + (s.last_contact_date ? '｜最近联系' + String(s.last_contact_date).slice(0, 10) : '')
+        + (s.next_contact_date ? '｜下次联系' + String(s.next_contact_date).slice(0, 10) : '');
+    }).join('\n');
+
+    var recentDesc = recentActs.map(function (ra) {
+      return (ra.activity_date ? String(ra.activity_date).slice(0, 10) : '日期未定')
+        + '《' + ra.name + '》(' + (ra.activity_type || '') + ')';
+    }).join('、') || '暂无';
+
+    var actStatus = activity.status ? (STATUS_LABEL[activity.status] || activity.status) : '未设';
+    var goalTypes = Array.isArray(activity.goal_types) && activity.goal_types.length
+      ? activity.goal_types.join('/') : '未设';
+    var actGoals = '';
+    if (activity.target_participants != null) actGoals += '；计划' + activity.target_participants + '人';
+    if (activity.actual_participants != null) actGoals += '；实际' + activity.actual_participants + '人';
+    var reviewInfo = '';
+    if (activity.review_summary) reviewInfo += '；已有复盘：' + clip(activity.review_summary, 60);
+    if (activity.review_score) reviewInfo += '；评分：' + activity.review_score + '/5';
+    var topicInfo = '';
+    if (Array.isArray(activity.topic_ids) && activity.topic_ids.length) {
+      var tnames = activity.topic_ids.map(function (tid) {
+        var t = topicMap[tid];
+        return t ? t.topic_name : ('#' + tid);
+      });
+      topicInfo = '；本场主题：' + tnames.join('、');
+    }
+
+    var sys = [
+      '你是保险业务员的活动复盘助手。一场活动刚结束（或已复盘），你需要从 6 个维度发现经营机会，帮业务员把活动成果转化为后续行动。',
+      '【活动信息】名称：' + activity.name + '；日期：' + (activity.activity_date || '未定') + '；类型：' + (activity.activity_type || '未分类') + '；地点：' + (activity.location || '未定') + '；状态：' + actStatus + '；目标：' + goalTypes + actGoals + topicInfo + reviewInfo + '。',
+      '【今天】' + today + '。',
+      '【参与者】共 ' + pRes.length + ' 人：\n' + (partLines || '暂无'),
+      '【主题资源池（可复用）】\n' + (topicPoolDesc || '暂无'),
+      '【嘉宾资源池（可继续经营）】\n' + (speakerPoolDesc || '暂无'),
+      '【近期活动】' + recentDesc,
+      '【6 个维度的建议】',
+      '1. customer_actions：客户经营机会——参与者中已关联客户（person_id 必须是上面 customer 类型的真实 #编号），值得跟进的人。每条 {person_id, priority, reason, suggested_action, suggested_message, suggested_followup_date, suggested_followup_goal}。',
+      '2. recruit_actions：增员经营机会——参与者中已关联增员（person_id 必须是上面 recruit 类型的真实 #编号）。每条 {person_id, priority, reason, suggested_action, suggested_followup_date}。',
+      '3. speaker_actions：嘉宾经营机会——从嘉宾资源池中挑值得继续经营的人（speaker_id 必须是池中真实 #编号，可以是本场已参与的，也可以是池中其他人）。每条 {speaker_id, priority, reason, suggested_action, suggested_contact_date}。',
+      '4. topic_actions：主题复用机会——从主题资源池中挑本场验证过/可复用的主题（topic_id 必须是池中真实 #编号）。每条 {topic_id, recommendation, reason}。',
+      '5. opportunity_suggestions：业务机会——参与者中已关联客户（customer_id 必须真实）的经营机会。每条 {customer_id, opportunity_type, reason}。opportunity_type 只能取：医疗保障/重疾保障/养老规划/教育规划/财富规划/家庭保障/转介绍。不得与该客户已有进行中机会重复。',
+      '6. next_activity_suggestions：下一场活动建议——基于本场效果给出。每条 {activity_type, topic, target_audience, reason}。topic 可以是池中主题名或新主题描述。',
+      '【纪律】',
+      '1. 严禁编造：所有 person_id/speaker_id/topic_id/customer_id 必须是上下文中出现的真实编号；待关联人员（#0）不能出现在建议中。',
+      '2. priority 只能取：high/medium/low。',
+      '3. suggested_followup_goal 只能取：建立联系/约见面/邀请活动/获取家庭信息/推进签单/推进招募/推进转介绍；无法确定给空字符串。',
+      '4. 日期格式 YYYY-MM-DD；无法确定给空字符串。',
+      '5. 信息不足时对应数组返回空，不要硬凑。',
+      '6. summary ≤120字，聚焦本场复盘（亮点/不足/可改进）。',
+      '7. 每条建议的 reason/suggested_action ≤60字；suggested_message ≤150字；recommendation ≤40字。',
+      '8. 只输出 JSON，不要解释、不要 markdown。结构：{summary, customer_actions[], recruit_actions[], speaker_actions[], topic_actions[], opportunity_suggestions[], next_activity_suggestions[]}',
+    ].join('\n');
+
+    var gen = await generateText([
+      { role: 'system', content: sys },
+      { role: 'user', content: '请生成这场活动的 AI 复盘建议。' },
+    ], { timeout: 60000 });
+
+    var parsed = extractJson(gen.text) || {};
+
+    // 清洗输出：ID 必须真实存在（防编造），枚举白名单校验，日期格式校验
+    var customer_actions = (Array.isArray(parsed.customer_actions) ? parsed.customer_actions : [])
+      .map(function (c) {
+        var pid = parseInt(c && c.person_id, 10);
+        if (!pid || !customerMap[pid]) return null;
+        return {
+          person_id: pid,
+          person_name: customerMap[pid].customer_name || '',
+          priority: POSTREVIEW_PRIORITY_ENUM.indexOf(c.priority) >= 0 ? c.priority : 'medium',
+          reason: clip(c.reason, 60) || '信息不足',
+          suggested_action: clip(c.suggested_action, 60) || '信息不足',
+          suggested_message: clip(c.suggested_message, 150) || '信息不足',
+          suggested_followup_date: validDate(c.suggested_followup_date),
+          suggested_followup_goal: POSTREVIEW_GOAL_ENUM.indexOf(c.suggested_followup_goal) >= 0 ? c.suggested_followup_goal : '',
+        };
+      }).filter(Boolean).slice(0, 10);
+
+    var recruit_actions = (Array.isArray(parsed.recruit_actions) ? parsed.recruit_actions : [])
+      .map(function (c) {
+        var pid = parseInt(c && c.person_id, 10);
+        if (!pid || !recruitMap[pid]) return null;
+        return {
+          person_id: pid,
+          person_name: recruitMap[pid].name || '',
+          priority: POSTREVIEW_PRIORITY_ENUM.indexOf(c.priority) >= 0 ? c.priority : 'medium',
+          reason: clip(c.reason, 60) || '信息不足',
+          suggested_action: clip(c.suggested_action, 60) || '信息不足',
+          suggested_followup_date: validDate(c.suggested_followup_date),
+        };
+      }).filter(Boolean).slice(0, 10);
+
+    var speaker_actions = (Array.isArray(parsed.speaker_actions) ? parsed.speaker_actions : [])
+      .map(function (c) {
+        var sid = parseInt(c && c.speaker_id, 10);
+        if (!sid || !speakerPoolMap[sid]) return null;
+        return {
+          speaker_id: sid,
+          speaker_name: speakerPoolMap[sid].name || '',
+          priority: POSTREVIEW_PRIORITY_ENUM.indexOf(c.priority) >= 0 ? c.priority : 'medium',
+          reason: clip(c.reason, 60) || '信息不足',
+          suggested_action: clip(c.suggested_action, 60) || '信息不足',
+          suggested_contact_date: validDate(c.suggested_contact_date),
+        };
+      }).filter(Boolean).slice(0, 10);
+
+    var topic_actions = (Array.isArray(parsed.topic_actions) ? parsed.topic_actions : [])
+      .map(function (c) {
+        var tid = parseInt(c && c.topic_id, 10);
+        if (!tid || !topicMap[tid]) return null;
+        return {
+          topic_id: tid,
+          topic_name: topicMap[tid].topic_name || '',
+          recommendation: clip(c.recommendation, 40) || '信息不足',
+          reason: clip(c.reason, 60) || '信息不足',
+        };
+      }).filter(Boolean).slice(0, 10);
+
+    var opportunity_suggestions = (Array.isArray(parsed.opportunity_suggestions) ? parsed.opportunity_suggestions : [])
+      .map(function (c) {
+        var cid = parseInt(c && c.customer_id, 10);
+        if (!cid || !customerMap[cid]) return null;
+        var ot = POSTREVIEW_OPP_TYPE_ENUM.indexOf(c.opportunity_type) >= 0 ? c.opportunity_type : '';
+        if (!ot) return null;
+        var existing = oppMap[cid] || [];
+        if (existing.indexOf(ot) >= 0) return null; // 去重：已有同类型进行中机会
+        return {
+          customer_id: cid,
+          customer_name: customerMap[cid].customer_name || '',
+          opportunity_type: ot,
+          reason: clip(c.reason, 60) || '信息不足',
+        };
+      }).filter(Boolean).slice(0, 10);
+
+    var next_activity_suggestions = (Array.isArray(parsed.next_activity_suggestions) ? parsed.next_activity_suggestions : [])
+      .map(function (c) {
+        return {
+          activity_type: clip(c && c.activity_type, 20) || '未分类',
+          topic: clip(c && c.topic, 40) || '信息不足',
+          target_audience: clip(c && c.target_audience, 30) || '信息不足',
+          reason: clip(c && c.reason, 60) || '信息不足',
+        };
+      }).filter(function (s) { return s.reason && s.reason !== '信息不足'; }).slice(0, 5);
+
+    return {
+      summary: clip(parsed.summary, 120) || '信息不足',
+      customer_actions: customer_actions,
+      recruit_actions: recruit_actions,
+      speaker_actions: speaker_actions,
+      topic_actions: topic_actions,
+      opportunity_suggestions: opportunity_suggestions,
+      next_activity_suggestions: next_activity_suggestions,
+      raw: gen.text,
+    };
   } catch (e) {
     return { error: e.message };
   }
