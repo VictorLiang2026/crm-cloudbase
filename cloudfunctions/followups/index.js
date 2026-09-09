@@ -14,6 +14,8 @@ const { rdb, nowIso, normFields, assertOk } = require('./db');
 const FIELDS = [
   'customer_id', 'customer_name', 'followup_notes', 'followup_date',
   'next_followup_date', 'next_followup_goal', 'recommendation_id', 'activity_id',
+  // v1.8 Sprint1 加列（Sprint4 快速记录写入）
+  'interaction_summary', 'next_action', 'next_action_date',
 ];
 
 exports.main = async (event, context) => {

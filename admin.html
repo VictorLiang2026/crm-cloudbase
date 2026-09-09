@@ -381,6 +381,7 @@
     <button type="button" class="mod-btn" data-mod="customer" onclick="location.hash='#/'">客户经营</button>
     <button type="button" class="mod-btn mod-recruit" data-mod="recruit" onclick="location.hash='#/recruit'">组织发展</button>
     <button type="button" class="mod-btn mod-activity" data-mod="activity" onclick="location.hash='#/activities'">活动经营</button>
+    <button type="button" id="qc-entry-btn" class="mod-btn" style="background:#059669;color:#fff;font-weight:700;margin-left:8px;">✍️ 快速记录</button>
   </nav>
 </header>
 <main id="view"><div class="loading">初始化中…</div></main>
@@ -7431,6 +7432,198 @@ window.addEventListener('hashchange', route);
   if(await initSdk()) route();
   else { /* initSdk 已渲染提示 */ }
 })();
+
+// ==================== AI Quick Capture（v1.8 Sprint4：快速记录） ====================
+function qcTag(txt, bg){ return el('span', {style:'display:inline-block;font-size:11px;font-weight:700;color:#fff;background:'+bg+';border-radius:4px;padding:1px 6px;margin-right:6px;vertical-align:middle;'}, txt); }
+
+function openQuickCapture(){
+  var overlay = el('div', {class:'modal-overlay'});
+  var box = el('div', {class:'modal', style:'max-width:680px;max-height:90vh;overflow-y:auto;'});
+  box.appendChild(el('h3', {}, '✍️ 快速记录'));
+  box.appendChild(el('div', {style:'font-size:12px;color:#6b7280;margin-bottom:8px;'}, '像说话一样记下这次交流，AI 帮你拆成人、事、需求、机会和下一步；你确认后才保存，AI 不会自动改阶段或建机会。'));
+
+  var ta = el('textarea', {placeholder:'例如：今天和王总吃饭，他说孩子明年准备去美国读大学，对教育金比较感兴趣，但是最近比较忙，让我十月份以后再联系。', style:'width:100%;min-height:96px;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;resize:vertical;box-sizing:border-box;'});
+  box.appendChild(ta);
+
+  var resultBox = el('div', {});
+  box.appendChild(resultBox);
+
+  var footer = el('div', {class:'modal-footer'}, []);
+  footer.appendChild(el('button', {class:'btn', onclick:function(){ overlay.remove(); }}, '取消'));
+  var aiBtn = el('button', {class:'btn btn-ai'}, 'AI 理解 →');
+  aiBtn.onclick = async function(){
+    var text = ta.value.trim();
+    if(!text){ toast('请先输入要记录的内容','err'); return; }
+    resultBox.innerHTML = '';
+    resultBox.appendChild(el('div', {class:'loading', style:'padding:14px;'}, 'AI 正在理解…（约十几秒）'));
+    aiBtn.disabled = true;
+    try{
+      var r = await callFn('ai_parse', {action:'quick_capture', text:text});
+      resultBox.innerHTML = '';
+      if(r && r.error){ resultBox.appendChild(el('div', {style:'color:#e11d48;padding:10px;'}, 'AI 解析失败：'+r.error)); return; }
+      renderQuickCapture(resultBox, r, text);
+    }catch(e){
+      resultBox.innerHTML = '';
+      resultBox.appendChild(el('div', {style:'color:#e11d48;padding:10px;'}, 'AI 解析失败：'+e.message));
+    }finally{ aiBtn.disabled = false; }
+  };
+  footer.appendChild(aiBtn);
+  box.appendChild(footer);
+
+  overlay.appendChild(box);
+  overlay.addEventListener('click', function(e){ if(e.target===overlay) overlay.remove(); });
+  $('modal-root').appendChild(overlay);
+  setTimeout(function(){ ta.focus(); }, 50);
+}
+
+function renderQuickCapture(container, r, text){
+  var p = r.parsed || {};
+  var match = r.match || {status:'none', candidates:[]};
+  var today = r.today;
+
+  function section(title, tagText, tagColor){
+    var d = el('div', {style:'margin-bottom:10px;'}, []);
+    d.appendChild(el('div', {style:'font-weight:700;margin-bottom:4px;'}, [qcTag(tagText, tagColor), title]));
+    return d;
+  }
+  function bullets(arr){
+    if(!arr || !arr.length) return el('div', {style:'font-size:13px;color:#9ca3af;'}, '（无）');
+    var ul = el('ul', {style:'margin:4px 0;padding-left:20px;font-size:13px;color:#374151;'});
+    arr.forEach(function(x){ if(x) ul.appendChild(el('li', {}, String(x))); });
+    return ul;
+  }
+
+  // —— 人物（事实） ——
+  var personLine = el('div', {style:'background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px;margin-bottom:10px;'}, []);
+  personLine.appendChild(el('div', {style:'font-weight:700;margin-bottom:6px;'}, [qcTag('人物','#059669'), '这次交流的对象']));
+  var personSel = el('select', {style:'width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;'});
+  var newNameWrap = el('div', {style:'margin-top:6px;display:none;'}, []);
+  var newNameInput = el('input', {type:'text', placeholder:'新客户姓名（保存时自动创建客户）', style:'width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;'});
+  newNameWrap.appendChild(newNameInput);
+  function addOpt(v, label, selected){ var o = el('option', {value:v}, label); if(selected) o.selected = true; personSel.appendChild(o); }
+  addOpt('', '— 请选择关联对象 —');
+  if(match.status === 'matched'){
+    var mv = match.person_type + '|' + match.person_id + '|' + (match.cid != null ? match.cid : '') + '|' + match.person_name;
+    addOpt(mv, (match.person_type === 'recruit' ? '增员对象：' : '客户：') + match.person_name + (match.stage ? ('（' + match.stage + '）') : ''), true);
+  }
+  (match.candidates || []).forEach(function(c){
+    addOpt(c.type + '|' + c.id + '|' + (c.cid != null ? c.cid : '') + '|' + c.name, (c.type === 'recruit' ? '增员对象：' : '客户：') + c.name + (c.stage ? ('（' + c.stage + '）') : ''));
+  });
+  addOpt('__new__', '＋ 新建客户…');
+  personSel.addEventListener('change', function(){ newNameWrap.style.display = (personSel.value === '__new__') ? 'block' : 'none'; });
+  personLine.appendChild(personSel);
+  personLine.appendChild(newNameWrap);
+  if(p.person_name){
+    var hint = match.status === 'none' ? '（未在现有名单匹配到，可新建或在上方选择）' : (match.status === 'ambiguous' ? '（有多个相似对象，请在上方选择）' : '（已匹配到现有对象）');
+    personLine.appendChild(el('div', {style:'font-size:12px;color:#6b7280;margin-top:6px;'}, '原话称呼：' + p.person_name + '　' + hint));
+  }
+  container.appendChild(personLine);
+
+  // —— 事实：发生了什么 / 需求兴趣 ——
+  var meta = [];
+  if(p.interaction_type) meta.push('方式：' + p.interaction_type);
+  if(p.interaction_date) meta.push('日期：' + p.interaction_date);
+  if(p.activity) meta.push('活动：' + p.activity);
+  var factSec = section('发生了什么（事实）', '事实', '#2563eb');
+  if(meta.length) factSec.appendChild(el('div', {style:'font-size:12px;color:#6b7280;margin-bottom:4px;'}, meta.join('　')));
+  factSec.appendChild(bullets(p.facts));
+  container.appendChild(factSec);
+  var needSec = section('发现的需求 / 兴趣（事实）', '事实', '#2563eb');
+  needSec.appendChild(bullets((p.needs || []).concat(p.interests || [])));
+  container.appendChild(needSec);
+
+  // —— 判断（不自动写入） ——
+  var inf = [];
+  if(p.customer_stage) inf.push('客户阶段判断：' + p.customer_stage);
+  if(p.opportunity && p.opportunity.has) inf.push('潜在机会：' + (p.opportunity.type || '') + ' — ' + (p.opportunity.note || ''));
+  if(p.recruit_signal && p.recruit_signal.has) inf.push('增员信号：' + (p.recruit_signal.note || ''));
+  if(p.referral_signal && p.referral_signal.has) inf.push('转介绍信号：' + (p.referral_signal.note || ''));
+  var infSec = section('AI 判断（仅供参考，不会自动写入；阶段/机会需到详情页处理）', '判断', '#d97706');
+  infSec.appendChild(bullets(inf));
+  container.appendChild(infSec);
+
+  // —— 建议：下一步（日期可改） ——
+  var recSec = section('下一步（建议，可调整）', '建议', '#7c3aed');
+  var recList = [];
+  if(p.next_action) recList.push('下一步：' + p.next_action);
+  if(p.followup_goal) recList.push('跟进目标：' + p.followup_goal);
+  recSec.appendChild(bullets(recList));
+  var dateRow = el('div', {style:'display:flex;align-items:center;gap:8px;margin-top:6px;font-size:13px;'}, []);
+  dateRow.appendChild(el('span', {}, '建议日期：'));
+  var dateInput = el('input', {type:'date', style:'padding:4px;border:1px solid #d1d5db;border-radius:6px;'});
+  dateInput.value = p.next_action_date || '';
+  dateRow.appendChild(dateInput);
+  dateRow.appendChild(el('span', {style:'color:#9ca3af;font-size:12px;'}, '（可修改，留空=暂不排期）'));
+  recSec.appendChild(dateRow);
+  container.appendChild(recSec);
+
+  // —— 置信度 + 依据 ——
+  var conf = p.confidence || 'medium';
+  var confColor = conf === 'high' ? '#059669' : (conf === 'low' ? '#e11d48' : '#d97706');
+  var confRow = el('div', {style:'font-size:12px;color:#6b7280;border-top:1px dashed #e5e7eb;padding-top:8px;margin-bottom:10px;display:flex;align-items:center;'}, []);
+  confRow.appendChild(el('span', {style:'margin-right:4px;'}, 'AI 置信度：'));
+  confRow.appendChild(qcTag(conf === 'high' ? '高' : (conf === 'low' ? '低' : '中'), confColor));
+  if(conf !== 'high') confRow.appendChild(el('span', {style:'margin-left:8px;color:#9ca3af;'}, '（信息不足时请核对后再保存）'));
+  container.appendChild(confRow);
+  if(p.evidence && p.evidence.length){
+    var evSec = section('判断依据（原文片段）', '依据', '#6b7280');
+    evSec.appendChild(bullets(p.evidence));
+    container.appendChild(evSec);
+  }
+
+  // —— 确认并保存 ——
+  var saveBtn = el('button', {class:'btn btn-primary', style:'width:100%;'}, '✓ 确认并保存');
+  saveBtn.onclick = async function(){
+    var target = personSel.value;
+    var isNew = (target === '__new__');
+    var personType = '', personId = null, cid = null, personName = '';
+    if(isNew){
+      personName = newNameInput.value.trim();
+      if(!personName){ toast('请填写新客户姓名，或选择已有对象', 'err'); return; }
+    }else if(!target){
+      toast('请选择关联对象（或新建客户）', 'err'); return;
+    }else{
+      var parts = target.split('|');
+      personType = parts[0]; personId = parts[1]; cid = parts[2] || null; personName = parts.slice(3).join('|');
+    }
+    saveBtn.disabled = true; saveBtn.textContent = '保存中…';
+    try{
+      var fdate = p.interaction_date || today;
+      var summary = (p.facts || []).join('；');
+      var nextDate = dateInput.value || null;
+      if(isNew){
+        var cr = await callFn('customers', {action:'create', data:{customer_name:personName, source:'快速记录'}});
+        if(cr && cr.error) throw new Error(cr.error);
+        cid = cr.id; personType = 'customer';
+      }
+      if(personType === 'recruit'){
+        var rr2 = await callFn('recruit_followups', {action:'create', data:{
+          candidate_id: parseInt(personId, 10), followup_date: fdate, followup_notes: '【快速记录】' + text,
+          interaction_summary: summary || null, next_action: p.next_action || null, next_action_date: nextDate,
+          next_followup_date: nextDate, next_followup_goal: p.followup_goal || null, contact_method: p.interaction_type || null,
+        }});
+        if(rr2 && rr2.error) throw new Error(rr2.error);
+      }else{
+        var fr = await callFn('followups', {action:'create', data:{
+          customer_id: parseInt(cid, 10), customer_name: personName || undefined, followup_date: fdate, followup_notes: '【快速记录】' + text,
+          interaction_summary: summary || null, next_action: p.next_action || null, next_action_date: nextDate,
+          next_followup_date: nextDate, next_followup_goal: p.followup_goal || null,
+        }});
+        if(fr && fr.error) throw new Error(fr.error);
+      }
+      toast('已保存为跟进记录', 'ok');
+      var ov = saveBtn.closest ? saveBtn.closest('.modal-overlay') : null;
+      if(ov) ov.remove();
+    }catch(e){
+      toast('保存失败：' + e.message, 'err');
+      saveBtn.disabled = false; saveBtn.textContent = '✓ 确认并保存';
+    }
+  };
+  container.appendChild(saveBtn);
+}
+
+var qcEntryBtn = document.getElementById('qc-entry-btn');
+if(qcEntryBtn) qcEntryBtn.addEventListener('click', openQuickCapture);
 
 })();
 </script>

@@ -17,6 +17,8 @@ const FIELDS = [
   'candidate_id', 'contact_method', 'followup_notes', 'followup_date',
   'interest_level', 'concern_feedback',
   'next_followup_date', 'next_followup_goal', 'operator',
+  // v1.8 Sprint1 加列（Sprint4 快速记录写入）
+  'interaction_summary', 'next_action', 'next_action_date',
 ];
 
 exports.main = async (event, context) => {

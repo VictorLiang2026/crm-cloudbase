@@ -1,18 +1,35 @@
 /**
- * ai_parse — AI 文本/照片解析 → 客户资料（事件云函数，超时 120s，rdb() 版）
- * 入参 event: { text?, images?, image_base64?, content_type?, file_name? }
+ * ai_parse — AI 文本/照片解析（事件云函数，超时 120s，rdb() 版）
+ * 入参 event: { action?, text?, images?, image_base64?, content_type?, file_name? }
+ *
+ * action 省略/'parse'（默认，v1.0 起）：文本/照片 → 客户资料
  *   - text: 待解析的自然语言文本（与图片至少提供一个）；可包含附件文件名/文本文件内容等上下文
  *   - images: 可选，多图数组 [{ base64, content_type?, file_name? }]（不含 data: 前缀），多模态识别
  *   - image_base64: 可选，单图 base64（向后兼容旧入参，等价 images:[{base64}]）
- * 出参: { parsed, raw }
- *   - parsed: { customer_name, gender, phone, birthday, occupation, marital_status,
- *               customer_stage, sales_priority, recruitment_priority, referral_priority,
- *               hobbies, source, additional_info, ... }
- *   - raw: 模型原始输出文本
+ *   出参: { parsed, raw }
  *
- * additional_info 只输出 AI 提炼的、与客户经营/营销/转介绍/招募相关的结论性摘要，
- * 不再追加识别原文全文；完整识别原文由前端保存到 ocr_records 表（summary=additional_info 摘要）。
- * 文件本身不由本函数保存，由前端在客户创建成功后按 category（photo/attachment）调 photos.create 保存。
+ * action='quick_capture'（v1.8 Sprint4：AI Quick Capture，纯只读解析，不写任何业务数据）：
+ *   入参: { action:'quick_capture', text }
+ *   读取现有客户/增员名单（仅名字）做人物匹配，把一句自然语言拆解为：
+ *     parsed: {
+ *       person_name, person_type_hint(customer|recruit|unknown),
+ *       interaction_type(见面/吃饭/电话/微信/活动/其他), interaction_date(YYYY-MM-DD|null),
+ *       activity(活动名|null),
+ *       facts[](事实FACT), needs[](事实FACT·明确需求), interests[](事实FACT·兴趣),
+ *       customer_stage(判断INFERENCE 阶段|null),
+ *       opportunity(判断INFERENCE {has,type,note}|null),
+ *       recruit_signal(判断INFERENCE {has,note}|null),
+ *       referral_signal(判断INFERENCE {has,note}|null),
+ *       next_action(建议RECOMMENDATION), next_action_date(建议RECOMMENDATION YYYY-MM-DD|null),
+ *       followup_goal(建议RECOMMENDATION),
+ *       confidence(high|medium|low), evidence[](原文片段)
+ *     }
+ *     match: { status:'matched'|'ambiguous'|'none', person_type, person_id, person_name, cid?, candidates[] }
+ *   分层纪律：facts/needs/interests/interaction_type/interaction_date/activity/person_name=事实；
+ *     customer_stage/opportunity/recruit_signal/referral_signal=判断；next_action/next_action_date/
+ *     followup_goal=建议。严禁虚构需求/购买意愿/成功率/ROI；信息不足
+ *     对应字段置 null/false 并降低 confidence。写入由前端用户点【确认并保存】后调 followups/
+ *     recruit_followups/customers 的 create 完成，本函数不落库、不改阶段、不建机会。
  */
 'use strict';
 
@@ -47,6 +64,9 @@ const SYSTEM_VISION = [
 
 exports.main = async (event, context) => {
   try {
+    const action = (event && event.action) || 'parse';
+    if (action === 'quick_capture') return await quickCapture(event);
+
     const text = ((event && event.text) || '').trim();
     // 组装多图数组：优先 images，兼容旧的单图入参
     let images = (event && Array.isArray(event.images)) ? event.images : [];
@@ -90,3 +110,153 @@ exports.main = async (event, context) => {
     return { error: e.message };
   }
 };
+
+// ==================== v1.8 Sprint4：AI Quick Capture（快速记录） ====================
+
+// 北京时区今天日期 YYYY-MM-DD（北京时间 = UTC+8）
+function qcBjToday() {
+  return new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+function qcNorm(s) { return (s == null ? '' : String(s)).replace(/\s+/g, '').trim(); }
+
+// 人物匹配：AI 给称呼/名字，JS 在现有客户/增员名单里精确→模糊匹配，不依赖 AI 报 id
+function qcResolve(personName, hint, customers, recruits) {
+  const raw = qcNorm(personName);
+  if (!raw) return { status: 'none', candidates: [] };
+  const pools = (hint === 'recruit')
+    ? [['recruit', recruits], ['customer', customers]]
+    : [['customer', customers], ['recruit', recruits]];
+  const toCand = (type, p) => ({ type: type, id: p.id, name: p.name, cid: p.cid, stage: p.stage || null });
+  const matched = (type, p) => ({ status: 'matched', person_type: type, person_id: p.id, person_name: p.name, cid: p.cid, stage: p.stage || null, candidates: [] });
+  // 1) 精确匹配
+  for (const pp of pools) {
+    const type = pp[0], list = pp[1];
+    const ex = list.filter(p => qcNorm(p.name) === raw);
+    if (ex.length === 1) {
+      return matched(type, ex[0]);
+    }
+    if (ex.length > 1) {
+      return { status: 'ambiguous', candidates: ex.slice(0, 8).map(p => toCand(type, p)) };
+    }
+  }
+  // 2) 模糊匹配（互相包含 / 姓氏相同且末字相同，如“王总”→“王寻寻”仅靠王字太宽，故要求末字或全名包含）
+  const fuzzy = list => list.filter(p => {
+    const n = qcNorm(p.name);
+    if (!n) return false;
+    if (n.indexOf(raw) >= 0 || raw.indexOf(n) >= 0) return true;
+    // 称呼类（X总/X姐/X哥/X老师）：取首字姓匹配，且名单内同姓不超过 6 个才算高置信
+    return false;
+  });
+  const out = [];
+  const seen = {};
+  pools.forEach(pp => {
+    fuzzy(pp[1]).forEach(p => {
+      const c = toCand(pp[0], p);
+      const k = c.type + '-' + c.id;
+      if (!seen[k]) { seen[k] = 1; out.push(c); }
+    });
+  });
+  // 姓氏匹配（仅对“X总/X姐/X哥/X经理/X老师”这类称呼），同姓候选 ≤6 时给出
+  if (!out.length && /^[\u4e00-\u9fa5](总|姐|哥|经理|老师|主任|董|处)$/.test(raw)) {
+    const surname = raw.slice(0, 1);
+    pools.forEach(pp => {
+      pp[1].forEach(p => {
+        if (qcNorm(p.name).slice(0, 1) === surname) {
+          const c = toCand(pp[0], p);
+          const k = c.type + '-' + c.id;
+          if (!seen[k]) { seen[k] = 1; out.push(c); }
+        }
+      });
+    });
+  }
+  if (out.length === 1) return matched(out[0].type, out[0]);
+  if (out.length > 1) return { status: 'ambiguous', candidates: out.slice(0, 8) };
+  return { status: 'none', candidates: [] };
+}
+
+function qcSystem(today, custNames, recNames, actNames) {
+  return [
+    '你是保险代理人的 CRM 记录助手。把用户口述的一次客户交流，拆解成结构化记录。今天是 ' + today + '（北京时间）。',
+    '',
+    '【三层纪律 —— 必须严格区分】',
+    '1. 事实 FACT：只有用户原话明确说出的内容才算事实（发生了什么、对方明确表达的需求/兴趣、时间、人物、活动）。不得添加原话没有的信息。',
+    '2. 判断 INFERENCE：客户阶段、机会、增员/转介绍信号，是你的推断；必须基于原话，证据不足就置 null 或 has:false，绝不能编造。',
+    '3. 建议 RECOMMENDATION：下一步行动、建议日期、跟进目标，是你的建议。',
+    '',
+    '【严禁】虚构客户需求、购买意愿、成功率、ROI、联系记录、客户没说过的事实。信息不足时对应字段置 null/false/空数组，并把 confidence 设为 low。',
+    '',
+    '【人物匹配】下面是系统里已有的名单。person_name 请填原话里的称呼（如“王总”）；person_type_hint 填 customer（客户/潜在客户）、recruit（增员对象）或 unknown。',
+    '现有客户：' + (custNames || '（无）'),
+    '现有增员对象：' + (recNames || '（无）'),
+    '近期活动：' + (actNames || '（无）'),
+    '',
+    '【相对日期换算】把“今天/昨天/上周/十月以后”等换算成 YYYY-MM-DD（今天=' + today + '）。“十月以后再联系”这类，next_action_date 给十月第一个合适工作日附近的日期即可，作为建议；无法判断给 null。',
+    '',
+    '只输出一个 JSON 对象，不要解释、不要 markdown：',
+    '{',
+    '  "person_name": "原话中的称呼/姓名，没有则 null",',
+    '  "person_type_hint": "customer|recruit|unknown",',
+    '  "interaction_type": "见面|吃饭|电话|微信|活动|其他|null",',
+    '  "interaction_date": "YYYY-MM-DD|null（这次交流发生的日期）",',
+    '  "activity": "提到的活动名称|null（尽量用上面近期活动里的名字）",',
+    '  "facts": ["客观事实，逐条，只写原话明确有的"],',
+    '  "needs": ["对方明确表达的需求/关心的问题"],',
+    '  "interests": ["对方的兴趣/关注点"],',
+    '  "customer_stage": "新认识|关系维护|需求挖掘|方案沟通|成交推进|转介绍经营|null（你的判断）",',
+    '  "opportunity": {"has": true, "type": "教育金|养老|重疾|医疗|寿险|年金|其他|null", "note": "一句话依据"} ,',
+    '  "recruit_signal": {"has": false, "note": "增员潜质依据或空串"},',
+    '  "referral_signal": {"has": false, "note": "转介绍线索依据或空串"},',
+    '  "next_action": "建议的下一步具体行动（一句话，可执行）",',
+    '  "next_action_date": "YYYY-MM-DD|null（建议行动日期）",',
+    '  "followup_goal": "下次跟进要达成的目标",',
+    '  "confidence": "high|medium|low",',
+    '  "evidence": ["支撑关键判断的原话片段，逐条加引号"]',
+    '}',
+    '注意：opportunity/recruit_signal/referral_signal 即使没有也要返回对象（has:false, note:""），不要省略键。',
+  ].join('\n');
+}
+
+async function quickCapture(event) {
+  const text = ((event && event.text) || '').trim();
+  if (!text) return { error: 'text required' };
+  const today = qcBjToday();
+
+  // 名单（仅取名字，用于人物匹配与活动关联；只读）
+  let customers = [], recruits = [], actNames = '';
+  try {
+    const cr = assertOk(await rdb.from('customers')
+      .select('Id, customer_name').is('deleted_at', null)
+      .order('Id', { ascending: false }).limit(3000));
+    customers = (cr.data || []).map(r => ({ id: r.Id, name: r.customer_name, cid: r.Id })).filter(r => r.name);
+  } catch (e) { /* 名单读取失败不阻塞解析 */ }
+  try {
+    const rr = await rdb.from('v_recruit_candidates').select('candidate_id, customer_id, customer_name, stage').limit(3000);
+    recruits = (rr.data || []).map(r => ({ id: r.candidate_id, name: r.customer_name, cid: r.customer_id, stage: r.stage }))
+      .filter(r => r.name);
+  } catch (e) { /* 视图不可用时增员匹配降级为空 */ }
+  try {
+    const ar = await rdb.from('activities').select('id, name, activity_date')
+      .order('activity_date', { ascending: false }).limit(60);
+    actNames = (ar.data || []).map(a => a.name + '(' + (a.activity_date || '日期未定') + ')').join('、');
+  } catch (e) { /* 活动名单失败不阻塞 */ }
+
+  const messages = [
+    { role: 'system', content: qcSystem(today, customers.map(c => c.name).join('、'), recruits.map(r => r.name).join('、'), actNames) },
+    { role: 'user', content: text },
+  ];
+  let res = await generateText(messages, { timeout: 55000 });
+  let parsed = extractJson(res.text);
+  if (!parsed || !Object.keys(parsed).length) {
+    // 模型偶发空响应/非 JSON，重试一次
+    res = await generateText(messages, { timeout: 55000 });
+    parsed = extractJson(res.text);
+  }
+  if (!parsed || !Object.keys(parsed).length) {
+    return { error: 'AI 暂未返回有效内容，请重试或换个说法', raw: res.text || '' };
+  }
+
+  const match = qcResolve(parsed.person_name, parsed.person_type_hint, customers, recruits);
+
+  return { parsed: parsed, match: match, today: today, raw: res.text };
+}
