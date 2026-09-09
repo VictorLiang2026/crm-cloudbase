@@ -360,6 +360,84 @@
     .nba-row{font-size:12px}
     .nba-label{min-width:84px}
   }
+  /* ==================== v1.8 Sprint7：AI 经营驾驶舱（首页） ==================== */
+  .dash-hero{display:flex;align-items:center;gap:14px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-radius:14px;padding:18px 20px;margin-bottom:14px;cursor:pointer;box-shadow:0 6px 18px rgba(16,185,129,.28);transition:transform .2s,box-shadow .2s}
+  .dash-hero:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(16,185,129,.36)}
+  .dash-hero-main{flex:1;min-width:0}
+  .dash-hero-title{font-size:19px;font-weight:800;letter-spacing:.5px}
+  .dash-hero-sub{font-size:12.5px;opacity:.92;margin-top:4px;line-height:1.5}
+  .dash-hero-arrow{font-size:30px;flex:none;opacity:.95}
+  .dash-card{margin-bottom:14px}
+  .dash-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+  .dash-title{font-size:15px;font-weight:700;color:var(--text)}
+  .dash-head-actions{display:flex;gap:6px}
+  .dash-meta{font-size:12px;color:var(--muted);margin-bottom:8px}
+  .dash-empty{font-size:13px;color:var(--muted);text-align:center;padding:14px 8px;line-height:1.6}
+  /* Today 5 列表 */
+  .t5-list{display:flex;flex-direction:column;gap:10px}
+  .t5-item{display:flex;gap:11px;padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:var(--card);cursor:pointer;transition:box-shadow .2s,border-color .2s}
+  .t5-item:hover{box-shadow:0 4px 12px rgba(0,0,0,.07);border-color:#c7d2fe}
+  .t5-num{flex:none;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;margin-top:1px}
+  .t5-num.tier-must{background:#fee2e2;color:#dc2626}
+  .t5-num.tier-rec{background:#dbeafe;color:#2563eb}
+  .t5-num.tier-opt{background:#f1f5f9;color:#64748b}
+  .t5-body{flex:1;min-width:0}
+  .t5-line1{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:5px}
+  .t5-name{font-size:14.5px;font-weight:700;color:var(--text)}
+  .t5-tag{font-size:11px;padding:1px 7px;border-radius:9px;font-weight:600;white-space:nowrap}
+  .t5-tag.tp-customer{background:var(--pri-light);color:var(--pri)}
+  .t5-tag.tp-recruit{background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff}
+  .t5-tag.tp-activity{background:#fce7f3;color:#be185d}
+  .t5-tier{font-size:11px;padding:1px 8px;border-radius:9px;font-weight:700;white-space:nowrap}
+  .t5-tier.tier-must{background:#dc2626;color:#fff}
+  .t5-tier.tier-rec{background:#2563eb;color:#fff}
+  .t5-tier.tier-opt{background:#94a3b8;color:#fff}
+  .t5-st{font-size:11px;padding:1px 7px;border-radius:9px;font-weight:600;white-space:nowrap}
+  .t5-st.st-overdue{background:#fee2e2;color:#dc2626}
+  .t5-st.st-today{background:#fef3c7;color:#b45309}
+  .t5-st.st-date{background:var(--border-light);color:var(--text-secondary)}
+  .t5-st.st-unsched{background:var(--border-light);color:var(--muted)}
+  .t5-row{font-size:13px;line-height:1.55;color:var(--text-secondary);margin-top:2px;word-break:break-word}
+  .t5-row b{color:var(--muted);font-weight:600;margin-right:5px}
+  .t5-meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--text-secondary);margin-top:5px}
+  .t5-channel{font-weight:700;color:var(--pri)}
+  .t5-script{margin-top:7px;font-size:12.5px;line-height:1.6;color:#1e3a8a;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:7px 10px;word-break:break-word}
+  /* 经营状态趋势（只给方向，不堆数字） */
+  .trend-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .trend-cell{border:1px solid var(--border);border-radius:12px;padding:12px 8px;text-align:center;cursor:pointer;transition:box-shadow .2s,border-color .2s;background:var(--card)}
+  .trend-cell:hover{box-shadow:0 4px 12px rgba(0,0,0,.07);border-color:#c7d2fe}
+  .trend-label{font-size:13px;font-weight:700}
+  .trend-arrow{font-size:26px;font-weight:800;line-height:1.25;margin:2px 0}
+  .trend-arrow.tr-up{color:#10b981}
+  .trend-arrow.tr-flat{color:#94a3b8}
+  .trend-arrow.tr-down{color:#ef4444}
+  .trend-text{font-size:11.5px;color:var(--muted)}
+  /* 经营提醒 */
+  .rem-list{display:flex;flex-direction:column;gap:8px}
+  .rem-item{display:flex;align-items:flex-start;gap:9px;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.55;cursor:pointer;border:1px solid}
+  .rem-item.rem-high{background:#fef2f2;border-color:#fecaca;color:#991b1b}
+  .rem-item.rem-mid{background:#fffbeb;border-color:#fde68a;color:#92400e}
+  .rem-item.rem-low{background:#f8fafc;border-color:#e5e7eb;color:#475569}
+  .rem-icon{flex:none;font-size:15px;line-height:1.3}
+  .rem-text{flex:1;min-width:0;word-break:break-word}
+  .rem-go{flex:none;color:inherit;opacity:.45;font-size:16px;font-weight:700}
+  /* 底部安静入口（旧工作台功能保持可达） */
+  .dash-entry{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:8px 0 24px}
+  .dash-entry a,.dash-entry button{font-family:inherit;font-size:12px;color:var(--muted);background:var(--card);border:1px solid var(--border);border-radius:999px;padding:6px 13px;cursor:pointer;text-decoration:none;line-height:1.4}
+  .dash-entry a:hover,.dash-entry button:hover{color:var(--pri);border-color:#c7d2fe}
+  @media(max-width:768px){
+    .dash-hero{padding:15px 16px;gap:10px}
+    .dash-hero-title{font-size:17px}
+    .dash-hero-sub{font-size:12px}
+    .dash-hero-arrow{font-size:26px}
+    .trend-grid{grid-template-columns:repeat(2,1fr)}
+    .t5-item{padding:10px 11px;gap:9px}
+    .t5-num{width:24px;height:24px;font-size:13px}
+    .t5-name{font-size:14px}
+    .t5-row{font-size:12.5px}
+    .t5-script{font-size:12px}
+    .trend-arrow{font-size:23px}
+  }
   /* AI 沟通记录助手：翠绿按钮 + 建议更新区 */
   .btn-ai{background:#10b981;color:#fff;border-color:#10b981}
   .btn-ai:hover{background:#059669;border-color:#059669;box-shadow:0 2px 8px rgba(16,185,129,.3)}
@@ -1137,7 +1215,7 @@ async function showTodayCoach(){
   var view = $('view');
   view.innerHTML = '';
   view.appendChild(el('div', {class:'toolbar'}, [
-    el('button', {class:'btn', onclick:function(){ location.hash='#/'; }}, '← 客户工作台'),
+    el('button', {class:'btn', onclick:function(){ location.hash='#/'; }}, '← 返回首页'),
   ]));
   var card = el('div', {class:'card'});
   card.appendChild(el('div', {class:'loading'}, '加载中…'));
@@ -1155,119 +1233,210 @@ async function showTodayCoach(){
   }
 }
 
+// ==================== v1.8 Sprint7：首页 = AI 经营驾驶舱 ====================
+// 首页唯一核心：帮助决定"今天做什么"。四段：快速记录 → Today 5 → 经营状态趋势 → 经营提醒。
+// Today 5 与 #/today 页共用 COACH_KEY 当天缓存（当天只调一次 AI）；趋势/提醒走 cockpit 纯规则接口（不调 AI）。
+var DASH_T5_NUMS = ['①','②','③','④','⑤'];
+var DASH_TIER = {
+  must_do:     { label:'Must Do', cls:'tier-must' },
+  recommended: { label:'推荐',    cls:'tier-rec' },
+  optional:    { label:'可选',    cls:'tier-opt' },
+};
+var DASH_CH_ICON = { '微信':'💬', '电话':'📞', '面谈':'🤝', '活动':'🎯' };
+var DASH_TREND_ARROW = { up:'↑', flat:'→', down:'↓' };
+var DASH_TREND_LINK = { customer:'#/customers', opportunity:'#/customers', recruit:'#/recruit', activity:'#/activities' };
+var DASH_REM_CLS = { high:'rem-high', mid:'rem-mid', low:'rem-low' };
+
+function dashT5Go(it){
+  if(it.person_type === 'recruit') location.hash = '#/recruit/' + it.person_id;
+  else if(it.person_type === 'activity') location.hash = '#/activity/' + it.person_id;
+  else location.hash = '#/customer/' + it.person_id;
+}
+function dashT5Status(it){
+  if(it.status === 'overdue') return { t:'逾期' + (it.days_until != null ? ' ' + (-it.days_until) + ' 天' : ''), cls:'st-overdue' };
+  if(it.status === 'today') return { t:'今天到期', cls:'st-today' };
+  if(it.action_date) return { t:String(it.action_date).slice(5).replace('-','/'), cls:'st-date' };
+  return { t:'未排期', cls:'st-unsched' };
+}
+function dashMd(s){ return s ? String(s).slice(5).replace('-','/') : ''; }
+
+// Today 5 卡片渲染（直接消费 generate 返回的 today5[]：人物/为什么现在做/建议做什么/渠道/一句话术）
+function renderDashT5(box, data, stale){
+  box.innerHTML = '';
+  var genAt = String(data.generated_at || '').replace('T',' ').slice(0,16);
+  box.appendChild(el('div', {class:'dash-head'}, [
+    el('span', {class:'dash-title'}, '🎯 今天最该做的 5 件事'),
+    el('span', {class:'dash-head-actions'}, [
+      el('button', {class:'btn btn-sm', onclick:function(){ location.hash='#/today'; }}, '今日经营页'),
+      el('button', {class:'btn btn-sm', onclick:function(){ renderDashToday(box, true); }}, '重新生成'),
+    ]),
+  ]));
+  box.appendChild(el('div', {class:'dash-meta'},
+    (data.source === 'ai' ? 'AI 排序' : '规则排序') + (genAt ? ' · 生成于 ' + genAt : '') + ' · 点条目直达客户/增员/活动'));
+  if(stale) box.appendChild(el('div', {class:'coach-stale'}, '今日数据有更新，建议点「重新生成」获取最新排序'));
+
+  var t5 = Array.isArray(data.today5) ? data.today5 : [];
+  if(!t5.length){
+    box.appendChild(el('div', {class:'dash-empty'}, '今天暂无重点行动，点上方「快速记录」开始吧'));
+    return;
+  }
+  var list = el('div', {class:'t5-list'});
+  t5.forEach(function(it, i){
+    var tier = DASH_TIER[it.tier] || DASH_TIER.optional;
+    var st = dashT5Status(it);
+    var name = String(it.person_name || it.title || '未命名');
+    var typeTag = it.person_type === 'recruit'
+      ? el('span', {class:'t5-tag tp-recruit'}, '增员')
+      : (it.person_type === 'activity'
+          ? el('span', {class:'t5-tag tp-activity'}, '活动')
+          : el('span', {class:'t5-tag tp-customer'}, '客户'));
+    var sd = dashMd(it.suggested_date);
+    var script = String(it.script || '').trim();
+    list.appendChild(el('div', {class:'t5-item', onclick:function(){ dashT5Go(it); }}, [
+      el('div', {class:'t5-num ' + tier.cls}, DASH_T5_NUMS[i] || String(i + 1)),
+      el('div', {class:'t5-body'}, [
+        el('div', {class:'t5-line1'}, [
+          el('span', {class:'t5-name'}, name),
+          typeTag,
+          el('span', {class:'t5-tier ' + tier.cls}, tier.label),
+          el('span', {class:'t5-st ' + st.cls}, st.t),
+        ]),
+        el('div', {class:'t5-row'}, [ el('b', {}, '为什么现在做'), String(it.reason || '—') ]),
+        el('div', {class:'t5-row'}, [ el('b', {}, '建议做什么'), String(it.action || it.title || '查看详情') ]),
+        el('div', {class:'t5-meta'}, [
+          el('span', {class:'t5-channel'}, (DASH_CH_ICON[it.channel] || '📌') + ' ' + String(it.channel || '微信')),
+          el('span', {}, sd ? ('建议 ' + sd) : '建议尽快'),
+        ]),
+        (script && script !== '信息不足') ? el('div', {class:'t5-script'}, '「' + script + '」') : null,
+      ]),
+    ]));
+  });
+  box.appendChild(list);
+}
+
+// Today 5 数据加载：与 #/today 共用 COACH_KEY 缓存（当天有缓存秒开、不调 AI）；无缓存才 generate 一次
+async function renderDashToday(box, force){
+  var today = dayStr(new Date());
+  var cache = coachLoad();
+  if(!force && cache && cache.date === today && cache.v === 5 && cache.data &&
+     Array.isArray(cache.data.today5) && cache.data.today5.length){
+    renderDashT5(box, cache.data, false);
+    // 指纹校验（轻量接口，不调 AI）：数据有变化仅提示，不自动重生成
+    callFn('today_coach', {action:'candidates'}).then(function(r){
+      if(r && !r.error && r.fingerprint && cache.fingerprint && r.fingerprint !== cache.fingerprint){
+        renderDashT5(box, cache.data, true);
+      }
+    }).catch(function(){});
+    return;
+  }
+  box.innerHTML = '';
+  box.appendChild(el('div', {class:'loading'}, force ? '正在重新生成今日 5 件事…（约几秒）' : '正在生成今日 5 件事…'));
+  try{
+    var r = await callFn('today_coach', {action:'generate'});
+    if(r.error) throw new Error(r.error);
+    coachSave({ v:5, date:today, fingerprint:r.fingerprint || '', data:r });
+    renderDashT5(box, r, false);
+  }catch(e){
+    box.innerHTML = '';
+    box.appendChild(el('div', {class:'coach-stale'}, [
+      el('span', {}, '今日建议生成失败：' + esc(e.message) + ' '),
+      el('button', {class:'btn btn-sm', onclick:function(){ renderDashToday(box, true); }}, '重试'),
+    ]));
+  }
+}
+
+// 经营状态：四条线只给趋势方向（↑→↓），不堆数字
+function renderDashTrends(box, trends){
+  box.innerHTML = '';
+  box.appendChild(el('div', {class:'dash-head'}, [
+    el('span', {class:'dash-title'}, '📈 我的经营状态'),
+    el('span', {class:'dash-meta', style:'margin:0'}, '近 7 天 vs 上 7 天'),
+  ]));
+  var grid = el('div', {class:'trend-grid'});
+  (trends || []).forEach(function(t){
+    var tr = t.trend || 'flat';
+    grid.appendChild(el('div', {class:'trend-cell', onclick:function(){ location.hash = DASH_TREND_LINK[t.key] || '#/'; }}, [
+      el('div', {class:'trend-label', style:'color:' + t.color}, String(t.label || '')),
+      el('div', {class:'trend-arrow tr-' + tr}, DASH_TREND_ARROW[tr] || '→'),
+      el('div', {class:'trend-text'}, String(t.text || '')),
+    ]));
+  });
+  box.appendChild(grid);
+}
+
+// 经营提醒：确定性事实（逾期/沟通窗口/活动失联/增员停留/未复盘/将开始），整条可点
+function renderDashReminds(box, rems){
+  box.innerHTML = '';
+  box.appendChild(el('div', {class:'dash-head'}, [ el('span', {class:'dash-title'}, '🔔 经营提醒') ]));
+  if(!rems || !rems.length){
+    box.appendChild(el('div', {class:'dash-empty'}, '今天没有特别提醒，按上面的 5 件事推进就好'));
+    return;
+  }
+  var list = el('div', {class:'rem-list'});
+  rems.forEach(function(r){
+    list.appendChild(el('div', {class:'rem-item ' + (DASH_REM_CLS[r.level] || 'rem-low'), onclick:function(){ if(r.target) location.hash = r.target; }}, [
+      el('span', {class:'rem-icon'}, String(r.icon || '•')),
+      el('span', {class:'rem-text'}, String(r.text || '')),
+      r.target ? el('span', {class:'rem-go'}, '›') : null,
+    ]));
+  });
+  box.appendChild(list);
+}
+
+// 趋势+提醒：cockpit 纯规则接口（不调 AI），失败只影响这两张卡，不影响 Today 5
+async function loadDashCockpit(trendBox, remindBox){
+  try{
+    var r = await callFn('today_coach', {action:'cockpit'});
+    if(r.error) throw new Error(r.error);
+    renderDashTrends(trendBox, r.trends);
+    renderDashReminds(remindBox, r.reminders);
+  }catch(e){
+    trendBox.innerHTML = '';
+    trendBox.appendChild(el('div', {class:'dash-empty'}, '经营状态暂时不可用'));
+    remindBox.innerHTML = '';
+    remindBox.appendChild(el('div', {class:'dash-empty'}, '经营提醒暂时不可用'));
+  }
+}
+
 async function showDashboard(){
   var view = $('view');
   view.innerHTML = '';
 
-  // 全量客户与表格容器先在函数作用域声明，供操作栏事件与渲染共用
-  var rows = [];
-  var tableCard = el('div', {class:'card', style:'padding:0;border:none;box-shadow:none;background:transparent;margin-bottom:0'});
-  // 表格渲染：统计卡筛选 + 关键词搜索叠加过滤
-  function renderTable(){
-    var kw = dashState.keyword.trim().toLowerCase();
-    var filtered = rows;
-    if(dashState.filter === 'rc_in') filtered = filtered.filter(function(c){ return rcMapCache && rcMapCache.active[c.Id]; });
-    else if(dashState.filter) filtered = filtered.filter(function(c){ return c._wb.key === dashState.filter; });
-    if(kw) filtered = filtered.filter(function(c){
-      return (c.customer_name && c.customer_name.toLowerCase().indexOf(kw) !== -1) ||
-             (c.phone && String(c.phone).indexOf(kw) !== -1) ||
-             (c.occupation && c.occupation.toLowerCase().indexOf(kw) !== -1);
-    });
-    var empty = (dashState.filter || kw) ? '没有符合条件的客户' : '暂无客户';
-    renderCustomerTable(tableCard, filtered, dashState, renderTable, empty);
-  }
+  // ① 快速记录（整卡即最大主按钮，一句话告诉 AI）
+  view.appendChild(el('div', {class:'dash-hero', onclick:function(){ openQuickCapture(); }}, [
+    el('div', {class:'dash-hero-main'}, [
+      el('div', {class:'dash-hero-title'}, '✍️ 快速记录'),
+      el('div', {class:'dash-hero-sub'}, '刚见了谁、聊了什么？一句话告诉 AI，自动归档为客户/增员跟进'),
+    ]),
+    el('div', {class:'dash-hero-arrow'}, '🎙️'),
+  ]));
 
-  // 搜索框：与"全部客户"一致（姓名/电话/职业，回车或点按钮触发）
-  var searchInput = el('input', {type:'search', placeholder:'搜索姓名/电话/职业', value:dashState.keyword});
-  function doSearch(){
-    dashState.keyword = searchInput.value;
-    dashState.page = 1;
-    renderTable();
-  }
-  searchInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') doSearch(); });
+  // ② Today 5（与 #/today 共用当天缓存，通常秒开；无缓存才调 AI 生成一次）
+  var t5card = el('div', {class:'card dash-card'});
+  t5card.appendChild(el('div', {class:'loading'}, '加载中…'));
+  view.appendChild(t5card);
+  renderDashToday(t5card, false);
 
-  // 操作栏
-  var toolbar = el('div', {class:'toolbar'}, [
-    searchInput,
-    el('button', {class:'btn', onclick:doSearch}, '搜索'),
-    el('button', {class:'btn btn-green', onclick:function(){ location.hash='#/today'; }}, '今日经营'),
-    el('button', {class:'btn btn-primary', onclick:function(){ openCustomerForm(null); }}, '+ 新增客户'),
-    el('button', {class:'btn btn-green', onclick:function(){ location.hash='#/customers'; }}, '全部客户'),
-    el('button', {class:'btn', onclick:function(){ openAiParse(); }}, 'AI 解析新增'),
-    el('button', {class:'btn', onclick:function(){ location.hash='#/ai-suggestions'; }}, 'AI 建议'),
-    el('button', {class:'btn', onclick:function(){ location.hash='#/activity/customer'; }}, '活动量'),
-  ]);
-  view.appendChild(toolbar);
+  // ③ 经营状态趋势 + ④ 经营提醒（cockpit 纯规则接口，不调 AI）
+  var trendCard = el('div', {class:'card dash-card'});
+  trendCard.appendChild(el('div', {class:'loading'}, '加载中…'));
+  view.appendChild(trendCard);
+  var remindCard = el('div', {class:'card dash-card'});
+  remindCard.appendChild(el('div', {class:'loading'}, '加载中…'));
+  view.appendChild(remindCard);
+  loadDashCockpit(trendCard, remindCard);
 
-  var card = el('div', {class:'card'});
-  card.appendChild(el('div', {class:'loading'}, '加载中…'));
-  view.appendChild(card);
-
-  try {
-    rows = await loadCustomers();
-    await loadRcMap();
-    card.innerHTML = '';
-
-    var todayStr = dayStr(new Date());
-    card.appendChild(el('h2', {}, [
-      document.createTextNode('客户工作台'),
-      el('span', {class:'dash-date'}, todayStr + ' 星期' + '日一二三四五六'[new Date().getDay()]),
-    ]));
-
-    // 分类统计（含增员状态维度）
-    var counts = {all:rows.length, today:0, overdue:0, month:0, stale:0, rc_in:0};
-    rows.forEach(function(c){
-      if(counts[c._wb.key] != null) counts[c._wb.key]++;
-      if(rcMapCache.active[c.Id]) counts.rc_in++;
-    });
-
-    // 统计卡：点击即筛选下方表格，再点一次取消筛选
-    var statBar = el('div', {class:'stat-bar'});
-    card.appendChild(statBar);
-    function statCard(label, value, key, cls){
-      var active = dashState.filter === key;
-      var item = el('div', {class:'stat-item clickable'+(cls?' '+cls:'')+(active?' stat-active':'')}, [
-        el('div', {class:'label'}, label),
-        el('div', {class:'value'}, String(value)),
-      ]);
-      // 各筛选页签的默认排序：未来30天到期 / 已逾期 默认按下次跟进日期从最近到最远（asc）；其余保持工作台状态排序
-      var DASH_DEFAULT_SORT = {
-        '':        {sortField:'wb_status',          sortDir:'asc'},
-        'today':   {sortField:'wb_status',          sortDir:'asc'},
-        'month':   {sortField:'next_followup_date', sortDir:'asc'},
-        'overdue': {sortField:'next_followup_date', sortDir:'asc'},
-        'stale':   {sortField:'wb_status',          sortDir:'asc'},
-        'rc_in':   {sortField:'wb_status',          sortDir:'asc'},
-      };
-      item.onclick = function(){
-        dashState.filter = (dashState.filter === key ? '' : key);
-        dashState.page = 1;
-        var ds = DASH_DEFAULT_SORT[dashState.filter] || DASH_DEFAULT_SORT[''];
-        dashState.sortField = ds.sortField;
-        dashState.sortDir = ds.sortDir;
-        renderStats();
-        renderTable();
-      };
-      statBar.appendChild(item);
-    }
-    function renderStats(){
-      statBar.innerHTML = '';
-      statCard('今日待跟进', counts.today, 'today', '');
-      statCard('未来30天到期', counts.month, 'month', '');
-      statCard('已逾期', counts.overdue, 'overdue', counts.overdue ? 'stat-danger' : '');
-      statCard('久未联系(30天+)', counts.stale, 'stale', counts.stale ? 'stat-warn' : '');
-      statCard('增员中', counts.rc_in, 'rc_in', '');
-      statCard('客户总数', counts.all, '', '');
-    }
-    renderStats();
-
-    // 下方客户表格（与客户列表完全一致，随统计卡筛选 + 搜索联动）
-    card.appendChild(tableCard);
-    renderTable();
-  } catch(e){
-    card.innerHTML = '';
-    card.appendChild(el('div', {class:'empty'}, '加载失败：' + esc(e.message)));
-  }
+  // 底部安静入口：旧工作台功能全部保持可达
+  view.appendChild(el('div', {class:'dash-entry'}, [
+    el('button', {type:'button', onclick:function(){ openCustomerForm(null); }}, '＋ 新增客户'),
+    el('button', {type:'button', onclick:function(){ openAiParse(); }}, 'AI 解析新增'),
+    el('a', {href:'#/customers'}, '全部客户'),
+    el('a', {href:'#/today'}, '今日经营'),
+    el('a', {href:'#/ai-suggestions'}, 'AI 建议'),
+    el('a', {href:'#/recruit'}, '增员管理'),
+    el('a', {href:'#/activities'}, '活动列表'),
+    el('a', {href:'#/activity/customer'}, '活动量'),
+  ]));
 }
 
 // ==================== 客户列表 ====================
@@ -1310,7 +1479,7 @@ async function showList(){
     if(e.key === 'Enter') doSearch();
   });
   var toolbar = el('div', {class:'toolbar'});
-  toolbar.appendChild(el('button', {class:'btn', onclick:function(){ location.hash='#/'; }}, '← 客户工作台'));
+  toolbar.appendChild(el('button', {class:'btn', onclick:function(){ location.hash='#/'; }}, '← 返回首页'));
   toolbar.appendChild(searchInput);
   toolbar.appendChild(el('button', {class:'btn', onclick:doSearch}, '搜索'));
   toolbar.appendChild(el('button', {class:'btn btn-primary', onclick:function(){ openCustomerForm(null); }}, '+ 新增客户'));
@@ -1367,7 +1536,7 @@ async function showDetail(id){
   var view = $('view');
   view.innerHTML = '';
   view.appendChild(el('div', {class:'toolbar'}, [
-    el('a', {onclick:function(){ location.hash='#/'; }}, '← 客户工作台'),
+    el('a', {onclick:function(){ location.hash='#/'; }}, '← 返回首页'),
     el('a', {onclick:function(){ location.hash='#/customers'; }, style:'margin-left:14px'}, '客户列表'),
     el('a', {onclick:async function(){
       if(!confirm('确认删除该客户？\n\n其跟进记录、伴手礼、照片/附件、保单检视报告、AI 解析记录、产品额度及名下增员候选人将一并移入回收站，可随时恢复。')) return;
@@ -3387,7 +3556,7 @@ async function showAiSuggestions(){
   }
   var hasFilter = aiSugState.mode !== 'keyword' || !!aiSugState.keyword;
   view.appendChild(el('div', {class:'toolbar'}, [
-    el('button', {class:'btn', onclick:function(){ location.hash='#/'; }}, '← 客户工作台'),
+    el('button', {class:'btn', onclick:function(){ location.hash='#/'; }}, '← 返回首页'),
     el('span', {style:'width:1px;height:20px;background:var(--border);align-self:center'}),
   ].concat(modeBtns).concat(filterControls).concat([
     el('button', {class:'btn', onclick:doReset}, '重置'),
@@ -4208,7 +4377,7 @@ async function renderActivityPage(opt){
 async function showCustomerActivity(){
   await renderActivityPage({
     state: custActivityState,
-    backHash: '#/', backLabel: '客户工作台',
+    backHash: '#/', backLabel: '返回首页',
     title: '客户经营活动量日报',
     fnAction: 'customer',
     reload: showCustomerActivity,

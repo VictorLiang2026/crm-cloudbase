@@ -7,6 +7,12 @@
  * - action:
  *     candidates: { action:'candidates' }
  *       → 纯规则筛选（不调 AI，快），返回 { today, fingerprint, customerPool, recruitPool, activityPool }
+ *     cockpit:   { action:'cockpit' }（v1.8 Sprint7 首页驾驶舱，纯规则不调 AI，快）
+ *       → { today, fingerprint, trends[4], reminders[≤4] }
+ *         trends：客户经营/机会经营/组织发展/活动经营 四线，本周 vs 上周滚动 7 天窗口对比，
+ *                 只给方向 up/flat/down（↑→↓）+ 简短状态词，不堆数字；
+ *         reminders：确定性事实提醒（逾期行动/今天沟通窗口/活动认识但无下一步/增员停留偏久/
+ *                 活动未复盘/活动将开始有待办），每条 {level:high|mid|low, icon, text, target(前端hash)}
  *     generate:   { action:'generate' }
  *       → v1.8 Sprint3 起为 Today 5（旧 Top15 规则排序已下线）：读取统一行动视图 v_action_center，
  *         返回 { today, fingerprint, source, generated_at, today5, items, all_actions, all_actions_total, quota }
@@ -989,12 +995,195 @@ async function dailyReview(d, period) {
   return { today, period, start, end, review, generated_at: nowIso() };
 }
 
+// ---------- v1.8 Sprint7：首页驾驶舱（经营趋势 + 提醒，纯规则事实，不调 AI） ----------
+// 趋势：滚动 7 天窗口（本周 vs 上周）对比业务活动量，只给方向 up/flat/down，不堆数字；
+// 提醒：全部来自确定性事实（v_action_center 逾期/今天到期、活动参与者无下一步、增员停留、
+//       活动未复盘、活动将开始且有待办），AI 失败也不影响本接口。
+function trendOf(thisN, lastN) {
+  if (thisN > lastN) return 'up';
+  if (thisN < lastN) return 'down';
+  return 'flat';
+}
+function buildCockpit(d, today) {
+  const TREND_TEXT = { up: '比上周活跃', flat: '与上周持平', down: '比上周安静' };
+  function inWin(k, lo, hi) {
+    const dd = diffDays(k, today);
+    return dd !== null && dd >= lo && dd <= hi;
+  }
+  function winCount(dates, lo, hi) {
+    return dates.filter(k => inWin(k, lo, hi)).length;
+  }
+  const folDates = (d.followups || []).map(f => dayKeyOf(f.followup_date)).filter(Boolean);
+  const rfDates = (d.recruitFollowups || []).map(f => dayKeyOf(f.followup_date)).filter(Boolean);
+  const oppDates = (d.opportunities || []).map(o => dayKeyOf(o.updated_at || o.discovered_at || o.created_at)).filter(Boolean);
+  const actDates = (d.activities || []).map(a => dayKeyOf(a.activity_date)).filter(Boolean);
+  function mkTrend(key, label, dates, color) {
+    const t = trendOf(winCount(dates, -6, 0), winCount(dates, -13, -7));
+    return { key, label, trend: t, text: TREND_TEXT[t], color };
+  }
+  const trends = [
+    mkTrend('customer', '客户经营', folDates, '#2563eb'),
+    mkTrend('opportunity', '机会经营', oppDates, '#7c3aed'),
+    mkTrend('recruit', '组织发展', rfDates, '#d97706'),
+    mkTrend('activity', '活动经营', actDates, '#e11d48'),
+  ];
+
+  const reminders = [];
+  const acts = d.actions || [];
+  const custMap = {};
+  (d.customers || []).forEach(c => { custMap[c.Id] = c; });
+  const actMap = {};
+  (d.activities || []).forEach(a => { actMap[a.id] = a; });
+  const folIdx = indexFollowups(d.followups || []);
+  const rfLatest = {};
+  for (const f of (d.recruitFollowups || [])) {
+    const k = dayKeyOf(f.followup_date) || '';
+    if (!rfLatest[f.candidate_id] || k > (dayKeyOf(rfLatest[f.candidate_id].followup_date) || '')) {
+      rfLatest[f.candidate_id] = f;
+    }
+  }
+  function personHash(pt, pid) {
+    if (pt === 'customer') return '#/customer/' + pid;
+    if (pt === 'recruit') return '#/recruit/' + pid;
+    if (pt === 'activity') return '#/activity/' + pid;
+    return '#/';
+  }
+
+  // R1 逾期行动（days_until 最小=逾期最久，排第一）
+  const overdue = acts.filter(a => a.status === 'overdue')
+    .sort((a, b) => ((a.days_until == null ? 9999 : a.days_until) - (b.days_until == null ? 9999 : b.days_until)));
+  if (overdue.length) {
+    const w = overdue[0];
+    reminders.push({
+      level: 'high', icon: '⏰',
+      text: '有 ' + overdue.length + ' 个约定行动已过时间，最久的是「' + (w.person_name || '未命名') + '」（逾期 ' + (w.days_until != null ? -w.days_until : '?') + ' 天）',
+      target: personHash(w.person_type, w.person_id),
+    });
+  }
+  // R2 今天到期（客户/增员=沟通窗口到达；活动=任务到期）
+  const todayActs = acts.filter(a => a.status === 'today');
+  if (todayActs.length) {
+    const w = todayActs[0];
+    let text;
+    if (w.person_type === 'activity') {
+      text = '今天有「' + (w.person_name || '未命名活动') + '」' +
+        (todayActs.length > 1 ? '等 ' + todayActs.length + ' 项任务' : '的任务') + '到期';
+    } else {
+      text = '今天是「' + (w.person_name || '未命名') + '」' +
+        (todayActs.length > 1 ? '等 ' + todayActs.length + ' 人' : '') + '的约定沟通日';
+    }
+    reminders.push({ level: 'high', icon: '📞', text: text, target: personHash(w.person_type, w.person_id) });
+  }
+  // R3 近 30 天活动认识、但没有任何下一步行动的人（不在 v_action_center、近 7 天无跟进、非缺席）
+  const actionKeys = new Set(acts.map(a => a.person_type + ':' + a.person_id));
+  const metMap = {};
+  (d.participants || []).forEach(p => {
+    if (p.person_type !== 'customer' && p.person_type !== 'recruit') return;
+    if (!p.person_id || p.status === 'absent') return;
+    const act = actMap[p.activity_id];
+    if (!act) return;
+    const ad = dayKeyOf(act.activity_date);
+    if (!ad) return;
+    const age = -diffDays(ad, today);
+    if (age < 0 || age > 30) return;  // 仅近 30 天内已发生的活动
+    const key = p.person_type + ':' + p.person_id;
+    if (actionKeys.has(key)) return;  // 已在行动系统（含逾期/未来行动），由其他提醒覆盖
+    let lastDate = '';
+    if (p.person_type === 'customer') {
+      const fol = folIdx[p.person_id];
+      lastDate = fol ? (dayKeyOf(fol.latest.followup_date) || '') : '';
+    } else {
+      const rf = rfLatest[p.person_id];
+      lastDate = rf ? (dayKeyOf(rf.followup_date) || '') : '';
+    }
+    if (lastDate && -diffDays(lastDate, today) <= 7) return;  // 近 7 天有跟进不算失联
+    const name = p.person_name || (p.person_type === 'customer' ? ('客户#' + p.person_id) : ('增员#' + p.person_id));
+    if (!metMap[key] || ad > metMap[key].activityDate) {
+      metMap[key] = { name: name, activityId: p.activity_id, activityDate: ad };
+    }
+  });
+  const met = Object.keys(metMap).map(k => metMap[k]).sort((a, b) => b.activityDate.localeCompare(a.activityDate));
+  if (met.length) {
+    const names = met.slice(0, 2).map(m => '「' + m.name + '」').join('、');
+    reminders.push({
+      level: 'mid', icon: '🎯',
+      text: '最近活动认识的 ' + names + (met.length > 2 ? '等 ' + met.length + ' 人' : '') + ' 还没有安排下一步行动',
+      target: '#/activity/' + met[0].activityId,
+    });
+  }
+  // R4 增员对象停留偏久（14 天无增员跟进且阶段 14 天未变化；签约入司为终态不计）
+  const stalled = [];
+  (d.candidates || []).forEach(c => {
+    if (c.stage === '签约入司') return;
+    const rf = rfLatest[c.id];
+    const rfDate = rf ? (dayKeyOf(rf.followup_date) || '') : '';
+    const chgDate = dayKeyOf(c.stage_changed_at) || dayKeyOf(c.created_at) || '';
+    const last = rfDate > chgDate ? rfDate : chgDate;
+    if (!last) return;
+    const idle = -diffDays(last, today);
+    if (idle >= 14) {
+      const cm = custMap[c.customer_id];
+      stalled.push({ name: (cm && cm.customer_name) || ('增员#' + c.id), idle: idle });
+    }
+  });
+  stalled.sort((a, b) => b.idle - a.idle);
+  if (stalled.length) {
+    const w = stalled[0];
+    reminders.push({
+      level: 'mid', icon: '🌱',
+      text: stalled.length + ' 位增员对象停留偏久，最久的是「' + w.name + '」（' + w.idle + ' 天没推进）',
+      target: '#/recruit',
+    });
+  }
+  // R5 已结束但未复盘的活动
+  const needReview = (d.activities || []).filter(a => {
+    const ad = dayKeyOf(a.activity_date);
+    if (!ad || diffDays(ad, today) >= 0) return false;
+    return ['ended', 'in_progress', 'confirmed', 'preparing'].indexOf(a.status) >= 0 && !a.reviewed_at;
+  }).sort((a, b) => String(b.activity_date || '').localeCompare(String(a.activity_date || '')));
+  if (needReview.length) {
+    const a = needReview[0];
+    reminders.push({
+      level: 'low', icon: '📝',
+      text: '活动「' + a.name + '」已结束，还没做复盘（活动后跟进建议在复盘里）',
+      target: '#/activity/' + a.id,
+    });
+  }
+  // R6 3 天内将开始且有待办的活动
+  const openTasks = {};
+  (d.activityTasks || []).forEach(t => {
+    if (t.status === 'pending' || t.status === 'in_progress') {
+      openTasks[t.activity_id] = (openTasks[t.activity_id] || 0) + 1;
+    }
+  });
+  const upcoming = (d.activities || []).filter(a => {
+    const ad = dayKeyOf(a.activity_date);
+    if (!ad) return false;
+    const dd = diffDays(ad, today);
+    return dd !== null && dd >= 0 && dd <= 3 &&
+      ['reviewed', 'ended'].indexOf(a.status) < 0 && !!openTasks[a.id];
+  }).sort((a, b) => String(a.activity_date || '').localeCompare(String(b.activity_date || '')));
+  if (upcoming.length) {
+    const a = upcoming[0];
+    const dd = diffDays(dayKeyOf(a.activity_date), today);
+    reminders.push({
+      level: 'mid', icon: '📅',
+      text: '活动「' + a.name + '」' + (dd === 0 ? '今天举办' : dd + ' 天后举办') + '，还有 ' + openTasks[a.id] + ' 项待办',
+      target: '#/activity/' + a.id,
+    });
+  }
+
+  const WEIGHT = { high: 0, mid: 1, low: 2 };
+  reminders.sort((x, y) => WEIGHT[x.level] - WEIGHT[y.level]);
+  return { trends: trends, reminders: reminders.slice(0, 4) };
+}
+
 // ---------- 入口 ----------
 exports.main = async (event, context) => {
   try {
     const action = (event && event.action) || '';
-    if (action !== 'candidates' && action !== 'generate' && action !== 'daily_review') {
-      return { error: 'action must be candidates|generate|daily_review' };
+    if (action !== 'candidates' && action !== 'generate' && action !== 'daily_review' && action !== 'cockpit') {
+      return { error: 'action must be candidates|generate|daily_review|cockpit' };
     }
 
     const d = await loadAll();
@@ -1008,6 +1197,11 @@ exports.main = async (event, context) => {
 
     if (action === 'candidates') {
       return { today, fingerprint, customerPool: custPool, recruitPool: rcPool, activityPool: actionPool };
+    }
+
+    // v1.8 Sprint7：首页驾驶舱（趋势+提醒，纯规则事实，不调 AI）
+    if (action === 'cockpit') {
+      return { today, fingerprint, ...buildCockpit(d, today) };
     }
 
     if (action === 'daily_review') {
