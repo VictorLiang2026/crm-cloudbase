@@ -23,6 +23,15 @@
  *           规则版 assessment=真实规则信号，其余字段按类型给可执行默认值，不编造客户信息
  *         next_followup_date 统一取自现有数据（customers.next_followup_date / recruit_candidates.next_action_date），
  *         AI 不生成日期，杜绝编造；无数据为空串，前端显示"信息不足"
+ *     v1.8 Sprint3（Today 5，2026-09-09）：generate 升级为 Today 5 —— 事实全部取统一行动视图
+ *       v_action_center（status overdue/today/upcoming/unscheduled、days_until、last_followup_date 均 SQL 计算，
+ *       AI 不参与基础事实）；AI 只负责综合 Urgency/Impact/Relationship/Opportunity/Timing/Actionability 六维
+ *       选出今天最值得做的 5 件（Must Do×2/Recommended×2/Optional×1），返回
+ *       today5[]{ tier, action, reason, priority, channel, goal, suggested_date, script, confidence, evidence,
+ *                 action_id, action_type, person_type, person_id, person_name, title, source, status, stage, days_until }
+ *       all_actions[]（「查看全部」事实清单，纯事实不调 AI）；items 为 today5 的旧结构映射（当前前端兼容）。
+ *       防虚构：evidence 只能引用候选事实、suggested_date 只能回显视图日期/今天、缺信息强制降 confidence；
+ *       AI 失败降级规则版（confidence 封顶 medium）；候选不足 5 件不凑数。
  * - fingerprint: 四表 max(updated_at) 拼串，前端用于"当天缓存 + 数据变化提示"
  *
  * 日期口径：与 activity_reports 一致，按北京日期（+08:00）归属；纯日期串直接用。
@@ -58,7 +67,7 @@ function cut(s, n) {
 
 // ---------- 数据读取（全量裁列 + deleted_at 过滤） ----------
 async function loadAll() {
-  const [cust, fol, rc, rf, rm, ai, opp, act, atask, apart, aspk] = await Promise.all([
+  const [cust, fol, rc, rf, rm, ai, opp, act, atask, apart, aspk, vac] = await Promise.all([
     rdb.from('customers').select(
       'Id, customer_name, gender, customer_stage, sales_priority, first_contact_date, created_at, updated_at'
     ).is('deleted_at', null),
@@ -96,7 +105,12 @@ async function loadAll() {
     rdb.from('activity_speakers').select(
       'id, name, organization, position, expertise, relationship_stage, status, next_contact_date, last_contact_date, cooperation_count, updated_at'
     ).is('deleted_at', null),
+    // v1.8 Sprint3：Action Center 统一行动视图（Today 5 数据源；逾期/到期/阶段/最近跟进等事实 SQL 已计算）
+    rdb.from('v_action_center').select(
+      'action_id, action_type, person_type, person_id, person_name, title, next_action, action_date, priority, source, status, stage, days_until, last_followup_date'
+    ),
   ]);
+  if (vac && vac.error) throw new Error('v_action_center 读取失败：' + vac.error);
   return {
     customers: (cust.data || []),
     followups: (fol.data || []),
@@ -109,6 +123,7 @@ async function loadAll() {
     activityTasks: (atask.data || []),
     participants: (apart.data || []),
     speakers: (aspk.data || []),
+    actions: (vac.data || []),
   };
 }
 
@@ -818,6 +833,311 @@ function ensureRefItems(items, custPool, nbaIdx) {
   return items;
 }
 
+// ==================== v1.8 Sprint 3：Today 5（基于 v_action_center） ====================
+// 事实（overdue/today/upcoming/unscheduled、days_until、stage、last_followup_date）全部由
+// v_action_center 视图 SQL 计算，AI 不参与基础事实；AI 只负责从候选中选出今天最值得做的
+// 5 件（Must Do×2 / Recommended×2 / Optional×1）并生成行动/原因/渠道/目标/话术/confidence/evidence。
+// 严禁虚构事实；资料不足必须降低 confidence（防 AI 虚高在 normTodayFive 中再强制兜底）。
+const T5_MUST = 2, T5_REC = 2, T5_OPT = 1, T5_TOTAL = 5, T5_SHORTLIST = 18;
+
+// 视图行 → 候选列表（含 Urgency/Impact/Relationship/Opportunity/Timing/Actionability 6 维规则分，
+// 分数仅用于 AI 短名单初排与规则兜底，不作为事实输出）
+function buildActionCandidates(d, nbaIdx, today) {
+  const folIdx = indexFollowups(d.followups || []);
+  const custMap = {};
+  (d.customers || []).forEach(c => { custMap[c.Id] = c; });
+  const rfLatest = {};
+  for (const f of (d.recruitFollowups || [])) {
+    const a = dayKeyOf(f.followup_date) || '';
+    const cur = rfLatest[f.candidate_id];
+    if (!cur || a > (dayKeyOf(cur.followup_date) || '')) rfLatest[f.candidate_id] = f;
+  }
+  const list = [];
+  for (const r of (d.actions || [])) {
+    const personType = r.person_type || '';              // customer / recruit / activity
+    const actionDate = dayKeyOf(r.action_date);
+    const status = r.status || 'unscheduled';            // SQL 已计算
+    const days = (typeof r.days_until === 'number')
+      ? r.days_until : (actionDate ? diffDays(actionDate, today) : null);
+    const stage = r.stage || '';
+    const nextAction = (r.next_action || '').trim();
+    const lastFol = dayKeyOf(r.last_followup_date) || '';
+
+    // 优先级归一：客户 A-E / 任务 high-medium-low（视图 followups 分支 priority 为 NULL，用 customers 补）
+    let prioRank = 8, prioLabel = '中';
+    const p = String(r.priority || '').trim();
+    if (p === 'A' || p === 'high') { prioRank = 22; prioLabel = '高'; }
+    else if (p === 'B' || p === 'medium') { prioRank = 16; prioLabel = '中'; }
+    else if (p === 'C') { prioRank = 10; prioLabel = '中'; }
+    else if (p === 'D' || p === 'E' || p === 'low') { prioRank = 5; prioLabel = '低'; }
+
+    let note = '', nba = null;
+    if (personType === 'customer') {
+      const c = custMap[r.person_id];
+      if (c && !p) {
+        if (c.sales_priority === 'A') { prioRank = 22; prioLabel = '高'; }
+        else if (c.sales_priority === 'B') { prioRank = 16; prioLabel = '中'; }
+        else if (c.sales_priority === 'C') { prioRank = 10; }
+        else if (c.sales_priority === 'D' || c.sales_priority === 'E') { prioRank = 5; prioLabel = '低'; }
+      }
+      const fol = folIdx[r.person_id];
+      if (fol) note = cut(fol.latest.followup_notes || '', 60);
+      nba = nbaIdx[r.person_id] || null;
+    } else if (personType === 'recruit') {
+      const rf = rfLatest[r.person_id];
+      if (rf) note = cut(rf.followup_notes || '', 60);
+    }
+
+    // ---- 6 维规则分 ----
+    let urgency, impact, relation, opp, timing;
+    const overdueDays = (status === 'overdue' && days !== null) ? -days : 0;
+    if (status === 'overdue') { urgency = 42 + (overdueDays <= 7 ? 6 : overdueDays <= 30 ? 3 : 0); timing = 10; }
+    else if (status === 'today') { urgency = 40; timing = 10; }
+    else if (status === 'upcoming') {
+      urgency = days !== null && days <= 2 ? 26 : days !== null && days <= 7 ? 18 : 8;
+      timing = days !== null && days <= 3 ? 10 : days !== null && days <= 7 ? 6 : 2;
+    } else { urgency = 4; timing = 0; }
+    impact = prioRank;
+    if (/(成交|签约|方案)/.test(stage)) impact += 12;
+    else if (/转介绍/.test(stage)) impact += 9;
+    else if (/需求/.test(stage)) impact += 7;
+    else if (/精准面谈|入职申请/.test(stage)) impact += 12;
+    else if (/初次面谈|增员活动/.test(stage)) impact += 8;
+    if (lastFol) { const age = -diffDays(lastFol, today); relation = age <= 14 ? 8 : age <= 45 ? 5 : 2; }
+    else relation = personType === 'activity' ? 6 : 2;
+    if (r.action_type === 'opportunity') opp = 14;
+    else if (r.action_type === 'recruit') opp = 10;
+    else if (r.action_type === 'recruit_followup') opp = 8;
+    else if (r.action_type === 'followup' && /转介绍/.test(stage)) opp = 8;
+    else opp = 0;
+    const actionability = (nextAction ? 8 : 0) + (actionDate ? 4 : 0);
+    const score = urgency + impact + relation + opp + timing + actionability;
+
+    list.push({
+      action_id: r.action_id, action_type: r.action_type, person_type: personType,
+      person_id: r.person_id, person_name: r.person_name || '', title: r.title || '',
+      source: r.source || '', status, stage, prio_label: prioLabel,
+      action_date: actionDate || '', days_until: days, last_followup: lastFol,
+      next_action: nextAction, note, nba, score,
+    });
+  }
+  list.sort((a, b) => b.score - a.score ||
+    String(a.action_date || '').localeCompare(String(b.action_date || '')));
+  return list;
+}
+
+function t5FactLine(x, i) {
+  const stLabel = x.status === 'overdue' ? ('逾期' + (-x.days_until) + '天')
+    : x.status === 'today' ? '今天到期'
+    : x.status === 'upcoming' ? (x.days_until + '天后到期') : '未排期';
+  const typeLabel = ({ customer: '客户', recruit: '增员', activity: '活动' })[x.person_type] || x.person_type;
+  const actLabel = ({
+    customer: '客户行动', followup: '跟进', opportunity: '经营机会',
+    recruit: '增员推进', recruit_followup: '增员跟进', activity_task: '活动任务',
+  })[x.action_type] || x.action_type;
+  return (i + 1) + '. [' + typeLabel + '] ' + x.person_name +
+    '｜事项=' + (x.title || x.next_action || actLabel) +
+    '｜行动类型=' + actLabel +
+    '｜状态=' + stLabel +
+    (x.action_date ? '｜行动日期=' + x.action_date : '') +
+    '｜优先级=' + x.prio_label +
+    (x.stage ? '｜阶段=' + x.stage : '') +
+    (x.last_followup ? '｜最近跟进=' + x.last_followup : '｜最近跟进=无记录') +
+    (x.next_action ? '｜已记录下一步=' + cut(x.next_action, 50) : '｜已记录下一步=无') +
+    (x.note ? '｜最近跟进摘要=' + x.note : '') +
+    (x.nba ? '｜已有行动方案=' + JSON.stringify({
+      assessment: cut(x.nba.assessment || '', 60),
+      goal: cut(x.nba.goal || '', 30),
+      next_action: cut(x.nba.next_action || '', 40),
+    }) : '');
+}
+
+function buildTodayFiveMessages(shortlist, today) {
+  const system = [
+    '你是保险从业者 Victor 的今日经营教练。输入是系统从统一行动视图 v_action_center 按规则初筛的候选行动。',
+    '视图中的事实（状态 overdue/today/upcoming/unscheduled、逾期天数、行动日期、阶段、优先级、最近跟进日期）全部由 SQL 计算，是确定事实，你不要质疑或重新计算。',
+    '任务：综合六个维度，从候选中选出 Victor 今天最值得做的 5 件事：',
+    '- Must Do（必做）2 件：硬时间（逾期/今天到期）且经营价值高的；',
+    '- Recommended（推荐）2 件：近期到期且关系/机会价值明确的；',
+    '- Optional（可选）1 件：值得做但时间弹性大的（如未排期但已有明确下一步）。',
+    '六个维度：Urgency 紧迫度（逾期/到期硬信号）、Impact 经营价值（客户优先级/阶段价值）、Relationship 关系温度（最近联系）、Opportunity 机会（转介绍/增员/经营机会）、Timing 时间窗口、Actionability 可执行性（是否已有明确下一步和日期）。',
+    '排序不能只看日期：需综合判断（例：刚互动过、阶段关键的今天到期客户，可优先于逾期很久但关系已冷的线索），但必须在 evidence 中写清依据。',
+    '【严禁虚构】只能使用输入中给出的事实：不得编造客户需求、家庭情况、购买意愿、联系记录、成功率、ROI；没有记录的信息在话术里用通用、不预设事实的表达（如"之前聊的事""约个时间同步"），不得杜撰细节。',
+    '【confidence 规则】证据充分（有明确下一步+近期跟进摘要+阶段清晰）给 high；有行动日期和阶段但缺跟进摘要给 medium；关键信息缺失（无下一步、无跟进记录、未排期）给 low。证据不足时严禁给 high。',
+    'suggested_date：逾期/今天到期填 ' + today + '；未来到期填候选给出的行动日期；未排期填空字符串。严禁编造日期。',
+    'channel：从 微信/电话/面谈/活动 中选（逾期较久或重要客户宜电话；日常跟进宜微信；增员面谈阶段宜面谈；活动任务填"活动"）。',
+    'action：今天要做的具体动作（如"电话联系王总，确认十月面谈时间"），不超过30字。',
+    'reason：为什么今天值得做，不超过70字。goal：本次行动目标，不超过30字。',
+    'script：一句自然、符合关系阶段的开场白/话术，口语化，不超过80字，不得包含未经证实的客户信息。',
+    'evidence：2-4条判断依据，每条必须引用候选中的真实事实（事项名/日期/状态/阶段/跟进记录），不得写候选之外的信息。',
+    '候选不足5件时按实际数量返回，不要凑数。只输出 JSON，不要解释：',
+    '{"picks":[{"ref":候选序号数字,"tier":"must_do|recommended|optional","action":"...","reason":"...","channel":"微信|电话|面谈|活动","goal":"...","suggested_date":"YYYY-MM-DD或空字符串","script":"...","confidence":"high|medium|low","evidence":["..."]}]}',
+  ].join('\n');
+  const user = '今天是 ' + today + '。候选行动（按规则综合分初排）：\n' +
+    shortlist.map(t5FactLine).join('\n');
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: user },
+  ];
+}
+
+// ---- 规则兜底字段（AI 失败/字段缺失时使用；全部来自视图事实，不编造客户信息） ----
+function t5FallbackAction(x) {
+  if (x.action_type === 'activity_task') return cut(x.title || '完成活动任务', 30);
+  return cut('联系' + x.person_name + (x.next_action ? '：' + x.next_action : '，跟进当前进展'), 30);
+}
+function t5FallbackReason(x) {
+  const parts = [];
+  if (x.status === 'overdue') parts.push('行动已逾期' + (-x.days_until) + '天');
+  else if (x.status === 'today') parts.push('今天到期');
+  else if (x.status === 'upcoming') parts.push(x.days_until + '天后到期');
+  if (x.stage) parts.push('当前阶段：' + x.stage);
+  if (x.prio_label === '高') parts.push('高优先级');
+  return cut(parts.join('；') || '有跟进价值', 70);
+}
+function t5FallbackChannel(x) {
+  if (x.action_type === 'activity_task') return '活动';
+  if (x.status === 'overdue') return '电话';
+  if (/面谈/.test(x.stage || '')) return '面谈';
+  return '微信';
+}
+function t5FallbackEvidence(x) {
+  const ev = [];
+  const stTxt = x.status === 'overdue' ? '逾期' + (-x.days_until) + '天（行动日期 ' + x.action_date + '）'
+    : x.status === 'today' ? '今天到期（' + x.action_date + '）'
+    : x.status === 'upcoming' ? x.days_until + '天后到期（' + x.action_date + '）' : '未排期';
+  ev.push('状态：' + stTxt);
+  if (x.stage) ev.push('阶段：' + x.stage);
+  ev.push('最近跟进：' + (x.last_followup || '无记录'));
+  if (x.next_action) ev.push('已记录下一步：' + cut(x.next_action, 50));
+  return ev.slice(0, 4);
+}
+function t5FallbackScript(x) {
+  const name = x.person_name || '';
+  if (x.action_type === 'activity_task') {
+    return cut('提醒：活动「' + x.person_name + '」有任务待完成——' + (x.title || '查看任务清单') + '，今天先处理。', 80);
+  }
+  if (x.person_type === 'recruit') {
+    return cut(name + '你好，我是 Victor。最近有不错的发展机会，想约你聊聊近况，看看有没有适合你的方向，你看哪天方便？', 80);
+  }
+  if (x.status === 'overdue') {
+    return cut(name + '您好，我是 Victor。之前跟您聊的事一直惦记着，您看这两天什么时候方便，我跟您同步一下进展？', 80);
+  }
+  return cut(name + '您好，我是 Victor。最近好吗？想约个时间跟您聊聊，您看这周哪天方便？', 80);
+}
+function t5RulePick(x, tier, today) {
+  return {
+    tier,
+    action_id: x.action_id, action_type: x.action_type, person_type: x.person_type,
+    person_id: x.person_id, person_name: x.person_name, title: x.title, source: x.source,
+    status: x.status, stage: x.stage, days_until: x.days_until, action_date: x.action_date,
+    action: t5FallbackAction(x), reason: t5FallbackReason(x), priority: x.prio_label,
+    channel: t5FallbackChannel(x),
+    goal: x.next_action ? cut(x.next_action, 30) : '推进当前阶段',
+    suggested_date: (x.status === 'overdue' || x.status === 'today') ? today : (x.action_date || ''),
+    script: t5FallbackScript(x),
+    // 规则兜底无 AI 判断：信息全给 medium，关键信息缺失给 low，不给 high
+    // （活动任务无 next_action 字段，title 即行动内容，视为可执行）
+    confidence: ((x.next_action || x.action_type === 'activity_task') && x.status !== 'unscheduled') ? 'medium' : 'low',
+    evidence: t5FallbackEvidence(x),
+  };
+}
+
+// AI 输出 → 校验 + 配额修正（must2/rec2/opt1；防幻觉：只允许引用候选；confidence 强制兜底）
+function normTodayFive(parsed, shortlist, today) {
+  const picks = parsed && Array.isArray(parsed.picks) ? parsed.picks : null;
+  if (!picks || !picks.length) return null;
+  const used = new Set();
+  const tiers = { must_do: [], recommended: [], optional: [] };
+  for (const p of picks) {
+    const ref = parseInt(p.ref, 10);
+    const x = shortlist[ref - 1];
+    if (!x || used.has(x.action_id) || !tiers[p.tier]) continue;  // 只允许引用候选内行动
+    used.add(x.action_id);
+    let conf = ['high', 'medium', 'low'].indexOf(p.confidence) >= 0 ? p.confidence : 'low';
+    // 资料不足强制降级（防 AI 虚高）；活动任务 title 即行动内容，视为可执行
+    const actionable = x.next_action || (x.action_type === 'activity_task' && x.title);
+    if (!actionable && !x.note) conf = 'low';
+    else if (!actionable && conf === 'high') conf = 'medium';
+    let sd = '';
+    if (x.status === 'overdue' || x.status === 'today') sd = today;
+    else if (x.status === 'upcoming') sd = x.action_date;
+    const aiDate = String(p.suggested_date || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(aiDate) && (aiDate === today || aiDate === x.action_date)) sd = aiDate;
+    const ev = Array.isArray(p.evidence)
+      ? p.evidence.map(e => cut(e, 80)).filter(Boolean).slice(0, 4) : [];
+    tiers[p.tier].push({
+      tier: p.tier,
+      action_id: x.action_id, action_type: x.action_type, person_type: x.person_type,
+      person_id: x.person_id, person_name: x.person_name, title: x.title, source: x.source,
+      status: x.status, stage: x.stage, days_until: x.days_until, action_date: x.action_date,
+      action: cut(p.action, 30) || t5FallbackAction(x),
+      reason: cut(p.reason, 70) || t5FallbackReason(x),
+      priority: x.prio_label,
+      channel: ['微信', '电话', '面谈', '活动'].indexOf(p.channel) >= 0 ? p.channel : t5FallbackChannel(x),
+      goal: cut(p.goal, 30) || '推进当前阶段',
+      suggested_date: sd,
+      script: cut(p.script, 80) || t5FallbackScript(x),
+      confidence: conf,
+      evidence: ev.length ? ev : t5FallbackEvidence(x),
+    });
+  }
+  // 配额裁剪 + 规则兜底补齐（不凑数：候选用完即止）
+  const out = [];
+  const quota = [['must_do', T5_MUST], ['recommended', T5_REC], ['optional', T5_OPT]];
+  for (const [tier, n] of quota) {
+    for (const it of tiers[tier].slice(0, n)) out.push(it);
+  }
+  for (const x of shortlist) {
+    if (out.length >= T5_TOTAL) break;
+    if (used.has(x.action_id)) continue;
+    used.add(x.action_id);
+    const tier = out.filter(t => t.tier === 'must_do').length < T5_MUST ? 'must_do'
+      : out.filter(t => t.tier === 'recommended').length < T5_REC ? 'recommended' : 'optional';
+    out.push(t5RulePick(x, tier, today));
+  }
+  const order = { must_do: 0, recommended: 1, optional: 2 };
+  out.sort((a, b) => order[a.tier] - order[b.tier]);
+  return out;
+}
+
+// Today 5 → 旧版 items 结构（当前前端 renderCoachItems 兼容；本 Sprint 不改前端）
+function todayFiveToLegacy(t5) {
+  return t5.map(x => {
+    if (x.person_type === 'activity') {
+      const m = String(x.action_id || '').match(/^activity_task-(\d+)$/);
+      return {
+        type: 'activity_action', source_type: 'activity_task',
+        source_id: m ? parseInt(m[1], 10) : null,
+        id: m ? parseInt(m[1], 10) : null,
+        action_type: 'complete_task', activity_id: x.person_id, person_type: '', person_id: null,
+        name: x.title || x.person_name, stage: '', priority: x.priority,
+        assessment: x.reason, goal: x.goal, next_action: x.action, topic: '',
+        avoid: '', success_criteria: '',
+        next_followup_date: x.suggested_date || x.action_date || '',
+      };
+    }
+    return {
+      type: x.person_type === 'recruit' ? 'recruit' : 'customer',
+      id: x.person_id, name: x.person_name, stage: x.stage || '', priority: x.priority,
+      assessment: x.reason, goal: x.goal, next_action: x.action,
+      topic: x.stage ? cut(x.stage, 12) : '', avoid: '', success_criteria: '',
+      next_followup_date: x.suggested_date || x.action_date || '',
+    };
+  });
+}
+
+// “查看全部”事实清单（全部行动按规则综合分排序；不调 AI，纯事实）
+function allActionsFact(list) {
+  return list.map(x => ({
+    action_id: x.action_id, action_type: x.action_type, person_type: x.person_type,
+    person_id: x.person_id, person_name: x.person_name, title: x.title, source: x.source,
+    next_action: x.next_action, action_date: x.action_date, priority: x.prio_label,
+    status: x.status, stage: x.stage, days_until: x.days_until,
+    last_followup_date: x.last_followup, score: x.score,
+  }));
+}
+
 // ---------- AI 每日经营复盘（v1.6） ----------
 // period: 'today'（当天）| '7d'（最近7天，含今天）
 // 聚合 10 类经营数据 → AI 生成 7 段结构化复盘（300~500 字，具体不空泛）
@@ -979,23 +1299,35 @@ exports.main = async (event, context) => {
       return await dailyReview(d, period);
     }
 
-    // generate：AI 排序 + NBA + 失败降级（规则版含活动行动）
-    const pools = custPool.concat(rcPool);
-    let items = null, source = 'rule', ai_error = '';
-    if (pools.length || actionPool.length) {
+    // generate（v1.8 Sprint3 升级为 Today 5）：
+    // 事实全部取 v_action_center（status/days_until/last_followup_date 由 SQL 计算），
+    // AI 只负责选 5 件今天最值得做的事（Must Do×2 / Recommended×2 / Optional×1）并生成
+    // action/reason/priority/channel/goal/suggested_date/script/confidence/evidence 9 字段；
+    // AI 失败降级规则版（不编造信息、confidence 封顶 medium）；items 为 Today5 的旧结构
+    // 映射，保持当前前端兼容；all_actions 为「查看全部」事实清单（纯事实，不调 AI）。
+    const allCands = buildActionCandidates(d, nbaIdx, today);
+    const shortlist = allCands.slice(0, T5_SHORTLIST);
+    let today5 = null, source = 'rule', ai_error = '';
+    if (shortlist.length) {
       try {
-        const { text } = await generateText(buildMessages(pools, nbaIdx, actionPool), { timeout: 100000 });
-        const parsed = extractJson(text);
-        items = mergeAiResult(parsed, pools, nbaIdx, actionPool);
-        if (items) source = 'ai';
+        const { text } = await generateText(buildTodayFiveMessages(shortlist, today), { timeout: 100000 });
+        today5 = normTodayFive(extractJson(text), shortlist, today);
+        if (today5 && today5.length) source = 'ai';
         else ai_error = 'AI 输出解析失败：' + cut(text, 120);
       } catch (e) { ai_error = 'AI 调用失败：' + e.message; }
     }
-    if (!items) items = ruleItems(custPool, rcPool, nbaIdx, actionPool);
-    items = ensureRefItems(items, custPool, nbaIdx);
-    items = ensureActionItems(items, actionPool);
-    items = capItems(items);
-    const out = { today, fingerprint, source, generated_at: nowIso(), items };
+    if (!today5 || !today5.length) {
+      today5 = shortlist.slice(0, T5_TOTAL).map((x, i) => t5RulePick(x,
+        i < T5_MUST ? 'must_do' : i < T5_MUST + T5_REC ? 'recommended' : 'optional', today));
+    }
+    const items = todayFiveToLegacy(today5);
+    const all_actions = allActionsFact(allCands);
+    const out = {
+      today, fingerprint, source, generated_at: nowIso(),
+      today5, items,
+      all_actions, all_actions_total: all_actions.length,
+      quota: { must_do: T5_MUST, recommended: T5_REC, optional: T5_OPT },
+    };
     if (ai_error) out.ai_error = ai_error;
     return out;
   } catch (e) {
