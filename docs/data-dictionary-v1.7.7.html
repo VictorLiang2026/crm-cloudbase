@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Victor's CRM 数据字典 v1.7.7</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Microsoft YaHei','PingFang SC',sans-serif;background:#f8fafc;color:#1e293b;line-height:1.6}
+.header{background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:32px 40px;position:sticky;top:0;z-index:100;box-shadow:0 2px 12px rgba(0,0,0,.15)}
+.header h1{font-size:28px;margin-bottom:6px}
+.header .meta{font-size:14px;color:#94a3b8}
+.header .actions{float:right;margin-top:-50px}
+.header .actions a{display:inline-block;margin-left:8px;padding:8px 16px;background:#3b82f6;color:#fff;text-decoration:none;border-radius:6px;font-size:13px}
+.header .actions a:hover{background:#2563eb}
+.nav{background:#fff;padding:16px 40px;border-bottom:1px solid #e2e8f0;position:sticky;top:97px;z-index:99}
+.nav a{display:inline-block;padding:4px 12px;margin-right:6px;font-size:13px;color:#475569;text-decoration:none;border-radius:4px}
+.nav a:hover{background:#e0e7ff;color:#3730a3}
+.nav a.active{background:#3b82f6;color:#fff}
+.domain-section{padding:20px 40px}
+.domain-header{font-size:20px;font-weight:bold;margin:30px 0 16px;padding-bottom:8px;border-bottom:2px solid}
+.table-card{background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:24px;overflow:hidden}
+.table-card .table-title{padding:14px 20px;font-size:17px;font-weight:bold;color:#fff}
+.table-card .table-desc{padding:6px 20px;font-size:13px;color:#64748b;background:#f1f5f9}
+.table-card table{width:100%;border-collapse:collapse;font-size:13px}
+.table-card th{background:#f8fafc;padding:8px 12px;text-align:left;font-weight:600;color:#475569;border-bottom:2px solid #e2e8f0;position:sticky;top:0}
+.table-card td{padding:7px 12px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.table-card tr:hover td{background:#f8fafc}
+.col-name{font-family:Consolas,monospace;font-weight:600}
+.col-pk{color:#b45309;font-weight:bold}
+.col-fk{color:#7c3aed}
+.col-lfk{color:#d97706}
+.col-j{color:#059669}
+.tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:bold}
+.tag-pk{background:#fef3c7;color:#92400e}
+.tag-fk{background:#ede9fe;color:#5b21b6}
+.tag-lfk{background:#fef3c7;color:#92400e}
+.tag-j{background:#d1fae5;color:#065f46}
+.tag-e{background:#cffafe;color:#0e7490}
+.tag-notnull{background:#fee2e2;color:#991b1b}
+.tag-soft{background:#f1f5f9;color:#475569}
+.tag-rls{background:#ede9fe;color:#5b21b6}
+.tag-idx{background:#dbeafe;color:#1e40af}
+.tag-uq{background:#fce7f3;color:#9d174d}
+.relations-box{padding:12px 20px;background:#fffbeb;border-top:1px solid #fde68a;font-size:12px}
+.relations-box strong{color:#92400e}
+.footer{text-align:center;padding:30px;color:#94a3b8;font-size:13px;border-top:1px solid #e2e8f0;margin-top:40px}
+@media print{.header,.nav{position:static}.table-card{page-break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="header">
+<h1>Victor's CRM 数据字典 v1.7.7</h1>
+<div class="meta">PostgreSQL 共享集群 (CloudBase: crm-d1gkae8ddc930d151) · 20 张业务表 · 9 个视图 · 截至 v1.7.7 · 2026-09-09</div>
+<div class="actions"><a href="#" onclick="window.print();return false">打印 / 导出 PDF</a><a href="db-schema-v1.7.7.svg" download>下载 Schema SVG</a></div>
+</div>
+<div class="nav">
+<a href="#domain-customer">客户域</a>
+<a href="#domain-activity">活动经营域</a>
+<a href="#domain-recruit">增员域</a>
+<a href="#domain-goals">目标基准域</a>
+<a href="#views">视图层</a>
+<a href="#enums">枚举值参考</a>
+<a href="#rls">RLS 安全策略</a>
+</div>
+
+<!-- ==================== 客户域 ==================== -->
+<div class="domain-section" id="domain-customer">
+<div class="domain-header" style="color:#2563eb;border-color:#2563eb">客户域 (Customer) — 10 张表</div>
+
+<div class="table-card"><div class="table-title" style="background:#2563eb">customers</div><div class="table-desc">客户主表 — 核心业务对象，所有客户信息以此为源头</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">Id</td><td>integer</td><td>NOT NULL</td><td>自增序列</td><td><span class="tag tag-pk">PK</span></td><td>客户主键</td></tr>
+<tr><td class="col-name">customer_name</td><td>text</td><td>NOT NULL</td><td>-</td><td></td><td>客户姓名</td></tr>
+<tr><td class="col-name">phone</td><td>text</td><td>NULL</td><td>-</td><td></td><td>电话</td></tr>
+<tr><td class="col-name">gender</td><td>text</td><td>NULL</td><td>-</td><td></td><td>性别</td></tr>
+<tr><td class="col-name">birthday</td><td>date</td><td>NULL</td><td>-</td><td></td><td>生日</td></tr>
+<tr><td class="col-name">occupation</td><td>text</td><td>NULL</td><td>-</td><td></td><td>职业</td></tr>
+<tr><td class="col-name">annual_income</td><td>integer</td><td>NULL</td><td>-</td><td></td><td>年收入</td></tr>
+<tr><td class="col-name">household_income</td><td>integer</td><td>NULL</td><td>-</td><td></td><td>家庭收入</td></tr>
+<tr><td class="col-name">source</td><td>text</td><td>NULL</td><td>-</td><td></td><td>客户来源</td></tr>
+<tr><td class="col-name">tags</td><td>text</td><td>NULL</td><td>-</td><td></td><td>标签</td></tr>
+<tr><td class="col-name">marital_status</td><td>text</td><td>NULL</td><td>-</td><td></td><td>婚姻状态</td></tr>
+<tr><td class="col-name">properties_info</td><td>text</td><td>NULL</td><td>-</td><td></td><td>房产信息</td></tr>
+<tr><td class="col-name">customer_stage</td><td>USER-DEFINED (enum)</td><td>NULL</td><td>-</td><td><span class="tag tag-e">E</span></td><td>客户经营阶段：新认识/关系维护/需求挖掘/方案沟通/成交推进/转介绍经营</td></tr>
+<tr><td class="col-name">sales_priority</td><td>USER-DEFINED (enum)</td><td>NULL</td><td>-</td><td><span class="tag tag-e">E</span></td><td>销售优先级：A/B/C/D/E</td></tr>
+<tr><td class="col-name">recruitment_priority</td><td>USER-DEFINED (enum)</td><td>NULL</td><td>-</td><td><span class="tag tag-e">E</span></td><td>增员优先级：A/B/C/D/E</td></tr>
+<tr><td class="col-name">referral_priority</td><td>USER-DEFINED (enum)</td><td>NULL</td><td>-</td><td><span class="tag tag-e">E</span></td><td>转介绍优先级：A/B/C/D/E</td></tr>
+<tr><td class="col-name">hobbies</td><td>text</td><td>NULL</td><td>-</td><td></td><td>兴趣爱好</td></tr>
+<tr><td class="col-name">education</td><td>text</td><td>NULL</td><td>-</td><td></td><td>学历（v1.5 从 recruit_candidates 迁入）</td></tr>
+<tr><td class="col-name">mbti</td><td>text</td><td>NULL</td><td>-</td><td></td><td>MBTI 16型人格（v1.5 从 recruit_candidates 迁入）</td></tr>
+<tr><td class="col-name">wx_account</td><td>text</td><td>NULL</td><td>-</td><td></td><td>微信号</td></tr>
+<tr><td class="col-name">first_contact_date</td><td>date</td><td>NULL</td><td>-</td><td></td><td>首次接触日期</td></tr>
+<tr><td class="col-name">additional_info</td><td>text</td><td>NULL</td><td>-</td><td></td><td>附加信息</td></tr>
+<tr><td class="col-name">profile</td><td>jsonb</td><td>NULL</td><td>-</td><td><span class="tag tag-j">J</span></td><td>轻量客户画像 {family,children,parents,career,needs,relationship,events:[{date,text}]}；AI 提取、用户确认后写入（v1.6 新增）</td></tr>
+<tr><td class="col-name">created_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>创建时间</td></tr>
+<tr><td class="col-name">updated_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>更新时间</td></tr>
+<tr><td class="col-name">deleted_at</td><td>timestamptz</td><td>NULL</td><td>-</td><td><span class="tag tag-soft">软删除</span></td><td>软删除标记（非空=已删除，级联到子表）</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>索引：</strong>customers_pkey (PK) · <strong>RLS：</strong><span class="tag tag-rls">fn_only</span> 启用 · <strong>关联：</strong>1:N → followups, gifts, photos, products, ocr_records, policy_review_reports, opportunities, ai_recommendations</div>
+</div>
+
+<div class="table-card"><div class="table-title" style="background:#2563eb">followups</div><div class="table-desc">客户跟进记录 — 每次客户接触的日志</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">Id</td><td>integer</td><td>NOT NULL</td><td>自增序列</td><td><span class="tag tag-pk">PK</span></td><td>主键（注意大写 Id）</td></tr>
+<tr><td class="col-fk">customer_id</td><td>integer</td><td>NOT NULL</td><td>-</td><td><span class="tag tag-fk">FK</span></td><td>关联 customers.Id</td></tr>
+<tr><td class="col-name">customer_name</td><td>text</td><td>NULL</td><td>-</td><td></td><td>客户姓名（冗余，方便展示）</td></tr>
+<tr><td class="col-name">followup_notes</td><td>text</td><td>NULL</td><td>-</td><td></td><td>跟进内容</td></tr>
+<tr><td class="col-name">followup_date</td><td>date</td><td>NULL</td><td>-</td><td></td><td>跟进日期</td></tr>
+<tr><td class="col-name">next_followup_date</td><td>date</td><td>NULL</td><td>-</td><td></td><td>下次跟进日期</td></tr>
+<tr><td class="col-name">next_followup_goal</td><td>USER-DEFINED (enum)</td><td>NULL</td><td>-</td><td><span class="tag tag-e">E</span></td><td>下次跟进目标：建立联系/约见面/邀请活动/获取家庭信息/推进签单/推进招募/推进转介绍</td></tr>
+<tr><td class="col-lfk">recommendation_id</td><td>integer</td><td>NULL</td><td>-</td><td><span class="tag tag-lfk">LFK</span></td><td>关联 ai_recommendations.id（逻辑外键，无 FK 约束）</td></tr>
+<tr><td class="col-lfk">activity_id</td><td>integer</td><td>NULL</td><td>-</td><td><span class="tag tag-lfk">LFK</span></td><td>关联 activities.id（逻辑外键，活动关联跟进）</td></tr>
+<tr><td class="col-name">created_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>创建时间</td></tr>
+<tr><td class="col-name">updated_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>更新时间</td></tr>
+<tr><td class="col-name">deleted_at</td><td>timestamptz</td><td>NULL</td><td>-</td><td><span class="tag tag-soft">软删除</span></td><td>软删除标记</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>索引：</strong>followups_pkey (PK) · <strong>RLS：</strong><span class="tag tag-rls">fn_only</span> 启用 · <strong>关联：</strong>N:1 ← customers · N:1 ← ai_recommendations (逻辑) · N:1 ← activities (逻辑)</div>
+</div>
+
+<div class="table-card"><div class="table-title" style="background:#2563eb">ai_recommendations</div><div class="table-desc">AI 经营建议 — AI 生成、用户确认后写入</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">id</td><td>bigint</td><td>NOT NULL</td><td>自增序列</td><td><span class="tag tag-pk">PK</span></td><td>主键</td></tr>
+<tr><td class="col-fk">customer_id</td><td>integer</td><td>NOT NULL</td><td>-</td><td><span class="tag tag-fk">FK</span></td><td>关联 customers.Id</td></tr>
+<tr><td class="col-name">customer_name</td><td>text</td><td>NULL</td><td>-</td><td></td><td>客户姓名（冗余）</td></tr>
+<tr><td class="col-name">recommendation_date</td><td>date</td><td>NULL</td><td>-</td><td></td><td>建议日期</td></tr>
+<tr><td class="col-name">suggested_message</td><td>text</td><td>NULL</td><td>-</td><td></td><td>建议沟通话术</td></tr>
+<tr><td class="col-name">suggested_strategy</td><td>text</td><td>NULL</td><td>-</td><td></td><td>建议策略</td></tr>
+<tr><td class="col-name">suggested_followup_date</td><td>date</td><td>NULL</td><td>-</td><td></td><td>建议下次跟进日期</td></tr>
+<tr><td class="col-name">suggested_customer_stage</td><td>USER-DEFINED (enum)</td><td>NULL</td><td>-</td><td><span class="tag tag-e">E</span></td><td>建议客户阶段</td></tr>
+<tr><td class="col-name">suggested_followup_goal</td><td>USER-DEFINED (enum)</td><td>NULL</td><td>-</td><td><span class="tag tag-e">E</span></td><td>建议跟进目标</td></tr>
+<tr><td class="col-j">nba</td><td>jsonb</td><td>NULL</td><td>-</td><td><span class="tag tag-j">J</span></td><td>Next Best Action 结构化建议 {assessment,goal,next_action,topic,avoid,success_criteria}（v1.7 新增）</td></tr>
+<tr><td class="col-name">created_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>创建时间</td></tr>
+<tr><td class="col-name">updated_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>更新时间（人工编辑/二次生成时间）</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>索引：</strong>ai_recommendations_pkey (PK) · <strong>关联：</strong>N:1 ← customers · 1:N → followups (逻辑, recommendation_id)</div>
+</div>
+
+<div class="table-card"><div class="table-title" style="background:#2563eb">opportunities</div><div class="table-desc">客户经营机会 — 轻量机会跟踪，只存状态不复制客户资料</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">id</td><td>bigint</td><td>NOT NULL</td><td>自增序列</td><td><span class="tag tag-pk">PK</span></td><td>主键</td></tr>
+<tr><td class="col-fk">customer_id</td><td>integer</td><td>NOT NULL</td><td>-</td><td><span class="tag tag-fk">FK</span></td><td>关联 customers.Id</td></tr>
+<tr><td class="col-name">opportunity_type</td><td>text</td><td>NOT NULL</td><td>-</td><td></td><td>机会类型：医疗保障/重疾保障/养老规划/教育规划/财富规划/家庭保障/转介绍</td></tr>
+<tr><td class="col-name">status</td><td>text</td><td>NOT NULL</td><td>'发现'</td><td></td><td>状态：发现/沟通/方案/成交/关闭（转介绍用：潜在线索/已介绍/已联系/已建立关系/成交/关闭）</td></tr>
+<tr><td class="col-name">referred_name</td><td>text</td><td>NULL</td><td>-</td><td></td><td>被介绍人姓名（转介绍线索，v1.4 新增）</td></tr>
+<tr><td class="col-name">referred_relation</td><td>text</td><td>NULL</td><td>-</td><td></td><td>被介绍人与来源客户的关系（如朋友/同事/亲戚，v1.4 新增）</td></tr>
+<tr><td class="col-name">discovered_at</td><td>date</td><td>NULL</td><td>-</td><td></td><td>发现日期</td></tr>
+<tr><td class="col-name">last_progress</td><td>text</td><td>NULL</td><td>-</td><td></td><td>最近进展</td></tr>
+<tr><td class="col-name">next_action</td><td>text</td><td>NULL</td><td>-</td><td></td><td>下一步动作</td></tr>
+<tr><td class="col-name">ai_summary</td><td>text</td><td>NULL</td><td>-</td><td></td><td>AI 识别理由摘要</td></tr>
+<tr><td class="col-name">created_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>创建时间</td></tr>
+<tr><td class="col-name">updated_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>更新时间</td></tr>
+<tr><td class="col-name">deleted_at</td><td>timestamptz</td><td>NULL</td><td>-</td><td><span class="tag tag-soft">软删除</span></td><td>软删除标记</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>索引：</strong>idx_opportunities_customer (customer_id, WHERE deleted_at IS NULL) · idx_opportunities_status (status, WHERE deleted_at IS NULL) · <strong>RLS：</strong><span class="tag tag-rls">fn_only</span> 启用</div>
+</div>
+
+<div class="table-card"><div class="table-title" style="background:#2563eb">gifts</div><div class="table-desc">客户礼品记录</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">Id</td><td>bigint</td><td>NOT NULL</td><td>自增序列</td><td><span class="tag tag-pk">PK</span></td><td>主键</td></tr>
+<tr><td class="col-fk">customer_id</td><td>integer</td><td>NOT NULL</td><td>-</td><td><span class="tag tag-fk">FK</span></td><td>关联 customers.Id</td></tr>
+<tr><td class="col-name">customer_name</td><td>text</td><td>NULL</td><td>-</td><td></td><td>客户姓名（冗余）</td></tr>
+<tr><td class="col-name">gift_name</td><td>text</td><td>NULL</td><td>-</td><td></td><td>礼品名称</td></tr>
+<tr><td class="col-name">quantity</td><td>smallint</td><td>NULL</td><td>-</td><td></td><td>数量</td></tr>
+<tr><td class="col-name">given_date</td><td>date</td><td>NULL</td><td>-</td><td></td><td>赠送日期</td></tr>
+<tr><td class="col-name">notes</td><td>text</td><td>NULL</td><td>-</td><td></td><td>备注</td></tr>
+<tr><td class="col-name">created_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>创建时间</td></tr>
+<tr><td class="col-name">updated_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>更新时间</td></tr>
+<tr><td class="col-name">deleted_at</td><td>timestamptz</td><td>NULL</td><td>-</td><td><span class="tag tag-soft">软删除</span></td><td>软删除标记</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>关联：</strong>N:1 ← customers</div>
+</div>
+
+<div class="table-card"><div class="table-title" style="background:#2563eb">photos</div><div class="table-desc">客户照片记录</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">id</td><td>integer</td><td>NOT NULL</td><td>自增序列</td><td><span class="tag tag-pk">PK</span></td><td>主键</td></tr>
+<tr><td class="col-fk">customer_id</td><td>integer</td><td>NOT NULL</td><td>-</td><td><span class="tag tag-fk">FK</span></td><td>关联 customers.Id</td></tr>
+<tr><td class="col-name">customer_name</td><td>text</td><td>NULL</td><td>-</td><td></td><td>客户姓名（冗余）</td></tr>
+<tr><td class="col-name">photo_url</td><td>text</td><td>NULL</td><td>-</td><td></td><td>照片 URL</td></tr>
+<tr><td class="col-name">thumbnail_url</td><td>text</td><td>NULL</td><td>-</td><td></td><td>缩略图 URL</td></tr>
+<tr><td class="col-name">file_name</td><td>text</td><td>NULL</td><td>-</td><td></td><td>文件名</td></tr>
+<tr><td class="col-name">content_type</td><td>text</td><td>NULL</td><td>-</td><td></td><td>内容类型</td></tr>
+<tr><td class="col-name">category</td><td>text</td><td>NULL</td><td>-</td><td></td><td>分类</td></tr>
+<tr><td class="col-name">sort_order</td><td>integer</td><td>NULL</td><td>-</td><td></td><td>排序</td></tr>
+<tr><td class="col-name">created_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>创建时间</td></tr>
+<tr><td class="col-name">updated_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>更新时间</td></tr>
+<tr><td class="col-name">deleted_at</td><td>timestamptz</td><td>NULL</td><td>-</td><td><span class="tag tag-soft">软删除</span></td><td>软删除标记</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>关联：</strong>N:1 ← customers</div>
+</div>
+
+<div class="table-card"><div class="table-title" style="background:#2563eb">products</div><div class="table-desc">客户产品额度 — 各险种保额</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">id</td><td>bigint</td><td>NOT NULL</td><td>自增序列</td><td><span class="tag tag-pk">PK</span></td><td>主键</td></tr>
+<tr><td class="col-fk">customer_id</td><td>bigint</td><td>NOT NULL</td><td>-</td><td><span class="tag tag-fk">FK</span></td><td>关联 customers.Id</td></tr>
+<tr><td class="col-name">customer_name</td><td>text</td><td>NULL</td><td>-</td><td></td><td>客户姓名（冗余）</td></tr>
+<tr><td class="col-name">ap_ipa</td><td>bigint</td><td>NULL</td><td>-</td><td></td><td>意外险保额</td></tr>
+<tr><td class="col-name">ap_ltc</td><td>bigint</td><td>NULL</td><td>-</td><td></td><td>长期护理险</td></tr>
+<tr><td class="col-name">ap_ann</td><td>bigint</td><td>NULL</td><td>-</td><td></td><td>年金险</td></tr>
+<tr><td class="col-name">ap_life</td><td>bigint</td><td>NULL</td><td>-</td><td></td><td>寿险</td></tr>
+<tr><td class="col-name">ap_term</td><td>bigint</td><td>NULL</td><td>-</td><td></td><td>定期寿险</td></tr>
+<tr><td class="col-name">ap_wl</td><td>bigint</td><td>NULL</td><td>-</td><td></td><td>终身寿险</td></tr>
+<tr><td class="col-name">ap_pa</td><td>bigint</td><td>NULL</td><td>-</td><td></td><td>意外伤害</td></tr>
+<tr><td class="col-name">ap_ci</td><td>bigint</td><td>NULL</td><td>-</td><td></td><td>重疾险</td></tr>
+<tr><td class="col-name">ap_hi</td><td>bigint</td><td>NULL</td><td>-</td><td></td><td>医疗险</td></tr>
+<tr><td class="col-name">ap_all</td><td>bigint</td><td>NULL</td><td>-</td><td></td><td>总保额</td></tr>
+<tr><td class="col-name">ap_ppa</td><td>bigint</td><td>NULL</td><td>-</td><td></td><td>个人养老险（v1.3 新增）</td></tr>
+<tr><td class="col-name">items</td><td>text</td><td>NULL</td><td>-</td><td></td><td>产品条目明细（v1.3 新增）</td></tr>
+<tr><td class="col-name">created_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>创建时间</td></tr>
+<tr><td class="col-name">updated_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>更新时间</td></tr>
+<tr><td class="col-name">deleted_at</td><td>timestamptz</td><td>NULL</td><td>-</td><td><span class="tag tag-soft">软删除</span></td><td>软删除标记</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>关联：</strong>N:1 ← customers</div>
+</div>
+
+<div class="table-card"><div class="table-title" style="background:#2563eb">ocr_records</div><div class="table-desc">OCR 识别记录 — 证件/名片 OCR 结果</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">id</td><td>bigint</td><td>NOT NULL</td><td>自增序列</td><td><span class="tag tag-pk">PK</span></td><td>主键</td></tr>
+<tr><td class="col-fk">customer_id</td><td>bigint</td><td>NOT NULL</td><td>-</td><td><span class="tag tag-fk">FK</span></td><td>关联 customers.Id</td></tr>
+<tr><td class="col-name">summary</td><td>text</td><td>NULL</td><td>-</td><td></td><td>识别摘要</td></tr>
+<tr><td class="col-name">raw_text</td><td>text</td><td>NULL</td><td>-</td><td></td><td>原始识别文本</td></tr>
+<tr><td class="col-name">file_ids</td><td>text</td><td>NULL</td><td>-</td><td></td><td>云存储文件 ID</td></tr>
+<tr><td class="col-name">file_names</td><td>text</td><td>NULL</td><td>-</td><td></td><td>文件名</td></tr>
+<tr><td class="col-name">customer_snapshot</td><td>text</td><td>NULL</td><td>-</td><td></td><td>客户快照</td></tr>
+<tr><td class="col-name">created_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>创建时间</td></tr>
+<tr><td class="col-name">updated_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>更新时间</td></tr>
+<tr><td class="col-name">deleted_at</td><td>timestamptz</td><td>NULL</td><td>-</td><td><span class="tag tag-soft">软删除</span></td><td>软删除标记</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>RLS：</strong><span class="tag tag-rls">fn_only</span> 启用 · <strong>关联：</strong>N:1 ← customers</div>
+</div>
+
+<div class="table-card"><div class="table-title" style="background:#2563eb">policy_review_reports</div><div class="table-desc">保单检视报告 — AI 生成字段与人工编辑字段双写分离</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">id</td><td>bigint</td><td>NOT NULL</td><td>自增序列</td><td><span class="tag tag-pk">PK</span></td><td>主键</td></tr>
+<tr><td class="col-fk">customer_id</td><td>bigint</td><td>NOT NULL</td><td>-</td><td><span class="tag tag-fk">FK</span></td><td>关联 customers.Id</td></tr>
+<tr><td class="col-name">customer_name</td><td>text</td><td>NULL</td><td>-</td><td></td><td>客户姓名（冗余）</td></tr>
+<tr><td class="col-name">report_date</td><td>date</td><td>NOT NULL</td><td>CURRENT_DATE</td><td></td><td>报告日期</td></tr>
+<tr><td class="col-name">report_type</td><td>text</td><td>NOT NULL</td><td>'保单年度检视'</td><td></td><td>报告类型</td></tr>
+<tr><td class="col-name">summary</td><td>text</td><td>NULL</td><td>-</td><td></td><td>综合摘要（AI 生成）</td></tr>
+<tr><td class="col-name">gaps_found</td><td>text</td><td>NULL</td><td>-</td><td></td><td>保障缺口（AI 生成）</td></tr>
+<tr><td class="col-name">recommendations</td><td>text</td><td>NULL</td><td>-</td><td></td><td>检视建议（AI 生成）</td></tr>
+<tr><td class="col-name">asset_allocation</td><td>text</td><td>NULL</td><td>-</td><td></td><td>资产配置建议（AI 生成）</td></tr>
+<tr><td class="col-name">next_action</td><td>text</td><td>NULL</td><td>-</td><td></td><td>下一步行动（AI 生成）</td></tr>
+<tr><td class="col-name">raw</td><td>text</td><td>NULL</td><td>-</td><td></td><td>模型原始输出（排障）</td></tr>
+<tr><td class="col-name">edited_summary</td><td>text</td><td>NULL</td><td>-</td><td></td><td>人工编辑摘要（非空则优先展示）</td></tr>
+<tr><td class="col-name">edited_gaps</td><td>text</td><td>NULL</td><td>-</td><td></td><td>人工编辑缺口</td></tr>
+<tr><td class="col-name">edited_recommendations</td><td>text</td><td>NULL</td><td>-</td><td></td><td>人工编辑建议</td></tr>
+<tr><td class="col-name">edited_asset_allocation</td><td>text</td><td>NULL</td><td>-</td><td></td><td>人工编辑资产配置</td></tr>
+<tr><td class="col-name">edited_next_action</td><td>text</td><td>NULL</td><td>-</td><td></td><td>人工编辑下一步</td></tr>
+<tr><td class="col-name">created_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>创建时间</td></tr>
+<tr><td class="col-name">updated_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>更新时间</td></tr>
+<tr><td class="col-name">deleted_at</td><td>timestamptz</td><td>NULL</td><td>-</td><td><span class="tag tag-soft">软删除</span></td><td>软删除标记</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>索引：</strong>idx_policy_review_reports_customer_id (customer_id) · idx_policy_review_reports_date (report_date DESC, id DESC) · <strong>关联：</strong>N:1 ← customers</div>
+</div>
+</div>
+
+<!-- ==================== 活动经营域 ==================== -->
+<div class="domain-section" id="domain-activity">
+<div class="domain-header" style="color:#db2777;border-color:#db2777">活动经营域 (Activity) — 5 张表</div>
+
+<div class="table-card"><div class="table-title" style="background:#db2777">activities</div><div class="table-desc">活动表 — 活动经营入口，不含报名/签到/票务</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">id</td><td>bigint</td><td>NOT NULL</td><td>自增序列</td><td><span class="tag tag-pk">PK</span></td><td>主键</td></tr>
+<tr><td class="col-name">name</td><td>text</td><td>NOT NULL</td><td>-</td><td></td><td>活动名称</td></tr>
+<tr><td class="col-name">activity_date</td><td>date</td><td>NULL</td><td>-</td><td></td><td>活动日期</td></tr>
+<tr><td class="col-name">activity_type</td><td>text</td><td>NULL</td><td>-</td><td></td><td>活动类型（如客户活动/增员活动/转介绍活动）</td></tr>
+<tr><td class="col-name">location</td><td>text</td><td>NULL</td><td>-</td><td></td><td>地点</td></tr>
+<tr><td class="col-name">description</td><td>text</td><td>NULL</td><td>-</td><td></td><td>说明</td></tr>
+<tr><td class="col-name">status</td><td>text</td><td>NULL</td><td>-</td><td></td><td>状态：idea/preparing/confirmed/in_progress/ended/reviewed</td></tr>
+<tr><td class="col-j">goal_types</td><td>jsonb</td><td>NULL</td><td>-</td><td><span class="tag tag-j">J</span></td><td>活动目标类型数组（如 ["客户经营","增员"]）</td></tr>
+<tr><td class="col-j">topic_ids</td><td>jsonb</td><td>NULL</td><td>-</td><td><span class="tag tag-j">J</span></td><td>关联主题 ID 数组（弱关联 activity_topics.id）</td></tr>
+<tr><td class="col-name">target_participants</td><td>integer</td><td>NULL</td><td>-</td><td></td><td>目标参与人数</td></tr>
+<tr><td class="col-name">actual_participants</td><td>integer</td><td>NULL</td><td>-</td><td></td><td>实际参与人数</td></tr>
+<tr><td class="col-name">review_summary</td><td>text</td><td>NULL</td><td>-</td><td></td><td>复盘摘要（AI postReview 生成）</td></tr>
+<tr><td class="col-name">review_score</td><td>numeric</td><td>NULL</td><td>-</td><td></td><td>复盘评分</td></tr>
+<tr><td class="col-name">created_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>创建时间</td></tr>
+<tr><td class="col-name">updated_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>更新时间</td></tr>
+<tr><td class="col-name">deleted_at</td><td>timestamptz</td><td>NULL</td><td>-</td><td><span class="tag tag-soft">软删除</span></td><td>软删除标记</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>索引：</strong>idx_activities_date (activity_date, WHERE deleted_at IS NULL) · <strong>RLS：</strong><span class="tag tag-rls">fn_only</span> 启用 · <strong>关联：</strong>1:N → activity_participants, activity_tasks · 1:N → followups (逻辑, activity_id)</div>
+</div>
+
+<div class="table-card"><div class="table-title" style="background:#db2777">activity_participants</div><div class="table-desc">活动参与者 — 多态关联 customer/recruit/speaker，不建统一 Person 表</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">id</td><td>bigint</td><td>NOT NULL</td><td>自增序列</td><td><span class="tag tag-pk">PK</span></td><td>主键</td></tr>
+<tr><td class="col-fk">activity_id</td><td>integer</td><td>NOT NULL</td><td>-</td><td><span class="tag tag-fk">FK</span></td><td>关联 activities.id</td></tr>
+<tr><td class="col-name">person_type</td><td>text</td><td>NOT NULL</td><td>-</td><td></td><td>多态类型：customer | recruit | speaker</td></tr>
+<tr><td class="col-lfk">person_id</td><td>bigint</td><td>NULL</td><td>-</td><td><span class="tag tag-lfk">多态</span></td><td>多态 ID：customer→customers.Id；recruit→recruit_candidates.id；speaker→activity_speakers.id；NULL=未关联暂存</td></tr>
+<tr><td class="col-name">person_name</td><td>text</td><td>NULL</td><td>-</td><td></td><td>参与者姓名（未关联时暂存，关联后回填）</td></tr>
+<tr><td class="col-name">status</td><td>text</td><td>NOT NULL</td><td>'invited'</td><td></td><td>状态：invited(邀请) | attended(参加) | absent(缺席)</td></tr>
+<tr><td class="col-name">participant_role</td><td>text</td><td>NULL</td><td>-</td><td></td><td>角色（如 attendee/guest/host）</td></tr>
+<tr><td class="col-name">followup_status</td><td>text</td><td>NULL</td><td>-</td><td></td><td>跟进状态：none | pending | done | not_needed</td></tr>
+<tr><td class="col-name">relationship_note</td><td>text</td><td>NULL</td><td>-</td><td></td><td>关系备注</td></tr>
+<tr><td class="col-name">ai_followup_suggestion</td><td>text</td><td>NULL</td><td>-</td><td></td><td>AI 跟进建议（活动后分析）</td></tr>
+<tr><td class="col-name">created_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>创建时间</td></tr>
+<tr><td class="col-name">deleted_at</td><td>timestamptz</td><td>NULL</td><td>-</td><td><span class="tag tag-soft">软删除</span></td><td>软删除标记</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>索引：</strong>idx_participants_activity (activity_id, WHERE deleted_at IS NULL) · idx_participants_person (person_type, person_id, WHERE deleted_at IS NULL) · <strong>RLS：</strong><span class="tag tag-rls">fn_only</span> 启用 · <strong>多态：</strong>person_id 按 person_type 指向不同表</div>
+</div>
+
+<div class="table-card"><div class="table-title" style="background:#db2777">activity_tasks</div><div class="table-desc">活动待办任务 — 活动子记录，硬删除（无 deleted_at）；多态关联 related_type/related_id</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">id</td><td>bigint</td><td>NOT NULL</td><td>IDENTITY</td><td><span class="tag tag-pk">PK</span></td><td>主键</td></tr>
+<tr><td class="col-fk">activity_id</td><td>bigint</td><td>NOT NULL</td><td>-</td><td><span class="tag tag-fk">FK</span></td><td>关联 activities.id（ON DELETE CASCADE）</td></tr>
+<tr><td class="col-name">task_title</td><td>text</td><td>NOT NULL</td><td>-</td><td></td><td>任务标题</td></tr>
+<tr><td class="col-name">task_type</td><td>text</td><td>NOT NULL</td><td>'other'</td><td><span class="tag tag-e">CHECK</span></td><td>preparation/invitation/speaker/onsite/followup/review/other</td></tr>
+<tr><td class="col-name">status</td><td>text</td><td>NOT NULL</td><td>'pending'</td><td><span class="tag tag-e">CHECK</span></td><td>pending/in_progress/completed/skipped</td></tr>
+<tr><td class="col-name">priority</td><td>text</td><td>NOT NULL</td><td>'medium'</td><td><span class="tag tag-e">CHECK</span></td><td>high/medium/low</td></tr>
+<tr><td class="col-name">due_date</td><td>date</td><td>NULL</td><td>-</td><td></td><td>截止日期</td></tr>
+<tr><td class="col-name">completed_at</td><td>timestamptz</td><td>NULL</td><td>-</td><td></td><td>完成时间</td></tr>
+<tr><td class="col-name">related_type</td><td>text</td><td>NOT NULL</td><td>'none'</td><td><span class="tag tag-e">CHECK</span></td><td>none/customer/recruit/speaker/activity（多态关联类型）</td></tr>
+<tr><td class="col-lfk">related_id</td><td>bigint</td><td>NULL</td><td>-</td><td><span class="tag tag-lfk">多态</span></td><td>关联 ID（按 related_type 指向不同表）</td></tr>
+<tr><td class="col-name">note</td><td>text</td><td>NULL</td><td>-</td><td></td><td>备注</td></tr>
+<tr><td class="col-name">source</td><td>text</td><td>NOT NULL</td><td>'manual'</td><td><span class="tag tag-e">CHECK</span></td><td>manual/ai/template</td></tr>
+<tr><td class="col-name">created_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>创建时间</td></tr>
+<tr><td class="col-name">updated_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>更新时间</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>CHECK 约束：</strong>task_type / status / priority / related_type / source · <strong>索引：</strong>idx_activity_tasks_activity · idx_activity_tasks_status_due · idx_activity_tasks_related · <strong>RLS：</strong><span class="tag tag-rls">fn_only</span> 启用 · <strong>注意：</strong>硬删除表，无 deleted_at</div>
+</div>
+
+<div class="table-card"><div class="table-title" style="background:#db2777">activity_speakers</div><div class="table-desc">活动嘉宾资源池 — 可复用嘉宾档案，软删除；弱关联 customer_id/recruit_candidate_id</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">id</td><td>bigint</td><td>NOT NULL</td><td>IDENTITY</td><td><span class="tag tag-pk">PK</span></td><td>主键</td></tr>
+<tr><td class="col-name">name</td><td>text</td><td>NOT NULL</td><td>-</td><td></td><td>嘉宾姓名</td></tr>
+<tr><td class="col-name">phone</td><td>text</td><td>NULL</td><td>-</td><td></td><td>电话</td></tr>
+<tr><td class="col-name">wechat</td><td>text</td><td>NULL</td><td>-</td><td></td><td>微信</td></tr>
+<tr><td class="col-name">organization</td><td>text</td><td>NULL</td><td>-</td><td></td><td>机构</td></tr>
+<tr><td class="col-name">position</td><td>text</td><td>NULL</td><td>-</td><td></td><td>职位</td></tr>
+<tr><td class="col-name">relationship_stage</td><td>text</td><td>NOT NULL</td><td>'new'</td><td><span class="tag tag-e">CHECK</span></td><td>new/contacted/cooperated/stable/deep/inactive</td></tr>
+<tr><td class="col-name">expertise</td><td>text</td><td>NULL</td><td>-</td><td></td><td>专长领域</td></tr>
+<tr><td class="col-name">topic_summary</td><td>text</td><td>NULL</td><td>-</td><td></td><td>可分享主题概要</td></tr>
+<tr><td class="col-name">source</td><td>text</td><td>NULL</td><td>-</td><td></td><td>来源</td></tr>
+<tr><td class="col-name">last_contact_date</td><td>date</td><td>NULL</td><td>-</td><td></td><td>最近联系日期</td></tr>
+<tr><td class="col-name">next_contact_date</td><td>date</td><td>NULL</td><td>-</td><td></td><td>下次联系日期</td></tr>
+<tr><td class="col-name">last_contact_note</td><td>text</td><td>NULL</td><td>-</td><td></td><td>最近联系记录</td></tr>
+<tr><td class="col-name">cooperation_count</td><td>integer</td><td>NOT NULL</td><td>0</td><td><span class="tag tag-e">CHECK</span></td><td>合作次数（≥0）</td></tr>
+<tr><td class="col-name">preferred_format</td><td>text</td><td>NULL</td><td>-</td><td></td><td>偏好形式</td></tr>
+<tr><td class="col-name">status</td><td>text</td><td>NOT NULL</td><td>'active'</td><td><span class="tag tag-e">CHECK</span></td><td>active/inactive</td></tr>
+<tr><td class="col-lfk">customer_id</td><td>bigint</td><td>NULL</td><td>-</td><td><span class="tag tag-lfk">LFK</span></td><td>弱关联 customers.Id（若嘉宾同时是客户）</td></tr>
+<tr><td class="col-lfk">recruit_candidate_id</td><td>bigint</td><td>NULL</td><td>-</td><td><span class="tag tag-lfk">LFK</span></td><td>弱关联 recruit_candidates.id</td></tr>
+<tr><td class="col-name">notes</td><td>text</td><td>NULL</td><td>-</td><td></td><td>备注</td></tr>
+<tr><td class="col-name">created_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>创建时间</td></tr>
+<tr><td class="col-name">updated_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>更新时间</td></tr>
+<tr><td class="col-name">deleted_at</td><td>timestamptz</td><td>NULL</td><td>-</td><td><span class="tag tag-soft">软删除</span></td><td>软删除标记</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>CHECK 约束：</strong>relationship_stage / status / cooperation_count≥0 · <strong>索引：</strong>idx_activity_speakers_name / org / status · <strong>RLS：</strong><span class="tag tag-rls">fn_only</span> 启用</div>
+</div>
+
+<div class="table-card"><div class="table-title" style="background:#db2777">activity_topics</div><div class="table-desc">活动主题资源池 — 可复用主题档案，与 activities.topic_ids 弱关联</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">id</td><td>bigint</td><td>NOT NULL</td><td>IDENTITY</td><td><span class="tag tag-pk">PK</span></td><td>主键</td></tr>
+<tr><td class="col-name">topic_name</td><td>text</td><td>NOT NULL</td><td>-</td><td></td><td>主题名称</td></tr>
+<tr><td class="col-name">category</td><td>text</td><td>NULL</td><td>-</td><td></td><td>分类</td></tr>
+<tr><td class="col-name">description</td><td>text</td><td>NULL</td><td>-</td><td></td><td>描述</td></tr>
+<tr><td class="col-name">target_audience</td><td>text</td><td>NULL</td><td>-</td><td></td><td>目标受众</td></tr>
+<tr><td class="col-j">keywords</td><td>jsonb</td><td>NOT NULL</td><td>'[]'</td><td><span class="tag tag-j">J</span></td><td>关键词数组</td></tr>
+<tr><td class="col-name">status</td><td>text</td><td>NOT NULL</td><td>'active'</td><td><span class="tag tag-e">CHECK</span></td><td>active/inactive</td></tr>
+<tr><td class="col-name">last_used_date</td><td>date</td><td>NULL</td><td>-</td><td></td><td>最近使用日期</td></tr>
+<tr><td class="col-name">use_count</td><td>integer</td><td>NOT NULL</td><td>0</td><td><span class="tag tag-e">CHECK</span></td><td>被采用次数（≥0）</td></tr>
+<tr><td class="col-name">ai_summary</td><td>text</td><td>NULL</td><td>-</td><td></td><td>AI 主题摘要</td></tr>
+<tr><td class="col-name">notes</td><td>text</td><td>NULL</td><td>-</td><td></td><td>备注</td></tr>
+<tr><td class="col-name">created_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>创建时间</td></tr>
+<tr><td class="col-name">updated_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>更新时间</td></tr>
+<tr><td class="col-name">deleted_at</td><td>timestamptz</td><td>NULL</td><td>-</td><td><span class="tag tag-soft">软删除</span></td><td>软删除标记</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>CHECK 约束：</strong>status / use_count≥0 · <strong>索引：</strong>idx_activity_topics_name / category / status · <strong>RLS：</strong><span class="tag tag-rls">fn_only</span> 启用</div>
+</div>
+</div>
+
+<!-- ==================== 增员域 ==================== -->
+<div class="domain-section" id="domain-recruit">
+<div class="domain-header" style="color:#7c3aed;border-color:#7c3aed">增员域 (Recruit) — 3 张表</div>
+
+<div class="table-card"><div class="table-title" style="background:#7c3aed">recruit_candidates</div><div class="table-desc">增员候选人表 — 与 customers 软关联（customer_id NOT NULL），增员一定是客户</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">id</td><td>bigint</td><td>NOT NULL</td><td>自增序列</td><td><span class="tag tag-pk">PK</span></td><td>主键</td></tr>
+<tr><td class="col-fk">customer_id</td><td>bigint</td><td>NOT NULL</td><td>-</td><td><span class="tag tag-fk">FK</span></td><td>关联 customers.Id（强约束：增员必须先有客户记录）</td></tr>
+<tr><td class="col-lfk">recommender_id</td><td>bigint</td><td>NULL</td><td>-</td><td><span class="tag tag-lfk">LFK</span></td><td>推荐人（指向另一候选人或 customers.Id）</td></tr>
+<tr><td class="col-name">stage</td><td>text</td><td>NOT NULL</td><td>'新增人才'</td><td></td><td>阶段：新增人才/互动暖客/初次面谈/增员活动/精准面谈/入职申请/签约入司/流失</td></tr>
+<tr><td class="col-name">stage_changed_at</td><td>timestamptz</td><td>NULL</td><td>-</td><td></td><td>阶段变更时间（用于停滞预警）</td></tr>
+<tr><td class="col-name">potential_score</td><td>integer</td><td>NULL</td><td>-</td><td></td><td>AI 高潜评分 0-100</td></tr>
+<tr><td class="col-name">potential_reason</td><td>text</td><td>NULL</td><td>-</td><td></td><td>AI 评分理由</td></tr>
+<tr><td class="col-name">motivation</td><td>text</td><td>NULL</td><td>-</td><td></td><td>求职动机</td></tr>
+<tr><td class="col-name">concerns</td><td>text</td><td>NULL</td><td>-</td><td></td><td>顾虑点</td></tr>
+<tr><td class="col-name">work_experience</td><td>text</td><td>NULL</td><td>-</td><td></td><td>工作经历</td></tr>
+<tr><td class="col-name">family_situation</td><td>text</td><td>NULL</td><td>-</td><td></td><td>家庭情况</td></tr>
+<tr><td class="col-name">personality_tags</td><td>text</td><td>NULL</td><td>-</td><td></td><td>性格标签</td></tr>
+<tr><td class="col-name">career_plan</td><td>text</td><td>NULL</td><td>-</td><td></td><td>职业规划</td></tr>
+<tr><td class="col-name">next_action_date</td><td>date</td><td>NULL</td><td>-</td><td></td><td>下次行动日期</td></tr>
+<tr><td class="col-name">next_action</td><td>text</td><td>NULL</td><td>-</td><td></td><td>下次行动</td></tr>
+<tr><td class="col-j">activity_history</td><td>jsonb</td><td>NULL</td><td>-</td><td><span class="tag tag-j">J</span></td><td>活动历史</td></tr>
+<tr><td class="col-j">profile</td><td>jsonb</td><td>NULL</td><td>-</td><td><span class="tag tag-j">J</span></td><td>候选人画像（AI 提取，v1.5 新增）</td></tr>
+<tr><td class="col-name">radar_image_file_id</td><td>text</td><td>NULL</td><td>-</td><td></td><td>雷达图云存储 fileID</td></tr>
+<tr><td class="col-name">radar_image_name</td><td>text</td><td>NULL</td><td>-</td><td></td><td>雷达图原文件名</td></tr>
+<tr><td class="col-name">winner_report_file_id</td><td>text</td><td>NULL</td><td>-</td><td></td><td>赢家报告云存储 fileID</td></tr>
+<tr><td class="col-name">winner_report_name</td><td>text</td><td>NULL</td><td>-</td><td></td><td>赢家报告原文件名</td></tr>
+<tr><td class="col-name">operator</td><td>text</td><td>NULL</td><td>-</td><td></td><td>操作员</td></tr>
+<tr><td class="col-name">created_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>创建时间</td></tr>
+<tr><td class="col-name">updated_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>更新时间</td></tr>
+<tr><td class="col-name">deleted_at</td><td>timestamptz</td><td>NULL</td><td>-</td><td><span class="tag tag-soft">软删除</span></td><td>软删除标记</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>索引：</strong>idx_recruit_candidates_stage (stage, WHERE deleted_at IS NULL) · <span class="tag tag-uq">UNIQUE</span> uq_recruit_candidates_customer_active (customer_id, WHERE deleted_at IS NULL) · <strong>RLS：</strong><span class="tag tag-rls">fn_only</span> 启用 · <strong>注意：</strong>name/gender/birthday/phone 等通用字段已迁移至 customers 表</div>
+</div>
+
+<div class="table-card"><div class="table-title" style="background:#7c3aed">recruit_followups</div><div class="table-desc">增员跟进记录 — 细粒度接触日志，与里程碑（粗粒度）互补</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">id</td><td>bigint</td><td>NOT NULL</td><td>自增序列</td><td><span class="tag tag-pk">PK</span></td><td>主键</td></tr>
+<tr><td class="col-lfk">candidate_id</td><td>bigint</td><td>NOT NULL</td><td>-</td><td><span class="tag tag-lfk">LFK</span></td><td>关联 recruit_candidates.id（逻辑外键）</td></tr>
+<tr><td class="col-name">contact_method</td><td>text</td><td>NULL</td><td>-</td><td></td><td>接触方式：电话/微信/面谈/线下活动/邮件/其他</td></tr>
+<tr><td class="col-name">followup_notes</td><td>text</td><td>NULL</td><td>-</td><td></td><td>跟进内容</td></tr>
+<tr><td class="col-name">followup_date</td><td>date</td><td>NOT NULL</td><td>-</td><td></td><td>跟进日期</td></tr>
+<tr><td class="col-name">interest_level</td><td>text</td><td>NULL</td><td>-</td><td></td><td>意向度：高/中/低/无</td></tr>
+<tr><td class="col-name">concern_feedback</td><td>text</td><td>NULL</td><td>-</td><td></td><td>顾虑变化记录</td></tr>
+<tr><td class="col-name">next_followup_date</td><td>date</td><td>NULL</td><td>-</td><td></td><td>下次跟进日期</td></tr>
+<tr><td class="col-name">next_followup_goal</td><td>text</td><td>NULL</td><td>-</td><td></td><td>下次跟进目标</td></tr>
+<tr><td class="col-name">operator</td><td>text</td><td>NULL</td><td>-</td><td></td><td>操作员</td></tr>
+<tr><td class="col-name">created_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>创建时间</td></tr>
+<tr><td class="col-name">updated_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>更新时间</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>索引：</strong>idx_recruit_followups_candidate · idx_recruit_followups_date · <strong>RLS：</strong><span class="tag tag-rls">fn_only</span> 启用</div>
+</div>
+
+<div class="table-card"><div class="table-title" style="background:#7c3aed">recruit_milestones</div><div class="table-desc">增员阶段里程碑事件 — 候选人时间线</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">id</td><td>bigint</td><td>NOT NULL</td><td>自增序列</td><td><span class="tag tag-pk">PK</span></td><td>主键</td></tr>
+<tr><td class="col-fk">candidate_id</td><td>bigint</td><td>NOT NULL</td><td>-</td><td><span class="tag tag-fk">FK</span></td><td>关联 recruit_candidates.id</td></tr>
+<tr><td class="col-name">from_stage</td><td>text</td><td>NULL</td><td>-</td><td></td><td>原阶段</td></tr>
+<tr><td class="col-name">to_stage</td><td>text</td><td>NOT NULL</td><td>-</td><td></td><td>目标阶段</td></tr>
+<tr><td class="col-name">happened_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>发生时间</td></tr>
+<tr><td class="col-name">note</td><td>text</td><td>NULL</td><td>-</td><td></td><td>备注</td></tr>
+<tr><td class="col-name">operator</td><td>text</td><td>NULL</td><td>-</td><td></td><td>操作员</td></tr>
+<tr><td class="col-name">created_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>创建时间</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>索引：</strong>idx_recruit_milestones_candidate · <strong>RLS：</strong><span class="tag tag-rls">fn_only</span> 启用</div>
+</div>
+</div>
+
+<!-- ==================== 目标基准域 ==================== -->
+<div class="domain-section" id="domain-goals">
+<div class="domain-header" style="color:#0891b2;border-color:#0891b2">目标基准域 (Goals & Benchmarks) — 2 张表</div>
+
+<div class="table-card"><div class="table-title" style="background:#0891b2">recruit_goals</div><div class="table-desc">增员月度目标 — 按月按阶段设定目标数量</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">id</td><td>bigint</td><td>NOT NULL</td><td>自增序列</td><td><span class="tag tag-pk">PK</span></td><td>主键</td></tr>
+<tr><td class="col-name">goal_month</td><td>date</td><td>NOT NULL</td><td>-</td><td></td><td>目标月份（每月1日）</td></tr>
+<tr><td class="col-name">stage</td><td>text</td><td>NOT NULL</td><td>-</td><td></td><td>增员7阶段之一</td></tr>
+<tr><td class="col-name">target_count</td><td>integer</td><td>NOT NULL</td><td>0</td><td></td><td>目标数量</td></tr>
+<tr><td class="col-name">note</td><td>text</td><td>NULL</td><td>-</td><td></td><td>备注</td></tr>
+<tr><td class="col-name">operator</td><td>text</td><td>NULL</td><td>-</td><td></td><td>操作员</td></tr>
+<tr><td class="col-name">created_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>创建时间</td></tr>
+<tr><td class="col-name">updated_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>更新时间</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>索引：</strong>idx_recruit_goals_month · idx_recruit_goals_stage · <span class="tag tag-uq">UNIQUE</span> (goal_month, stage) · <strong>RLS：</strong><span class="tag tag-rls">fn_only</span> 启用</div>
+</div>
+
+<div class="table-card"><div class="table-title" style="background:#0891b2">recruit_goal_benchmarks</div><div class="table-desc">增员漏斗行业基准 — 可修改，预置友邦及行业参考值</div>
+<table><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th><th>标记</th><th>说明</th></tr></thead><tbody>
+<tr><td class="col-pk">id</td><td>bigint</td><td>NOT NULL</td><td>自增序列</td><td><span class="tag tag-pk">PK</span></td><td>主键</td></tr>
+<tr><td class="col-name">stage_from</td><td>text</td><td>NOT NULL</td><td>-</td><td></td><td>起始阶段（上游）</td></tr>
+<tr><td class="col-name">stage_to</td><td>text</td><td>NOT NULL</td><td>-</td><td></td><td>目标阶段（下游）</td></tr>
+<tr><td class="col-name">conversion_min</td><td>numeric(5,2)</td><td>NOT NULL</td><td>-</td><td></td><td>最低转化率%（红色预警线）</td></tr>
+<tr><td class="col-name">conversion_avg</td><td>numeric(5,2)</td><td>NOT NULL</td><td>-</td><td></td><td>行业平均转化率%（黄色参考线）</td></tr>
+<tr><td class="col-name">conversion_good</td><td>numeric(5,2)</td><td>NOT NULL</td><td>-</td><td></td><td>优秀转化率%（绿色标杆线）</td></tr>
+<tr><td class="col-name">source</td><td>text</td><td>NULL</td><td>-</td><td></td><td>数据来源</td></tr>
+<tr><td class="col-name">note</td><td>text</td><td>NULL</td><td>-</td><td></td><td>说明</td></tr>
+<tr><td class="col-name">updated_at</td><td>timestamptz</td><td>NOT NULL</td><td>now()</td><td></td><td>更新时间</td></tr>
+</tbody></table>
+<div class="relations-box"><span class="tag tag-uq">UNIQUE</span> (stage_from, stage_to) · <strong>RLS：</strong><span class="tag tag-rls">fn_only</span> 启用 · <strong>预置数据：</strong>7 条行业基准（新增人才→互动暖客→初次面谈→增员活动→精准面谈→入职申请→签约入司 + 整体漏斗）</div>
+</div>
+</div>
+
+<!-- ==================== 视图层 ==================== -->
+<div class="domain-section" id="views">
+<div class="domain-header" style="color:#64748b;border-color:#64748b">视图层 — 9 个视图</div>
+<div class="table-card"><div class="table-title" style="background:#64748b">视图清单</div>
+<table><thead><tr><th>视图名</th><th>基于</th><th>说明</th></tr></thead><tbody>
+<tr><td>customers_view</td><td>customers LEFT JOIN gifts/followups/ai_recommendations/photos</td><td>客户聚合视图（补 profile 列）；REVOKE anon（防绕过 RLS）</td></tr>
+<tr><td>followups_view</td><td>followups</td><td>跟进视图；REVOKE anon</td></tr>
+<tr><td>gifts_view</td><td>gifts</td><td>礼品视图；REVOKE anon</td></tr>
+<tr><td>photos_view</td><td>photos</td><td>照片视图；REVOKE anon</td></tr>
+<tr><td>products_view</td><td>products</td><td>产品额度视图；REVOKE anon</td></tr>
+<tr><td>ai_recommendations_view</td><td>ai_recommendations LEFT JOIN customers/followups/gifts</td><td>AI 建议视图（补 nba 列）；REVOKE anon</td></tr>
+<tr><td>v_recruit_candidates</td><td>recruit_candidates JOIN customers</td><td>增员候选人完整视图（含评估附件字段、idle_days）；GRANT anon SELECT</td></tr>
+<tr><td>v_recruit_candidates_trash</td><td>recruit_candidates JOIN customers (soft-deleted)</td><td>增员回收站视图；GRANT anon SELECT</td></tr>
+<tr><td>activity_participants_view</td><td>activity_participants</td><td>参与者视图；REVOKE anon</td></tr>
+</tbody></table></div>
+</div>
+
+<!-- ==================== 枚举值 ==================== -->
+<div class="domain-section" id="enums">
+<div class="domain-header" style="color:#0891b2;border-color:#0891b2">枚举值参考</div>
+<div class="table-card"><div class="table-title" style="background:#0891b2">枚举与状态值</div>
+<table><thead><tr><th>枚举/状态</th><th>可选值</th><th>说明</th></tr></thead><tbody>
+<tr><td>customer_stage</td><td>新认识 / 关系维护 / 需求挖掘 / 方案沟通 / 成成推进 / 转介绍经营</td><td>客户经营阶段（PG enum）</td></tr>
+<tr><td>sales_priority / recruitment_priority / referral_priority</td><td>A / B / C / D / E</td><td>优先级（PG enum）</td></tr>
+<tr><td>next_followup_goal / suggested_followup_goal</td><td>建立联系 / 约见面 / 邀请活动 / 获取家庭信息 / 推进签单 / 推进招募 / 推进转介绍</td><td>跟进目标（PG enum）</td></tr>
+<tr><td>activities.status</td><td>idea / preparing / confirmed / in_progress / ended / reviewed</td><td>活动状态</td></tr>
+<tr><td>activity_participants.status</td><td>invited / attended / absent</td><td>参与者状态</td></tr>
+<tr><td>activity_participants.followup_status</td><td>none / pending / done / not_needed</td><td>跟进状态</td></tr>
+<tr><td>activity_participants.person_type</td><td>customer / recruit / speaker</td><td>多态类型</td></tr>
+<tr><td>activity_tasks.task_type</td><td>preparation / invitation / speaker / onsite / followup / review / other</td><td>CHECK 约束</td></tr>
+<tr><td>activity_tasks.status</td><td>pending / in_progress / completed / skipped</td><td>CHECK 约束</td></tr>
+<tr><td>activity_tasks.priority</td><td>high / medium / low</td><td>CHECK 约束</td></tr>
+<tr><td>activity_tasks.source</td><td>manual / ai / template</td><td>CHECK 约束</td></tr>
+<tr><td>activity_speakers.relationship_stage</td><td>new / contacted / cooperated / stable / deep / inactive</td><td>CHECK 约束</td></tr>
+<tr><td>activity_speakers.status</td><td>active / inactive</td><td>CHECK 约束</td></tr>
+<tr><td>activity_topics.status</td><td>active / inactive</td><td>CHECK 约束</td></tr>
+<tr><td>opportunities.opportunity_type</td><td>医疗保障 / 重疾保障 / 养老规划 / 教育规划 / 财富规划 / 家庭保障 / 转介绍</td><td>机会类型</td></tr>
+<tr><td>opportunities.status</td><td>发现 / 沟通 / 方案 / 成交 / 关闭</td><td>机会状态（转介绍另有独立状态机）</td></tr>
+<tr><td>recruit_candidates.stage</td><td>新增人才 / 互动暖客 / 初次面谈 / 增员活动 / 精准面谈 / 入职申请 / 签约入司 / 流失</td><td>增员阶段</td></tr>
+<tr><td>recruit_followups.interest_level</td><td>高 / 中 / 低 / 无</td><td>意向度</td></tr>
+</tbody></table></div>
+</div>
+
+<!-- ==================== RLS 策略 ==================== -->
+<div class="domain-section" id="rls">
+<div class="domain-header" style="color:#7c3aed;border-color:#7c3aed">RLS 安全策略</div>
+<div class="table-card"><div class="table-title" style="background:#7c3aed">fn_only 策略清单</div>
+<table><thead><tr><th>表</th><th>策略名</th><th>说明</th></tr></thead><tbody>
+<tr><td>customers</td><td>customers_fn_only</td><td>仅云函数匿名上下文可访问</td></tr>
+<tr><td>followups</td><td>followups_fn_only</td><td>同上</td></tr>
+<tr><td>opportunities</td><td>opportunities_fn_only</td><td>同上</td></tr>
+<tr><td>ocr_records</td><td>ocr_records_fn_only</td><td>同上（最敏感表：含身份证信息）</td></tr>
+<tr><td>activities</td><td>activities_fn_only</td><td>同上</td></tr>
+<tr><td>activity_participants</td><td>activity_participants_fn_only</td><td>同上</td></tr>
+<tr><td>activity_tasks</td><td>activity_tasks_fn_only</td><td>同上</td></tr>
+<tr><td>activity_speakers</td><td>activity_speakers_fn_only</td><td>同上</td></tr>
+<tr><td>activity_topics</td><td>activity_topics_fn_only</td><td>同上</td></tr>
+<tr><td>recruit_candidates</td><td>recruit_candidates_fn_only</td><td>同上</td></tr>
+<tr><td>recruit_milestones</td><td>recruit_milestones_fn_only</td><td>同上</td></tr>
+<tr><td>recruit_followups</td><td>recruit_followups_fn_only</td><td>同上</td></tr>
+<tr><td>recruit_goals</td><td>recruit_goals_fn_only</td><td>同上</td></tr>
+<tr><td>recruit_goal_benchmarks</td><td>recruit_goal_benchmarks_fn_only</td><td>同上</td></tr>
+</tbody></table>
+<div class="relations-box"><strong>策略逻辑：</strong>request.jwt.claims 中 sub IS NULL AND role = 'anon' — 即仅允许云函数匿名上下文访问，阻止前端直连绕过。所有 14 张业务表均启用 RLS。</div>
+</div>
+</div>
+
+<div class="footer">
+<p>Victor's CRM v1.7.7 · 数据字典 · 2026-09-09 · 由 CloudBase crm-d1gkae8ddc930d151 生产库实测 + 迁移文件汇总</p>
+<p>共 20 张业务表 · 9 个视图 · 14 张表启用 RLS fn_only 策略 · 9 条真实外键 · 5 条逻辑外键 · 2 条多态关联</p>
+</div>
+</body>
+</html>

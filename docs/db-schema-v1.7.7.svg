@@ -1,0 +1,699 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2580" height="2300" viewBox="0 0 2580 2300" font-family="Microsoft YaHei, PingFang SC, Segoe UI, sans-serif">
+<defs><marker id="arr" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#475569"/></marker></defs>
+<rect width="2580" height="2300" fill="#f8fafc"/>
+<text x="60" y="56" font-size="30" font-weight="bold" fill="#0f172a">Victor&#8217;s CRM 数据库 Schema 关系图 (v1.7.7)</text>
+<text x="60" y="92" font-size="16" fill="#475569">PostgreSQL 共享集群 (CloudBase: crm-d1gkae8ddc930d151) &#183; 20 张业务表 &#183; 9 个视图 &#183; 截至 v1.7.7</text>
+<rect x="30" y="130" width="1430" height="1430" rx="14" fill="#2563eb" opacity="0.04" stroke="#2563eb" stroke-opacity="0.3" stroke-dasharray="6 4"/>
+<text x="48" y="160" font-size="17" font-weight="bold" fill="#2563eb">客户域 (Customer)</text>
+<rect x="1490" y="130" width="530" height="1030" rx="14" fill="#db2777" opacity="0.04" stroke="#db2777" stroke-opacity="0.3" stroke-dasharray="6 4"/>
+<text x="1508" y="160" font-size="17" font-weight="bold" fill="#db2777">活动经营域 (Activity)</text>
+<rect x="1490" y="1160" width="530" height="1050" rx="14" fill="#7c3aed" opacity="0.04" stroke="#7c3aed" stroke-opacity="0.3" stroke-dasharray="6 4"/>
+<text x="1508" y="1190" font-size="17" font-weight="bold" fill="#7c3aed">增员域 (Recruit)</text>
+<rect x="2020" y="130" width="530" height="1000" rx="14" fill="#db2777" opacity="0.04" stroke="#db2777" stroke-opacity="0.3" stroke-dasharray="6 4"/>
+<text x="2038" y="160" font-size="17" font-weight="bold" fill="#db2777">活动资源池 (Speakers/Topics)</text>
+<rect x="2020" y="1370" width="530" height="560" rx="14" fill="#0891b2" opacity="0.04" stroke="#0891b2" stroke-opacity="0.3" stroke-dasharray="6 4"/>
+<text x="2038" y="1400" font-size="17" font-weight="bold" fill="#0891b2">增员目标/基准</text>
+<path d="M400,300 L460,300" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arr)" opacity="0.75"/>
+<text x="415" y="292" font-size="11" font-weight="bold" fill="#2563eb" opacity="0.9">1:N</text>
+<path d="M400,660 L460,360" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arr)" opacity="0.75"/>
+<text x="415" y="490" font-size="11" font-weight="bold" fill="#2563eb" opacity="0.9">1:N</text>
+<path d="M400,980 L460,420" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arr)" opacity="0.75"/>
+<text x="415" y="700" font-size="11" font-weight="bold" fill="#2563eb" opacity="0.9">1:N</text>
+<path d="M400,1260 L460,480" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arr)" opacity="0.75"/>
+<text x="415" y="900" font-size="11" font-weight="bold" fill="#2563eb" opacity="0.9">1:N</text>
+<path d="M660,780 L660,672" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arr)" opacity="0.75"/>
+<text x="670" y="730" font-size="11" font-weight="bold" fill="#2563eb" opacity="0.9">N:1</text>
+<path d="M460,1320 L430,1320 L430,560 L460,560" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arr)" opacity="0.75"/>
+<text x="400" y="940" font-size="11" font-weight="bold" fill="#2563eb" opacity="0.9">N:1</text>
+<path d="M900,820 L870,820 L870,570 L840,570" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arr)" opacity="0.75"/>
+<text x="875" y="690" font-size="11" font-weight="bold" fill="#2563eb" opacity="0.9">N:1</text>
+<path d="M900,1260 L880,1260 L880,630 L840,630" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arr)" opacity="0.75"/>
+<text x="885" y="940" font-size="11" font-weight="bold" fill="#2563eb" opacity="0.9">N:1</text>
+<path d="M1520,1280 L1510,1280 L1510,742 L880,742 L880,320 L840,320" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arr)" opacity="0.75"/>
+<text x="1180" y="734" font-size="11" font-weight="bold" fill="#2563eb" opacity="0.9">N:1</text>
+<path d="M1730,1200 L1730,1154" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arr)" opacity="0.75"/>
+<text x="1740" y="1180" font-size="11" font-weight="bold" fill="#2563eb" opacity="0.9">N:1</text>
+<path d="M1520,900 L1500,900 L1500,760 L880,760 L880,340 L840,340" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arr)" opacity="0.75"/>
+<text x="1180" y="752" font-size="11" font-weight="bold" fill="#2563eb" opacity="0.9">N:1</text>
+<path d="M230,580 L230,474" fill="none" stroke="#d97706" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#arr)" opacity="0.75"/>
+<text x="240" y="530" font-size="11" font-weight="bold" fill="#d97706" opacity="0.9">1:N</text>
+<path d="M400,720 L1470,720 L1470,250 L1520,250" fill="none" stroke="#d97706" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#arr)" opacity="0.75"/>
+<text x="990" y="712" font-size="11" font-weight="bold" fill="#d97706" opacity="0.9">N:1</text>
+<path d="M1730,540 L1730,466" fill="none" stroke="#d97706" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#arr)" opacity="0.75"/>
+<text x="1740" y="510" font-size="11" font-weight="bold" fill="#d97706" opacity="0.9">N:1</text>
+<path d="M1730,1730 L1730,1654" fill="none" stroke="#d97706" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#arr)" opacity="0.75"/>
+<text x="1740" y="1700" font-size="11" font-weight="bold" fill="#d97706" opacity="0.9">N:1</text>
+<path d="M1520,1380 L1508,1380 L1508,726 L885,726 L885,360 L840,360" fill="none" stroke="#d97706" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#arr)" opacity="0.75"/>
+<text x="1180" y="718" font-size="11" font-weight="bold" fill="#d97706" opacity="0.9">N:1</text>
+<path d="M1520,620 L1450,620 L1450,615 L840,615" fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="3 4" marker-end="url(#arr)" opacity="0.75"/>
+<text x="1150" y="607" font-size="11" font-weight="bold" fill="#dc2626" opacity="0.9">多态</text>
+<path d="M1950,940 L1980,940 L1980,280 L2050,280" fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="3 4" marker-end="url(#arr)" opacity="0.75"/>
+<text x="1990" y="620" font-size="11" font-weight="bold" fill="#dc2626" opacity="0.9">活动→主题</text>
+<rect x="460" y="200" width="390" height="546" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="460" y="200" width="390" height="34" rx="8" fill="#2563eb"/>
+<rect x="460" y="226" width="390" height="8" fill="#2563eb"/>
+<text x="472" y="223" font-size="15" font-weight="bold" fill="#ffffff">customers</text>
+<text x="470" y="249" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> Id</text>
+<text x="840" y="249" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<rect x="461" y="256" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="271" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">customer_name</text>
+<text x="840" y="271" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="470" y="293" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">phone</text>
+<text x="840" y="293" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="461" y="300" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="315" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">gender</text>
+<text x="840" y="315" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="470" y="337" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">birthday</text>
+<text x="840" y="337" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">date</text>
+<rect x="461" y="344" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="359" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">occupation</text>
+<text x="840" y="359" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="470" y="381" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">annual_income</text>
+<text x="840" y="381" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<rect x="461" y="388" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="403" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">household_income</text>
+<text x="840" y="403" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<text x="470" y="425" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">source</text>
+<text x="840" y="425" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="461" y="432" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="447" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">tags</text>
+<text x="840" y="447" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="470" y="469" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">marital_status</text>
+<text x="840" y="469" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="461" y="476" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="491" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">properties_info</text>
+<text x="840" y="491" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="470" y="513" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#0891b2" font-weight="bold">[E]</tspan> customer_stage</text>
+<text x="840" y="513" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">客户经营阶段</text>
+<rect x="461" y="520" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="535" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#0891b2" font-weight="bold">[E]</tspan> sales_priority</text>
+<text x="840" y="535" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">优先级</text>
+<text x="470" y="557" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#0891b2" font-weight="bold">[E]</tspan> recruitment_priority</text>
+<text x="840" y="557" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">优先级</text>
+<rect x="461" y="564" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="579" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#0891b2" font-weight="bold">[E]</tspan> referral_priority</text>
+<text x="840" y="579" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">优先级</text>
+<text x="470" y="601" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">hobbies</text>
+<text x="840" y="601" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="461" y="608" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="623" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">education</text>
+<text x="840" y="623" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="470" y="645" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">mbti</text>
+<text x="840" y="645" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="461" y="652" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="667" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">wx_account</text>
+<text x="840" y="667" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="470" y="689" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">first_contact_date</text>
+<text x="840" y="689" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">date</text>
+<rect x="461" y="696" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="711" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">additional_info</text>
+<text x="840" y="711" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="470" y="733" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#059669" font-weight="bold">[J]</tspan> profile</text>
+<text x="840" y="733" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">jsonb</text>
+<rect x="50" y="200" width="350" height="282" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="50" y="200" width="350" height="34" rx="8" fill="#2563eb"/>
+<rect x="50" y="226" width="350" height="8" fill="#2563eb"/>
+<text x="62" y="223" font-size="15" font-weight="bold" fill="#ffffff">ai_recommendations</text>
+<text x="60" y="249" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> id</text>
+<text x="390" y="249" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="51" y="256" width="348" height="22" fill="#f1f5f9"/>
+<text x="60" y="271" font-size="11" font-family="Consolas, monospace" fill="#5b21b6" font-weight="normal"><tspan fill="#7c3aed" font-weight="bold">[FK]</tspan> customer_id</text>
+<text x="390" y="271" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<text x="60" y="293" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">customer_name</text>
+<text x="390" y="293" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="51" y="300" width="348" height="22" fill="#f1f5f9"/>
+<text x="60" y="315" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">recommendation_date</text>
+<text x="390" y="315" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">date</text>
+<text x="60" y="337" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">suggested_message</text>
+<text x="390" y="337" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="51" y="344" width="348" height="22" fill="#f1f5f9"/>
+<text x="60" y="359" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">suggested_strategy</text>
+<text x="390" y="359" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="60" y="381" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">suggested_followup_date</text>
+<text x="390" y="381" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">date</text>
+<rect x="51" y="388" width="348" height="22" fill="#f1f5f9"/>
+<text x="60" y="403" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#0891b2" font-weight="bold">[E]</tspan> suggested_customer_stage</text>
+<text x="390" y="403" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">客户经营阶段</text>
+<text x="60" y="425" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#0891b2" font-weight="bold">[E]</tspan> suggested_followup_goal</text>
+<text x="390" y="425" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">跟进目标</text>
+<rect x="51" y="432" width="348" height="22" fill="#f1f5f9"/>
+<text x="60" y="447" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#059669" font-weight="bold">[J]</tspan> nba</text>
+<text x="390" y="447" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">jsonb</text>
+<text x="60" y="469" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">updated_at</text>
+<text x="390" y="469" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">timestamptz</text>
+<rect x="50" y="580" width="350" height="238" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="50" y="580" width="350" height="34" rx="8" fill="#2563eb"/>
+<rect x="50" y="606" width="350" height="8" fill="#2563eb"/>
+<text x="62" y="603" font-size="15" font-weight="bold" fill="#ffffff">followups</text>
+<text x="60" y="629" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> Id</text>
+<text x="390" y="629" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<rect x="51" y="636" width="348" height="22" fill="#f1f5f9"/>
+<text x="60" y="651" font-size="11" font-family="Consolas, monospace" fill="#5b21b6" font-weight="normal"><tspan fill="#7c3aed" font-weight="bold">[FK]</tspan> customer_id</text>
+<text x="390" y="651" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<text x="60" y="673" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">customer_name</text>
+<text x="390" y="673" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="51" y="680" width="348" height="22" fill="#f1f5f9"/>
+<text x="60" y="695" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">followup_notes</text>
+<text x="390" y="695" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="60" y="717" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">followup_date</text>
+<text x="390" y="717" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">date</text>
+<rect x="51" y="724" width="348" height="22" fill="#f1f5f9"/>
+<text x="60" y="739" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">next_followup_date</text>
+<text x="390" y="739" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">date</text>
+<text x="60" y="761" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#0891b2" font-weight="bold">[E]</tspan> next_followup_goal</text>
+<text x="390" y="761" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">跟进目标</text>
+<rect x="51" y="768" width="348" height="22" fill="#f1f5f9"/>
+<text x="60" y="783" font-size="11" font-family="Consolas, monospace" fill="#92400e" font-weight="normal"><tspan fill="#d97706" font-weight="bold">[→]</tspan> recommendation_id</text>
+<text x="390" y="783" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<text x="60" y="805" font-size="11" font-family="Consolas, monospace" fill="#92400e" font-weight="normal"><tspan fill="#d97706" font-weight="bold">[→]</tspan> activity_id</text>
+<text x="390" y="805" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<rect x="50" y="920" width="350" height="194" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="50" y="920" width="350" height="34" rx="8" fill="#2563eb"/>
+<rect x="50" y="946" width="350" height="8" fill="#2563eb"/>
+<text x="62" y="943" font-size="15" font-weight="bold" fill="#ffffff">gifts</text>
+<text x="60" y="969" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> Id</text>
+<text x="390" y="969" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="51" y="976" width="348" height="22" fill="#f1f5f9"/>
+<text x="60" y="991" font-size="11" font-family="Consolas, monospace" fill="#5b21b6" font-weight="normal"><tspan fill="#7c3aed" font-weight="bold">[FK]</tspan> customer_id</text>
+<text x="390" y="991" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<text x="60" y="1013" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">customer_name</text>
+<text x="390" y="1013" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="51" y="1020" width="348" height="22" fill="#f1f5f9"/>
+<text x="60" y="1035" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">gift_name</text>
+<text x="390" y="1035" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="60" y="1057" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">quantity</text>
+<text x="390" y="1057" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">small</text>
+<rect x="51" y="1064" width="348" height="22" fill="#f1f5f9"/>
+<text x="60" y="1079" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">given_date</text>
+<text x="390" y="1079" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">date</text>
+<text x="60" y="1101" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">notes</text>
+<text x="390" y="1101" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="50" y="1200" width="350" height="238" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="50" y="1200" width="350" height="34" rx="8" fill="#2563eb"/>
+<rect x="50" y="1226" width="350" height="8" fill="#2563eb"/>
+<text x="62" y="1223" font-size="15" font-weight="bold" fill="#ffffff">photos</text>
+<text x="60" y="1249" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> id</text>
+<text x="390" y="1249" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<rect x="51" y="1256" width="348" height="22" fill="#f1f5f9"/>
+<text x="60" y="1271" font-size="11" font-family="Consolas, monospace" fill="#5b21b6" font-weight="normal"><tspan fill="#7c3aed" font-weight="bold">[FK]</tspan> customer_id</text>
+<text x="390" y="1271" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<text x="60" y="1293" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">customer_name</text>
+<text x="390" y="1293" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="51" y="1300" width="348" height="22" fill="#f1f5f9"/>
+<text x="60" y="1315" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">photo_url</text>
+<text x="390" y="1315" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="60" y="1337" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">thumbnail_url</text>
+<text x="390" y="1337" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="51" y="1344" width="348" height="22" fill="#f1f5f9"/>
+<text x="60" y="1359" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">file_name</text>
+<text x="390" y="1359" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="60" y="1381" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">content_type</text>
+<text x="390" y="1381" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="51" y="1388" width="348" height="22" fill="#f1f5f9"/>
+<text x="60" y="1403" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">category</text>
+<text x="390" y="1403" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="60" y="1425" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">sort_order</text>
+<text x="390" y="1425" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<rect x="460" y="780" width="390" height="370" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="460" y="780" width="390" height="34" rx="8" fill="#2563eb"/>
+<rect x="460" y="806" width="390" height="8" fill="#2563eb"/>
+<text x="472" y="803" font-size="15" font-weight="bold" fill="#ffffff">products</text>
+<text x="470" y="829" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> id</text>
+<text x="840" y="829" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="461" y="836" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="851" font-size="11" font-family="Consolas, monospace" fill="#5b21b6" font-weight="normal"><tspan fill="#7c3aed" font-weight="bold">[FK]</tspan> customer_id</text>
+<text x="840" y="851" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<text x="470" y="873" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">customer_name</text>
+<text x="840" y="873" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="461" y="880" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="895" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">ap_ipa</text>
+<text x="840" y="895" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<text x="470" y="917" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">ap_ltc</text>
+<text x="840" y="917" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="461" y="924" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="939" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">ap_ann</text>
+<text x="840" y="939" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<text x="470" y="961" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">ap_life</text>
+<text x="840" y="961" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="461" y="968" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="983" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">ap_term</text>
+<text x="840" y="983" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<text x="470" y="1005" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">ap_wl</text>
+<text x="840" y="1005" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="461" y="1012" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="1027" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">ap_pa</text>
+<text x="840" y="1027" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<text x="470" y="1049" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">ap_ci</text>
+<text x="840" y="1049" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="461" y="1056" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="1071" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">ap_hi</text>
+<text x="840" y="1071" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<text x="470" y="1093" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">ap_all</text>
+<text x="840" y="1093" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="461" y="1100" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="1115" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">ap_ppa</text>
+<text x="840" y="1115" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<text x="470" y="1137" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">items</text>
+<text x="840" y="1137" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="460" y="1230" width="390" height="194" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="460" y="1230" width="390" height="34" rx="8" fill="#2563eb"/>
+<rect x="460" y="1256" width="390" height="8" fill="#2563eb"/>
+<text x="472" y="1253" font-size="15" font-weight="bold" fill="#ffffff">ocr_records</text>
+<text x="470" y="1279" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> id</text>
+<text x="840" y="1279" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="461" y="1286" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="1301" font-size="11" font-family="Consolas, monospace" fill="#5b21b6" font-weight="normal"><tspan fill="#7c3aed" font-weight="bold">[FK]</tspan> customer_id</text>
+<text x="840" y="1301" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<text x="470" y="1323" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">summary</text>
+<text x="840" y="1323" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="461" y="1330" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="1345" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">raw_text</text>
+<text x="840" y="1345" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="470" y="1367" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">file_ids</text>
+<text x="840" y="1367" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="461" y="1374" width="388" height="22" fill="#f1f5f9"/>
+<text x="470" y="1389" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">file_names</text>
+<text x="840" y="1389" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="470" y="1411" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">customer_snapshot</text>
+<text x="840" y="1411" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="900" y="780" width="430" height="304" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="900" y="780" width="430" height="34" rx="8" fill="#2563eb"/>
+<rect x="900" y="806" width="430" height="8" fill="#2563eb"/>
+<text x="912" y="803" font-size="15" font-weight="bold" fill="#ffffff">policy_review_reports</text>
+<text x="910" y="829" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> id</text>
+<text x="1320" y="829" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="901" y="836" width="428" height="22" fill="#f1f5f9"/>
+<text x="910" y="851" font-size="11" font-family="Consolas, monospace" fill="#5b21b6" font-weight="normal"><tspan fill="#7c3aed" font-weight="bold">[FK]</tspan> customer_id</text>
+<text x="1320" y="851" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<text x="910" y="873" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">customer_name</text>
+<text x="1320" y="873" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="901" y="880" width="428" height="22" fill="#f1f5f9"/>
+<text x="910" y="895" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">report_date</text>
+<text x="1320" y="895" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">date</text>
+<text x="910" y="917" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">report_type</text>
+<text x="1320" y="917" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="901" y="924" width="428" height="22" fill="#f1f5f9"/>
+<text x="910" y="939" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">summary</text>
+<text x="1320" y="939" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="910" y="961" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">gaps_found</text>
+<text x="1320" y="961" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="901" y="968" width="428" height="22" fill="#f1f5f9"/>
+<text x="910" y="983" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">recommendations</text>
+<text x="1320" y="983" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="910" y="1005" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">asset_allocation</text>
+<text x="1320" y="1005" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="901" y="1012" width="428" height="22" fill="#f1f5f9"/>
+<text x="910" y="1027" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">next_action</text>
+<text x="1320" y="1027" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="910" y="1049" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">raw</text>
+<text x="1320" y="1049" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="901" y="1056" width="428" height="22" fill="#f1f5f9"/>
+<text x="910" y="1071" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">edited_summary…edited_next_action</text>
+<text x="1320" y="1071" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="900" y="1170" width="430" height="260" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="900" y="1170" width="430" height="34" rx="8" fill="#2563eb"/>
+<rect x="900" y="1196" width="430" height="8" fill="#2563eb"/>
+<text x="912" y="1193" font-size="15" font-weight="bold" fill="#ffffff">opportunities</text>
+<text x="910" y="1219" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> id</text>
+<text x="1320" y="1219" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="901" y="1226" width="428" height="22" fill="#f1f5f9"/>
+<text x="910" y="1241" font-size="11" font-family="Consolas, monospace" fill="#5b21b6" font-weight="normal"><tspan fill="#7c3aed" font-weight="bold">[FK]</tspan> customer_id</text>
+<text x="1320" y="1241" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<text x="910" y="1263" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">opportunity_type</text>
+<text x="1320" y="1263" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="901" y="1270" width="428" height="22" fill="#f1f5f9"/>
+<text x="910" y="1285" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">status</text>
+<text x="1320" y="1285" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="910" y="1307" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">referred_name</text>
+<text x="1320" y="1307" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="901" y="1314" width="428" height="22" fill="#f1f5f9"/>
+<text x="910" y="1329" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">referred_relation</text>
+<text x="1320" y="1329" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="910" y="1351" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">discovered_at</text>
+<text x="1320" y="1351" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">date</text>
+<rect x="901" y="1358" width="428" height="22" fill="#f1f5f9"/>
+<text x="910" y="1373" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">last_progress</text>
+<text x="1320" y="1373" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="910" y="1395" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">next_action</text>
+<text x="1320" y="1395" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="901" y="1402" width="428" height="22" fill="#f1f5f9"/>
+<text x="910" y="1417" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">ai_summary</text>
+<text x="1320" y="1417" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1520" y="200" width="430" height="326" rx="8" fill="#ffffff" stroke="#db2777" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="1520" y="200" width="430" height="34" rx="8" fill="#db2777"/>
+<rect x="1520" y="226" width="430" height="8" fill="#db2777"/>
+<text x="1532" y="223" font-size="15" font-weight="bold" fill="#ffffff">activities</text>
+<text x="1530" y="249" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> id</text>
+<text x="1940" y="249" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="1521" y="256" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="271" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">name</text>
+<text x="1940" y="271" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="1530" y="293" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">activity_date</text>
+<text x="1940" y="293" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">date</text>
+<rect x="1521" y="300" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="315" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">activity_type</text>
+<text x="1940" y="315" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="1530" y="337" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">location</text>
+<text x="1940" y="337" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="344" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="359" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">description</text>
+<text x="1940" y="359" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="1530" y="381" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#0891b2" font-weight="bold">[E]</tspan> status</text>
+<text x="1940" y="381" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="388" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="403" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#059669" font-weight="bold">[J]</tspan> goal_types</text>
+<text x="1940" y="403" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">jsonb</text>
+<text x="1530" y="425" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#059669" font-weight="bold">[J]</tspan> topic_ids</text>
+<text x="1940" y="425" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">jsonb</text>
+<rect x="1521" y="432" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="447" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">target_participants</text>
+<text x="1940" y="447" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<text x="1530" y="469" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">actual_participants</text>
+<text x="1940" y="469" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<rect x="1521" y="476" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="491" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">review_summary</text>
+<text x="1940" y="491" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="1530" y="513" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">review_score</text>
+<text x="1940" y="513" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">numeric</text>
+<rect x="1520" y="540" width="430" height="260" rx="8" fill="#ffffff" stroke="#db2777" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="1520" y="540" width="430" height="34" rx="8" fill="#db2777"/>
+<rect x="1520" y="566" width="430" height="8" fill="#db2777"/>
+<text x="1532" y="563" font-size="15" font-weight="bold" fill="#ffffff">activity_participants</text>
+<text x="1530" y="589" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> id</text>
+<text x="1940" y="589" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="1521" y="596" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="611" font-size="11" font-family="Consolas, monospace" fill="#5b21b6" font-weight="normal"><tspan fill="#7c3aed" font-weight="bold">[FK]</tspan> activity_id</text>
+<text x="1940" y="611" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<text x="1530" y="633" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">person_type</text>
+<text x="1940" y="633" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="640" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="655" font-size="11" font-family="Consolas, monospace" fill="#92400e" font-weight="normal"><tspan fill="#d97706" font-weight="bold">[→]</tspan> person_id</text>
+<text x="1940" y="655" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<text x="1530" y="677" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">person_name</text>
+<text x="1940" y="677" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="684" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="699" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">status</text>
+<text x="1940" y="699" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="1530" y="721" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">participant_role</text>
+<text x="1940" y="721" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="728" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="743" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">followup_status</text>
+<text x="1940" y="743" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="1530" y="765" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">relationship_note</text>
+<text x="1940" y="765" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="772" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="787" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">ai_followup_suggestion</text>
+<text x="1940" y="787" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1520" y="860" width="430" height="304" rx="8" fill="#ffffff" stroke="#db2777" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="1520" y="860" width="430" height="34" rx="8" fill="#db2777"/>
+<rect x="1520" y="886" width="430" height="8" fill="#db2777"/>
+<text x="1532" y="883" font-size="15" font-weight="bold" fill="#ffffff">activity_tasks</text>
+<text x="1530" y="909" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> id</text>
+<text x="1940" y="909" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="1521" y="916" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="931" font-size="11" font-family="Consolas, monospace" fill="#5b21b6" font-weight="normal"><tspan fill="#7c3aed" font-weight="bold">[FK]</tspan> activity_id</text>
+<text x="1940" y="931" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<text x="1530" y="953" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">task_title</text>
+<text x="1940" y="953" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="960" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="975" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#0891b2" font-weight="bold">[E]</tspan> task_type</text>
+<text x="1940" y="975" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="1530" y="997" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#0891b2" font-weight="bold">[E]</tspan> status</text>
+<text x="1940" y="997" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="1004" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1019" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#0891b2" font-weight="bold">[E]</tspan> priority</text>
+<text x="1940" y="1019" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="1530" y="1041" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">due_date</text>
+<text x="1940" y="1041" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">date</text>
+<rect x="1521" y="1048" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1063" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">completed_at</text>
+<text x="1940" y="1063" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">timestamptz</text>
+<text x="1530" y="1085" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#0891b2" font-weight="bold">[E]</tspan> related_type</text>
+<text x="1940" y="1085" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="1092" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1107" font-size="11" font-family="Consolas, monospace" fill="#92400e" font-weight="normal"><tspan fill="#d97706" font-weight="bold">[→]</tspan> related_id</text>
+<text x="1940" y="1107" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<text x="1530" y="1129" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">note</text>
+<text x="1940" y="1129" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="1136" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1151" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#0891b2" font-weight="bold">[E]</tspan> source</text>
+<text x="1940" y="1151" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="2050" y="200" width="430" height="370" rx="8" fill="#ffffff" stroke="#db2777" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="2050" y="200" width="430" height="34" rx="8" fill="#db2777"/>
+<rect x="2050" y="226" width="430" height="8" fill="#db2777"/>
+<text x="2062" y="223" font-size="15" font-weight="bold" fill="#ffffff">activity_speakers</text>
+<text x="2060" y="249" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> id</text>
+<text x="2470" y="249" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="2051" y="256" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="271" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">name</text>
+<text x="2470" y="271" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="2060" y="293" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">phone</text>
+<text x="2470" y="293" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="2051" y="300" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="315" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">wechat</text>
+<text x="2470" y="315" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="2060" y="337" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">organization</text>
+<text x="2470" y="337" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="2051" y="344" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="359" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">position</text>
+<text x="2470" y="359" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="2060" y="381" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#0891b2" font-weight="bold">[E]</tspan> relationship_stage</text>
+<text x="2470" y="381" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="2051" y="388" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="403" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">expertise</text>
+<text x="2470" y="403" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="2060" y="425" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">topic_summary</text>
+<text x="2470" y="425" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="2051" y="432" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="447" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">source</text>
+<text x="2470" y="447" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="2060" y="469" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">cooperation_count</text>
+<text x="2470" y="469" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<rect x="2051" y="476" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="491" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">preferred_format</text>
+<text x="2470" y="491" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="2060" y="513" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#0891b2" font-weight="bold">[E]</tspan> status</text>
+<text x="2470" y="513" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="2051" y="520" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="535" font-size="11" font-family="Consolas, monospace" fill="#92400e" font-weight="normal"><tspan fill="#d97706" font-weight="bold">[→]</tspan> customer_id</text>
+<text x="2470" y="535" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<text x="2060" y="557" font-size="11" font-family="Consolas, monospace" fill="#92400e" font-weight="normal"><tspan fill="#d97706" font-weight="bold">[→]</tspan> recruit_candidate_id</text>
+<text x="2470" y="557" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="2050" y="700" width="430" height="282" rx="8" fill="#ffffff" stroke="#db2777" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="2050" y="700" width="430" height="34" rx="8" fill="#db2777"/>
+<rect x="2050" y="726" width="430" height="8" fill="#db2777"/>
+<text x="2062" y="723" font-size="15" font-weight="bold" fill="#ffffff">activity_topics</text>
+<text x="2060" y="749" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> id</text>
+<text x="2470" y="749" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="2051" y="756" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="771" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">topic_name</text>
+<text x="2470" y="771" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="2060" y="793" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">category</text>
+<text x="2470" y="793" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="2051" y="800" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="815" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">description</text>
+<text x="2470" y="815" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="2060" y="837" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">target_audience</text>
+<text x="2470" y="837" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="2051" y="844" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="859" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#059669" font-weight="bold">[J]</tspan> keywords</text>
+<text x="2470" y="859" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">jsonb</text>
+<text x="2060" y="881" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#0891b2" font-weight="bold">[E]</tspan> status</text>
+<text x="2470" y="881" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="2051" y="888" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="903" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">use_count</text>
+<text x="2470" y="903" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<text x="2060" y="925" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">last_used_date</text>
+<text x="2470" y="925" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">date</text>
+<rect x="2051" y="932" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="947" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">ai_summary</text>
+<text x="2470" y="947" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="2060" y="969" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">notes</text>
+<text x="2470" y="969" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1520" y="1180" width="430" height="502" rx="8" fill="#ffffff" stroke="#7c3aed" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="1520" y="1180" width="430" height="34" rx="8" fill="#7c3aed"/>
+<rect x="1520" y="1206" width="430" height="8" fill="#7c3aed"/>
+<text x="1532" y="1203" font-size="15" font-weight="bold" fill="#ffffff">recruit_candidates</text>
+<text x="1530" y="1229" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> id</text>
+<text x="1940" y="1229" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="1521" y="1236" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1251" font-size="11" font-family="Consolas, monospace" fill="#5b21b6" font-weight="normal"><tspan fill="#7c3aed" font-weight="bold">[FK]</tspan> customer_id</text>
+<text x="1940" y="1251" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<text x="1530" y="1273" font-size="11" font-family="Consolas, monospace" fill="#92400e" font-weight="normal"><tspan fill="#d97706" font-weight="bold">[→]</tspan> recommender_id</text>
+<text x="1940" y="1273" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="1521" y="1280" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1295" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">stage</text>
+<text x="1940" y="1295" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="1530" y="1317" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">stage_changed_at</text>
+<text x="1940" y="1317" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">timestamptz</text>
+<rect x="1521" y="1324" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1339" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">potential_score</text>
+<text x="1940" y="1339" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<text x="1530" y="1361" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">potential_reason</text>
+<text x="1940" y="1361" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="1368" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1383" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">motivation</text>
+<text x="1940" y="1383" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="1530" y="1405" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">concerns</text>
+<text x="1940" y="1405" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="1412" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1427" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">work_experience</text>
+<text x="1940" y="1427" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="1530" y="1449" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">family_situation</text>
+<text x="1940" y="1449" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="1456" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1471" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">personality_tags</text>
+<text x="1940" y="1471" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="1530" y="1493" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">career_plan</text>
+<text x="1940" y="1493" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="1500" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1515" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">next_action_date</text>
+<text x="1940" y="1515" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">date</text>
+<text x="1530" y="1537" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">next_action</text>
+<text x="1940" y="1537" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="1544" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1559" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#059669" font-weight="bold">[J]</tspan> activity_history</text>
+<text x="1940" y="1559" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">jsonb</text>
+<text x="1530" y="1581" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal"><tspan fill="#059669" font-weight="bold">[J]</tspan> profile</text>
+<text x="1940" y="1581" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">jsonb</text>
+<rect x="1521" y="1588" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1603" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">radar_image_file_id</text>
+<text x="1940" y="1603" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="1530" y="1625" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">radar_image_name</text>
+<text x="1940" y="1625" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="1632" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1647" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">winner_report_file_id</text>
+<text x="1940" y="1647" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="1530" y="1669" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">winner_report_name</text>
+<text x="1940" y="1669" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1520" y="1730" width="430" height="260" rx="8" fill="#ffffff" stroke="#7c3aed" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="1520" y="1730" width="430" height="34" rx="8" fill="#7c3aed"/>
+<rect x="1520" y="1756" width="430" height="8" fill="#7c3aed"/>
+<text x="1532" y="1753" font-size="15" font-weight="bold" fill="#ffffff">recruit_followups</text>
+<text x="1530" y="1779" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> id</text>
+<text x="1940" y="1779" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="1521" y="1786" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1801" font-size="11" font-family="Consolas, monospace" fill="#92400e" font-weight="normal"><tspan fill="#d97706" font-weight="bold">[→]</tspan> candidate_id</text>
+<text x="1940" y="1801" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<text x="1530" y="1823" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">contact_method</text>
+<text x="1940" y="1823" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="1830" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1845" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">followup_notes</text>
+<text x="1940" y="1845" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="1530" y="1867" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">followup_date</text>
+<text x="1940" y="1867" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">date</text>
+<rect x="1521" y="1874" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1889" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">interest_level</text>
+<text x="1940" y="1889" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="1530" y="1911" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">concern_feedback</text>
+<text x="1940" y="1911" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="1918" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1933" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">next_followup_date</text>
+<text x="1940" y="1933" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">date</text>
+<text x="1530" y="1955" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">next_followup_goal</text>
+<text x="1940" y="1955" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="1521" y="1962" width="428" height="22" fill="#f1f5f9"/>
+<text x="1530" y="1977" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">operator</text>
+<text x="1940" y="1977" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="2050" y="1200" width="430" height="172" rx="8" fill="#ffffff" stroke="#7c3aed" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="2050" y="1200" width="430" height="34" rx="8" fill="#7c3aed"/>
+<rect x="2050" y="1226" width="430" height="8" fill="#7c3aed"/>
+<text x="2062" y="1223" font-size="15" font-weight="bold" fill="#ffffff">recruit_milestones</text>
+<text x="2060" y="1249" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> id</text>
+<text x="2470" y="1249" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="2051" y="1256" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="1271" font-size="11" font-family="Consolas, monospace" fill="#5b21b6" font-weight="normal"><tspan fill="#7c3aed" font-weight="bold">[FK]</tspan> candidate_id</text>
+<text x="2470" y="1271" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<text x="2060" y="1293" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">from_stage</text>
+<text x="2470" y="1293" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="2051" y="1300" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="1315" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">to_stage</text>
+<text x="2470" y="1315" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="2060" y="1337" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">happened_at</text>
+<text x="2470" y="1337" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">timestamptz</text>
+<rect x="2051" y="1344" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="1359" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">note</text>
+<text x="2470" y="1359" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="2050" y="1470" width="430" height="150" rx="8" fill="#ffffff" stroke="#7c3aed" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="2050" y="1470" width="430" height="34" rx="8" fill="#7c3aed"/>
+<rect x="2050" y="1496" width="430" height="8" fill="#7c3aed"/>
+<text x="2062" y="1493" font-size="15" font-weight="bold" fill="#ffffff">recruit_goals</text>
+<text x="2060" y="1519" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> id</text>
+<text x="2470" y="1519" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="2051" y="1526" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="1541" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">goal_month</text>
+<text x="2470" y="1541" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">date</text>
+<text x="2060" y="1563" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">stage</text>
+<text x="2470" y="1563" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="2051" y="1570" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="1585" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">target_count</text>
+<text x="2470" y="1585" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">int</text>
+<text x="2060" y="1607" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">note</text>
+<text x="2470" y="1607" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="2050" y="1690" width="430" height="216" rx="8" fill="#ffffff" stroke="#0891b2" stroke-width="2" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))"/>
+<rect x="2050" y="1690" width="430" height="34" rx="8" fill="#0891b2"/>
+<rect x="2050" y="1716" width="430" height="8" fill="#0891b2"/>
+<text x="2062" y="1713" font-size="15" font-weight="bold" fill="#ffffff">recruit_goal_benchmarks</text>
+<text x="2060" y="1739" font-size="11" font-family="Consolas, monospace" fill="#b45309" font-weight="bold"><tspan fill="#b45309" font-weight="bold">[PK]</tspan> id</text>
+<text x="2470" y="1739" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">bigint</text>
+<rect x="2051" y="1746" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="1761" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">stage_from</text>
+<text x="2470" y="1761" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<text x="2060" y="1783" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">stage_to</text>
+<text x="2470" y="1783" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="2051" y="1790" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="1805" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">conversion_min</text>
+<text x="2470" y="1805" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">numeric</text>
+<text x="2060" y="1827" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">conversion_avg</text>
+<text x="2470" y="1827" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">numeric</text>
+<rect x="2051" y="1834" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="1849" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">conversion_good</text>
+<text x="2470" y="1849" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">numeric</text>
+<text x="2060" y="1871" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">source</text>
+<text x="2470" y="1871" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="2051" y="1878" width="428" height="22" fill="#f1f5f9"/>
+<text x="2060" y="1893" font-size="11" font-family="Consolas, monospace" fill="#1e293b" font-weight="normal">note</text>
+<text x="2470" y="1893" font-size="10" font-family="Consolas, monospace" fill="#94a3b8" text-anchor="end">text</text>
+<rect x="2045" y="1190" width="470" height="42" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+<text x="2057" y="1208" font-size="12" font-weight="bold" font-family="Consolas, monospace" fill="#334155">customers_view</text>
+<text x="2057" y="1225" font-size="10" fill="#64748b">customers · REVOKE anon</text>
+<rect x="2045" y="1242" width="470" height="42" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+<text x="2057" y="1260" font-size="12" font-weight="bold" font-family="Consolas, monospace" fill="#334155">followups_view</text>
+<text x="2057" y="1277" font-size="10" fill="#64748b">followups · REVOKE anon</text>
+<rect x="2045" y="1294" width="470" height="42" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+<text x="2057" y="1312" font-size="12" font-weight="bold" font-family="Consolas, monospace" fill="#334155">gifts_view</text>
+<text x="2057" y="1329" font-size="10" fill="#64748b">gifts · REVOKE anon</text>
+<rect x="2045" y="1346" width="470" height="42" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+<text x="2057" y="1364" font-size="12" font-weight="bold" font-family="Consolas, monospace" fill="#334155">photos_view</text>
+<text x="2057" y="1381" font-size="10" fill="#64748b">photos · REVOKE anon</text>
+<rect x="2045" y="1398" width="470" height="42" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+<text x="2057" y="1416" font-size="12" font-weight="bold" font-family="Consolas, monospace" fill="#334155">products_view</text>
+<text x="2057" y="1433" font-size="10" fill="#64748b">products · REVOKE anon</text>
+<rect x="2045" y="1450" width="470" height="42" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+<text x="2057" y="1468" font-size="12" font-weight="bold" font-family="Consolas, monospace" fill="#334155">ai_recommendations_view</text>
+<text x="2057" y="1485" font-size="10" fill="#64748b">ai_recommendations · REVOKE anon</text>
+<rect x="2045" y="1502" width="470" height="42" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+<text x="2057" y="1520" font-size="12" font-weight="bold" font-family="Consolas, monospace" fill="#334155">v_recruit_candidates</text>
+<text x="2057" y="1537" font-size="10" fill="#64748b">recruit JOIN customers · GRANT anon</text>
+<rect x="2045" y="1554" width="470" height="42" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+<text x="2057" y="1572" font-size="12" font-weight="bold" font-family="Consolas, monospace" fill="#334155">v_recruit_candidates_trash</text>
+<text x="2057" y="1589" font-size="10" fill="#64748b">recruit (soft-deleted) · GRANT anon</text>
+<rect x="2045" y="1606" width="470" height="42" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+<text x="2057" y="1624" font-size="12" font-weight="bold" font-family="Consolas, monospace" fill="#334155">activity_participants_view</text>
+<text x="2057" y="1641" font-size="10" fill="#64748b">activity_participants · REVOKE anon</text>
+<rect x="30" y="2030" width="2520" height="240" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+<text x="55" y="2064" font-size="17" font-weight="bold" fill="#0f172a">图例</text>
+<line x1="55" y1="2092" x2="105" y2="2092" stroke="#2563eb" stroke-width="2.5"/>
+<text x="115" y="2096" font-size="13" fill="#334155">实线箭头 = 真实外键约束（数据库强制）</text>
+<line x1="55" y1="2122" x2="105" y2="2122" stroke="#d97706" stroke-width="2.5" stroke-dasharray="7 5"/>
+<text x="115" y="2126" font-size="13" fill="#334155">橙色虚线 = 应用层逻辑关联（无 FK 约束：followups.recommendation_id/activity_id、recruit_followups.candidate_id、recruit_candidates.recommender_id）</text>
+<line x1="55" y1="2152" x2="105" y2="2152" stroke="#dc2626" stroke-width="2.5" stroke-dasharray="3 4"/>
+<text x="115" y="2156" font-size="13" fill="#334155">红色虚线 = 多态关联（activity_participants.person_id：person_type=customer→customers.Id；person_type=recruit→recruit_candidates.id；person_type=speaker→activity_speakers.id）</text>
+<text x="55" y="2220" font-size="13" font-family="Consolas, monospace"><tspan fill="#b45309" font-weight="bold">[PK]</tspan><tspan fill="#334155" font-family="Microsoft YaHei"> 主键</tspan></text>
+<text x="355" y="2220" font-size="13" font-family="Consolas, monospace"><tspan fill="#7c3aed" font-weight="bold">[FK]</tspan><tspan fill="#334155" font-family="Microsoft YaHei"> 真实外键列</tspan></text>
+<text x="655" y="2220" font-size="13" font-family="Consolas, monospace"><tspan fill="#d97706" font-weight="bold">[→]</tspan><tspan fill="#334155" font-family="Microsoft YaHei"> 逻辑外键列</tspan></text>
+<text x="955" y="2220" font-size="13" font-family="Consolas, monospace"><tspan fill="#059669" font-weight="bold">[J]</tspan><tspan fill="#334155" font-family="Microsoft YaHei"> JSONB 列</tspan></text>
+<text x="1255" y="2220" font-size="13" font-family="Consolas, monospace"><tspan fill="#0891b2" font-weight="bold">[E]</tspan><tspan fill="#334155" font-family="Microsoft YaHei"> 枚举列</tspan></text>
+<text x="1560" y="2220" font-size="13" fill="#475569">注：所有表均含 created_at/updated_at；主对象及子表含 deleted_at（软删除），图中省略。</text>
+<text x="60" y="2270" font-size="13" fill="#94a3b8">Victor&#8217;s CRM v1.7.7 &#183; docs/db-schema-v1.7.7.svg &#183; 由 tools/gen-schema-v1.7.7.js 生成</text>
+</svg>
