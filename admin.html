@@ -4529,9 +4529,11 @@ async function showActivityDetail(id){
     // AI 活动复盘按钮（v1.7.5）：仅 ended/reviewed 显示；AI 只建议，确认后才落库
     if(act.status === 'ended' || act.status === 'reviewed') {
       card.appendChild(el('div', {style:'margin-bottom:12px'}, [
-        el('button', {class:'btn btn-ai', onclick:function(){ runActivityPostReview(id, this); }}, '✨ AI 活动复盘'),
+        el('button', {class:'btn btn-ai', style:'margin-right:8px', onclick:function(){ runActivityPostReview(id, this); }}, '✨ AI 活动复盘'),
+        el('button', {class:'btn btn-ai', onclick:function(){ runParticipantReview(id, this); }}, '🎯 活动后跟进建议（谁该跟·跟什么）'),
       ]));
       card.appendChild(el('div', {id:'activity-postreview-box'}));
+      card.appendChild(el('div', {id:'activity-participant-review-box'}));
     }
 
     // 活动主题区块（v1.7.4）：选择主题 / AI 推荐主题；采用后走 activities.applyTopics 计数
@@ -5756,6 +5758,169 @@ function prPriorityInfo(v){
   if(v === 'high') return {label:'高', color:'#dc2626'};
   if(v === 'low') return {label:'低', color:'#6b7280'};
   return {label:'中', color:'#d97706'};
+}
+
+// ---------- v1.8 Sprint6：活动后跟进建议（参与者 A-E 分类，确认后写 next_action → Action Center） ----------
+var PR_META = {
+  A: {label:'值得客户跟进', color:'#2563eb', goal:'约见面'},
+  B: {label:'值得增员跟进', color:'#d97706', goal:'推进招募'},
+  C: {label:'值得转介绍',   color:'#059669', goal:'推进转介绍'},
+  D: {label:'暂时不用跟进', color:'#9ca3af', goal:''},
+  E: {label:'继续建立关系', color:'#7c3aed', goal:'建立联系'},
+};
+var PR_CONF_LABEL = {high:'高', medium:'中', low:'低'};
+var PR_CONF_COLOR = {high:'#059669', medium:'#d97706', low:'#9ca3af'};
+
+async function runParticipantReview(activityId, btn){
+  var box = document.getElementById('activity-participant-review-box');
+  if(!box) return;
+  if(btn){ btn.disabled = true; btn.textContent = 'AI 分析参与者中…（约几秒）'; }
+  box.innerHTML = '';
+  box.appendChild(el('div', {class:'loading'}, 'AI 正在判断每位参与者活动后该怎么跟进…'));
+  try {
+    var r = await callFn('ai_activity', {action:'participantReview', activity_id:activityId});
+    if(r.error === 'no_linked_participants'){
+      box.innerHTML = '';
+      box.appendChild(el('div', {class:'empty'}, r.message || '本场还没有已关联客户/增员的参与者。'));
+    } else if(r.error){
+      throw new Error(r.error);
+    } else {
+      renderParticipantReview(activityId, r);
+    }
+  } catch(e){
+    box.innerHTML = '';
+    box.appendChild(el('div', {class:'empty'}, 'AI 暂时无法生成跟进建议：' + esc(e.message)));
+  }
+  if(btn){ btn.disabled = false; btn.textContent = '🎯 活动后跟进建议（谁该跟·跟什么）'; }
+}
+
+function renderParticipantReview(activityId, result){
+  var box = document.getElementById('activity-participant-review-box');
+  if(!box) return;
+  box.innerHTML = '';
+  var card = el('div', {class:'card', style:'margin-bottom:12px;border:1px solid #ddd6fe;background:#faf5ff;padding:14px'});
+  card.appendChild(el('div', {style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:6px'}, [
+    el('div', {style:'font-weight:700;color:#7c3aed'}, '🎯 活动后跟进建议 · 共 ' + result.total + ' 人'),
+    el('a', {class:'btn-sm', onclick:function(){ box.innerHTML=''; }}, '收起'),
+  ]));
+
+  var counts = result.counts || {};
+  var chips = el('div', {style:'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px'});
+  ['A','B','C','D','E'].forEach(function(k){
+    var m = PR_META[k];
+    chips.appendChild(el('span', {style:'font-size:12px;color:#fff;background:'+m.color+';padding:2px 10px;border-radius:12px'}, k + ' ' + m.label + ' ' + (counts[k]||0)));
+  });
+  card.appendChild(chips);
+  card.appendChild(el('div', {style:'font-size:12px;color:var(--muted);margin-bottom:8px'}, 'AI 只给建议。点「确认并创建行动」后，才会把下一步行动写入该客户/增员的跟进记录并进入 Action Center / Today；AI 不会自动改阶段或建机会。'));
+
+  var list = (result.classifications || []).slice();
+  var order = {A:0,B:1,C:2,E:3,D:4};
+  list.sort(function(x,y){ var ox = order[x.classification]; if(ox==null) ox=9; var oy = order[y.classification]; if(oy==null) oy=9; return ox-oy; });
+
+  list.forEach(function(item){
+    var meta = PR_META[item.classification] || PR_META.E;
+    var row = el('div', {class:'card', style:'margin-bottom:8px;padding:10px;background:#fff;border-left:3px solid '+meta.color});
+
+    var header = el('div', {style:'display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap'});
+    header.appendChild(el('div', {}, [
+      el('span', {style:'font-size:11px;color:#fff;background:'+meta.color+';padding:1px 8px;border-radius:8px;margin-right:6px'}, item.classification + ' · ' + meta.label),
+      el('span', {style:'font-size:11px;color:#fff;background:'+(item.person_type==='recruit'?'#d97706':'#2563eb')+';padding:1px 6px;border-radius:8px;margin-right:6px'}, item.person_type==='recruit'?'增员':'客户'),
+      el('strong', {}, esc(item.name)),
+      el('span', {style:'font-size:11px;color:#fff;background:'+(PR_CONF_COLOR[item.confidence]||'#9ca3af')+';padding:1px 6px;border-radius:8px;margin-left:6px'}, '置信度 '+(PR_CONF_LABEL[item.confidence]||item.confidence)),
+    ]));
+    var actionBtns = el('div', {style:'flex-shrink:0'});
+    if(item.classification === 'D'){
+      actionBtns.appendChild(el('a', {class:'btn-sm', onclick:function(){
+        row.style.opacity='0.55';
+        var s = row.querySelector('.pr-slot'); if(s) s.innerHTML = '<span style="font-size:12px;color:var(--muted)">✓ 已知晓，暂不安排跟进</span>';
+        this.remove();
+      }}, '知道了'));
+    } else {
+      actionBtns.appendChild(el('a', {class:'btn-sm btn-green', onclick:function(){ adoptParticipantAction(activityId, item, row, result); }}, '✓ 确认并创建行动'));
+    }
+    header.appendChild(actionBtns);
+    row.appendChild(header);
+
+    if(item.reason) row.appendChild(el('p', {style:'font-size:13px;margin:6px 0 2px'}, '为什么：' + esc(item.reason)));
+    if(item.next_action){
+      row.appendChild(el('p', {style:'font-size:13px;margin:2px 0'}, '下一步：' + esc(item.next_action)
+        + (item.suggested_date ? '（建议 ' + esc(item.suggested_date) + '）' : '（暂未排期）')
+        + (item.channel ? ' · ' + esc(item.channel) : '')));
+    }
+    if(item.script) row.appendChild(el('div', {style:'font-size:13px;margin:4px 0;padding:6px 8px;background:#eff6ff;border-radius:4px;color:#1e3a8a'}, '话术：' + esc(item.script)));
+    if(item.evidence && item.evidence.length){
+      row.appendChild(el('div', {style:'font-size:12px;color:var(--muted);margin-top:4px'}, '依据：' + item.evidence.map(function(e){ return esc(e); }).join('；')));
+    }
+    row.appendChild(el('div', {class:'pr-slot', style:'margin-top:6px'}));
+    card.appendChild(row);
+  });
+
+  box.appendChild(card);
+}
+
+// 确认 → 写下一步行动：客户→followups；增员→recruit_followups；客户被归 B 时先建/找 recruit_candidates 再写增员跟进
+async function adoptParticipantAction(activityId, item, row, result){
+  if(item.__adopted) return;
+  var slot = row.querySelector('.pr-slot');
+  var btn = row.querySelector('a.btn-green');
+  if(btn){ btn.style.pointerEvents='none'; btn.style.opacity='0.6'; }
+  try {
+    var contactDate = (result && result.activity_date) || dayStr(new Date());
+    var meta = PR_META[item.classification] || PR_META.E;
+    var goal = meta.goal || '建立联系';
+    var summary = '活动《' + (result ? result.activity_name : '') + '》复盘：' + (item.reason || '活动后跟进');
+    var resp;
+    if(item.person_type === 'recruit'){
+      resp = await callFn('recruit_followups', {action:'create', data:{
+        candidate_id: item.person_id,
+        followup_date: contactDate,
+        contact_method: item.channel || '微信',
+        followup_notes: summary,
+        interaction_summary: summary,
+        next_action: item.next_action || '',
+        next_action_date: item.suggested_date || null,
+        next_followup_date: item.suggested_date || null,
+        next_followup_goal: (item.classification === 'B') ? '推进招募' : '建立联系',
+      }});
+    } else if(item.classification === 'B'){
+      // 客户被判值得增员：先确保有增员对象（幂等，已存在则返回已有），再写增员跟进
+      var rc = await callFn('recruit_candidates', {action:'create', data:{ customer_id: item.person_id }});
+      if(rc && rc.error) throw new Error('创建增员对象失败：' + rc.error);
+      if(rc && rc.id){
+        resp = await callFn('recruit_followups', {action:'create', data:{
+          candidate_id: rc.id,
+          followup_date: contactDate,
+          contact_method: item.channel || '微信',
+          followup_notes: summary + '（由客户转入增员跟进）',
+          interaction_summary: summary,
+          next_action: item.next_action || '',
+          next_action_date: item.suggested_date || null,
+          next_followup_date: item.suggested_date || null,
+          next_followup_goal: '推进招募',
+        }});
+      }
+    } else {
+      resp = await callFn('followups', {action:'create', data:{
+        customer_id: item.person_id,
+        activity_id: activityId,
+        followup_date: contactDate,
+        followup_notes: summary,
+        interaction_summary: summary,
+        next_action: item.next_action || '',
+        next_action_date: item.suggested_date || null,
+        next_followup_date: item.suggested_date || null,
+        next_followup_goal: goal,
+      }});
+    }
+    if(resp && resp.error) throw new Error(resp.error);
+    item.__adopted = true;
+    if(slot) slot.innerHTML = '<span style="font-size:12px;color:#059669;font-weight:600">✓ 已创建下一步行动' + (item.suggested_date ? '（' + esc(item.suggested_date) + '）' : '') + '，进入 Action Center / Today</span>';
+    toast('已为「' + item.name + '」创建下一步行动', 'ok');
+  } catch(e){
+    if(btn){ btn.style.pointerEvents='auto'; btn.style.opacity='1'; }
+    if(slot) slot.innerHTML = '<span style="font-size:12px;color:#dc2626">保存失败：' + esc(e.message) + '</span>';
+    toast('保存失败：' + e.message);
+  }
 }
 
 async function runActivityPostReview(activityId, btn){

@@ -10,6 +10,11 @@
  *   postReview: AI 活动复盘（v1.7.5）：活动 ended/reviewed 后从 6 维度发现经营机会
  *               → {summary, customer_actions[], recruit_actions[], speaker_actions[], topic_actions[],
  *                  opportunity_suggestions[], next_activity_suggestions[]}
+ *   participantReview: AI 活动后跟进分类（v1.8 Sprint6）：把每位已关联参与者分到 A/B/C/D/E 并给逐人行动+话术，纯只读
+ *               → {activity_id, activity_name, activity_date, today, total, counts{A..E},
+ *                  classifications:[{person_type, person_id, cid, name, classification, classification_label,
+ *                  reason, next_action, suggested_date, channel, script, confidence, evidence[]}]}；
+ *                  用户在前端确认后才写 followups/recruit_followups/recruit_candidates，本函数不写库。
  *   learning:   AI 活动经验（v1.7.7）：基于窗口（30d/90d/all）内活动历史总结经验，纯只读不写库
  *               → {insufficient, message?, stats, worth_continuing[], worth_optimizing[],
  *                  worth_reusing[], worth_trying[]}，每条 {title, reason, evidence, suggestion}；
@@ -40,6 +45,7 @@ exports.main = async (event, context) => {
     if (action === 'recommendSpeakers') return await recommendSpeakers(event);
     if (action === 'recommendTopics') return await recommendTopics(event);
     if (action === 'postReview') return await postReview(event);
+    if (action === 'participantReview') return await participantReview(event);
     if (action === 'learning') return await learning(event);
     if (action !== 'analyze') return { error: 'unknown action: ' + action };
 
@@ -845,6 +851,267 @@ async function postReview(event) {
       topic_actions: topic_actions,
       opportunity_suggestions: opportunity_suggestions,
       next_activity_suggestions: next_activity_suggestions,
+      raw: gen.text,
+    };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+// ---------- v1.8 Sprint6：Activity → Relationship → Action（参与者跟进分类复盘） ----------
+// 纯只读：活动 + 参与者 + 客户/增员 + 历史跟进 → AI 把每位已关联参与者分到 A/B/C/D/E 并给逐人行动+话术。
+// 本函数不写任何业务数据；用户在前端【确认】后才写 followups / recruit_followups / recruit_candidates。
+// 输出 classifications[]：{person_type, person_id, name, cid, classification, reason, next_action,
+//   suggested_date, channel, script, confidence, evidence[]}
+var PR_CLASS = {
+  A: '值得客户跟进',
+  B: '值得增员跟进',
+  C: '值得转介绍',
+  D: '暂时不用跟进',
+  E: '建议继续建立关系',
+};
+var PR_CLASS_ENUM = ['A', 'B', 'C', 'D', 'E'];
+var PR_CHANNEL_ENUM = ['微信', '电话', '面谈', '活动', '短信'];
+var PR_CONF_ENUM = ['high', 'medium', 'low'];
+
+async function participantReview(event) {
+  try {
+    var activityId = parseInt(event && event.activity_id, 10);
+    if (!activityId) return { error: 'activity_id required' };
+
+    // 1. 活动
+    var aRes = assertOk(await rdb.from('activities').select()
+      .eq('id', activityId).is('deleted_at', null).maybeSingle());
+    if (!aRes.data) return { error: 'activity not found' };
+    var activity = aRes.data;
+
+    // 2. 参与者（仅已关联客户/增员的人能进入跟进分类；speaker 走嘉宾资源池，不在此列）
+    var parts = assertOk(await rdb.from('activity_participants').select()
+      .eq('activity_id', activityId).is('deleted_at', null)
+      .order('created_at', { ascending: true })).data || [];
+    var targets = parts.filter(function (p) {
+      return (p.person_type === 'customer' || p.person_type === 'recruit') && p.person_id;
+    });
+    if (!targets.length) {
+      return {
+        error: 'no_linked_participants',
+        message: '本场还没有已关联客户或增员的参与者。请先在参与者中关联客户/增员，再生成跟进分类。',
+      };
+    }
+
+    var customerIds = uniqArr(targets.filter(function (p) { return p.person_type === 'customer'; }).map(function (p) { return p.person_id; }));
+    var recruitIds = uniqArr(targets.filter(function (p) { return p.person_type === 'recruit'; }).map(function (p) { return p.person_id; }));
+
+    // 3. 增员（正确列：id/customer_id/stage/potential_score/motivation；无 name/priority/occupation）
+    var recruitMap = {};
+    var recruitCustIds = [];
+    if (recruitIds.length) {
+      var rcs = assertOk(await rdb.from('recruit_candidates')
+        .select('id, customer_id, stage, potential_score, motivation')
+        .in('id', recruitIds).is('deleted_at', null)).data || [];
+      rcs.forEach(function (r) { recruitMap[r.id] = r; if (r.customer_id) recruitCustIds.push(r.customer_id); });
+    }
+
+    // 4. 客户（参与者客户 + 增员背后的客户，用于取名/资料）
+    var allCustIds = uniqArr(customerIds.concat(recruitCustIds));
+    var customerMap = {};
+    if (allCustIds.length) {
+      var cs = assertOk(await rdb.from('customers')
+        .select('Id, customer_name, customer_stage, sales_priority, occupation, additional_info')
+        .in('Id', allCustIds).is('deleted_at', null)).data || [];
+      cs.forEach(function (c) { customerMap[c.Id] = c; });
+    }
+
+    // 5. 客户历史跟进（每人最近 3 条）
+    var followupMap = {};
+    if (customerIds.length) {
+      var fqs = assertOk(await rdb.from('followups')
+        .select('customer_id, followup_date, followup_notes, interaction_summary, next_action, next_followup_goal')
+        .in('customer_id', customerIds).is('deleted_at', null)
+        .order('followup_date', { ascending: false }).limit(90)).data || [];
+      fqs.forEach(function (f) {
+        var arr = followupMap[f.customer_id] || (followupMap[f.customer_id] = []);
+        if (arr.length < 3) arr.push(f);
+      });
+    }
+
+    // 6. 增员历史跟进（每人最近 3 条）
+    var rfMap = {};
+    if (recruitIds.length) {
+      var rfs = assertOk(await rdb.from('recruit_followups')
+        .select('candidate_id, followup_date, followup_notes, next_action, next_followup_goal')
+        .in('candidate_id', recruitIds).is('deleted_at', null)
+        .order('followup_date', { ascending: false }).limit(60)).data || [];
+      rfs.forEach(function (f) {
+        var arr = rfMap[f.candidate_id] || (rfMap[f.candidate_id] = []);
+        if (arr.length < 3) arr.push(f);
+      });
+    }
+
+    var today = todayStr();
+    var ATTEND_LABEL = { attended: '已出席', absent: '缺席', invited: '已邀请' };
+    var ROLE_LABEL = { attendee: '参与者', speaker: '嘉宾', organizer: '组织者', partner: '合作方', guest: '宾客' };
+
+    // 7. 逐人事实单
+    var validKeys = {};
+    var personLines = targets.map(function (p, i) {
+      var isCust = p.person_type === 'customer';
+      var pid = p.person_id;
+      var key = p.person_type + ':' + pid;
+      validKeys[key] = true;
+      var name, line;
+      var attend = ATTEND_LABEL[p.status] || p.status || '未知';
+      var role = p.participant_role ? (ROLE_LABEL[p.participant_role] || p.participant_role) : '参与者';
+      if (isCust) {
+        var c = customerMap[pid];
+        name = c ? c.customer_name : (p.person_name || ('客户#' + pid));
+        line = (i + 1) + '. [customer #' + pid + '] ' + name + '；身份：客户；出席：' + attend + '；角色：' + role;
+        if (c) {
+          if (c.customer_stage) line += '；客户阶段：' + c.customer_stage;
+          if (c.sales_priority) line += '；优先级：' + c.sales_priority;
+          if (c.occupation) line += '；职业：' + c.occupation;
+          if (c.additional_info) line += '；备注：' + clip(c.additional_info, 80);
+        }
+        var fqs2 = followupMap[pid];
+        if (fqs2 && fqs2.length) {
+          line += '；历史跟进：' + fqs2.map(function (f) {
+            var t = clip(f.interaction_summary || f.followup_notes || '', 40);
+            return (f.followup_date ? String(f.followup_date).slice(0, 10) : '日期未定') + (t ? '「' + t + '」' : '') + (f.next_action ? '（下一步：' + clip(f.next_action, 30) + '）' : '');
+          }).join('、');
+        } else {
+          line += '；历史跟进：无';
+        }
+      } else {
+        var rc = recruitMap[pid];
+        var rcCust = rc && rc.customer_id ? customerMap[rc.customer_id] : null;
+        name = rcCust ? rcCust.customer_name : (p.person_name || ('增员#' + pid));
+        line = (i + 1) + '. [recruit #' + pid + '] ' + name + '；身份：增员对象；出席：' + attend + '；角色：' + role;
+        if (rc) {
+          if (rc.stage) line += '；增员阶段：' + rc.stage;
+          if (rc.potential_score != null) line += '；潜力分：' + rc.potential_score;
+          if (rc.motivation) line += '；动机：' + clip(rc.motivation, 50);
+        }
+        var rfs2 = rfMap[pid];
+        if (rfs2 && rfs2.length) {
+          line += '；历史增员跟进：' + rfs2.map(function (f) {
+            var t = clip(f.followup_notes || '', 40);
+            return (f.followup_date ? String(f.followup_date).slice(0, 10) : '日期未定') + (t ? '「' + t + '」' : '') + (f.next_action ? '（下一步：' + clip(f.next_action, 30) + '）' : '');
+          }).join('、');
+        } else {
+          line += '；历史增员跟进：无';
+        }
+      }
+      if (p.relationship_note) line += '；关系备注：' + clip(p.relationship_note, 60);
+      if (p.followup_status && p.followup_status !== 'none') line += '；现场跟进标记：' + p.followup_status;
+      return line;
+    }).join('\n');
+
+    var actStatus = activity.status || '';
+    var goalTypes = Array.isArray(activity.goal_types) && activity.goal_types.length ? activity.goal_types.join('/') : '未设';
+
+    var sys = [
+      '你是保险团队负责人的活动复盘助手。一场活动刚结束，负责人需要知道：「活动结束后，我到底应该跟谁继续做什么？」',
+      '请对下面每一位已关联的参与者，判断活动后应该如何跟进，并分到且仅分到一个类别：',
+      'A = 值得客户跟进（有保险/理财/养老/教育等需求、关系可推进约见/方案/签单的客户）；',
+      'B = 值得增员跟进（对加入团队/职业机会表现出兴趣、适合招募的人；现有客户流露增员信号也归 B）；',
+      'C = 值得转介绍（人脉广、关系好、愿意且可能介绍他人的人）；',
+      'D = 暂时不用跟进（本次无明确意向/缺席/关系尚浅且没有抓手，暂缓即可，不要硬凑行动）；',
+      'E = 建议继续建立关系（值得长期经营，但当前没有明确业务/增员/转介绍抓手，先轻维护）。',
+      '【活动】《' + activity.name + '》；日期：' + (activity.activity_date || '未定') + '；类型：' + (activity.activity_type || '未分类') + '；状态：' + actStatus + '；目标：' + goalTypes + '。',
+      '【今天】' + today + '。',
+      '【参与者（每人都必须给出一个分类，person_id 与 person_type 必须照抄下方）】\n' + personLines,
+      '【输出要求】对每位参与者输出一条，字段：',
+      '{ person_type, person_id, classification, reason, next_action, suggested_date, channel, script, confidence, evidence }',
+      '- classification 只能是 A/B/C/D/E 之一；person_type 只能是 customer 或 recruit，且 person_id 必须是上面该类型出现的真实编号。',
+      '- reason：为什么这么分类（≤70字），只能依据上面给出的事实。',
+      '- next_action：活动后具体要做的一个动作（≤50字）；D 类可给空字符串。',
+      '- suggested_date：建议执行日期 YYYY-MM-DD（相对今天推算，如"过两天"=今天+2、"下周"=今天+7）；无法确定或 D 类给空字符串。',
+      '- channel：联系方式，只能取 微信/电话/面谈/活动/短信 之一。',
+      '- script：一句自然、符合当前关系阶段、可直接发出的沟通话术（≤120字）；不得假设对方说过没给的事实，不得出现承诺收益/夸大条款；D 类可给空字符串。',
+      '- confidence：high/medium/low。事实充分（有明确需求/信号/历史跟进）才 high；信息少、靠推测给 medium 或 low；几乎无抓手给 low。',
+      '- evidence：2~4 条判断依据，每条必须引用上面真实出现的事实（阶段/出席/历史跟进原话/现场备注等），每条 ≤60字；不得编造。',
+      '【纪律】',
+      '1. 严禁虚构：客户需求、购买意愿、联系记录、成功率、ROI、对方没说过的话，一律不得编造；信息不足就降低 confidence 并把话说得克制。',
+      '2. 每位参与者恰好一条，不得遗漏、不得新增名单外的人。',
+      '3. 只输出 JSON：{ "classifications": [ ... ] }，不要解释、不要 markdown。',
+    ].join('\n');
+
+    var gen = await generateText([
+      { role: 'system', content: sys },
+      { role: 'user', content: '请为这场活动的每位参与者生成跟进分类。' },
+    ], { timeout: 55000 });
+
+    var parsed = extractJson(gen.text) || {};
+    var rawList = Array.isArray(parsed.classifications) ? parsed.classifications : [];
+
+    var seen = {};
+    var classifications = [];
+    rawList.forEach(function (it) {
+      var pt = it && it.person_type === 'recruit' ? 'recruit' : (it && it.person_type === 'customer' ? 'customer' : '');
+      var pid = parseInt(it && it.person_id, 10);
+      var key = pt + ':' + pid;
+      if (!pt || !pid || !validKeys[key] || seen[key]) return; // 防编造/重复
+      seen[key] = true;
+      var cls = PR_CLASS_ENUM.indexOf(it.classification) >= 0 ? it.classification : 'E';
+      var isCust = pt === 'customer';
+      var rc = isCust ? null : recruitMap[pid];
+      var cid = isCust ? pid : (rc ? rc.customer_id : null);
+      var cName = isCust ? (customerMap[pid] ? customerMap[pid].customer_name : '') : (rc && rc.customer_id && customerMap[rc.customer_id] ? customerMap[rc.customer_id].customer_name : '');
+      var ev = Array.isArray(it.evidence) ? it.evidence.map(function (e) { return clip(e, 60); }).filter(Boolean).slice(0, 4) : [];
+      classifications.push({
+        person_type: pt,
+        person_id: pid,
+        cid: cid,
+        name: cName || (pt === 'customer' ? ('客户#' + pid) : ('增员#' + pid)),
+        classification: cls,
+        classification_label: PR_CLASS[cls],
+        reason: clip(it.reason, 90),
+        next_action: cls === 'D' ? '' : clip(it.next_action, 60),
+        suggested_date: validDate(it.suggested_date),
+        channel: PR_CHANNEL_ENUM.indexOf(it.channel) >= 0 ? it.channel : '微信',
+        script: cls === 'D' ? '' : clip(it.script, 140),
+        confidence: PR_CONF_ENUM.indexOf(it.confidence) >= 0 ? it.confidence : 'low',
+        evidence: ev,
+      });
+    });
+
+    // 兜底：AI 遗漏的参与者，补一条保守的 E/low（不虚构行动），保证全员覆盖
+    targets.forEach(function (p) {
+      var key = p.person_type + ':' + p.person_id;
+      if (seen[key]) return;
+      var isCust = p.person_type === 'customer';
+      var rc = isCust ? null : recruitMap[p.person_id];
+      var cid = isCust ? p.person_id : (rc ? rc.customer_id : null);
+      var cName = isCust ? (customerMap[p.person_id] ? customerMap[p.person_id].customer_name : '') : (rc && rc.customer_id && customerMap[rc.customer_id] ? customerMap[rc.customer_id].customer_name : '');
+      classifications.push({
+        person_type: p.person_type,
+        person_id: p.person_id,
+        cid: cid,
+        name: cName || p.person_name || (isCust ? ('客户#' + p.person_id) : ('增员#' + p.person_id)),
+        classification: 'E',
+        classification_label: PR_CLASS.E,
+        reason: 'AI 未给出足够判断，保守建议先保持轻度联系、继续观察。',
+        next_action: '',
+        suggested_date: '',
+        channel: '微信',
+        script: '',
+        confidence: 'low',
+        evidence: ['本场活动参与者'],
+        _fallback: true,
+      });
+    });
+
+    var counts = { A: 0, B: 0, C: 0, D: 0, E: 0 };
+    classifications.forEach(function (c) { counts[c.classification] = (counts[c.classification] || 0) + 1; });
+
+    return {
+      activity_id: activityId,
+      activity_name: activity.name,
+      activity_date: activity.activity_date ? String(activity.activity_date).slice(0, 10) : '',
+      today: today,
+      total: classifications.length,
+      counts: counts,
+      classifications: classifications,
       raw: gen.text,
     };
   } catch (e) {
