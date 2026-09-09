@@ -438,6 +438,48 @@
     .t5-script{font-size:12px}
     .trend-arrow{font-size:23px}
   }
+  /* ==================== v1.8 Sprint 8：轻量漏斗 ==================== */
+  .fn-head{margin:6px 2px 14px}
+  .fn-title{font-size:20px;font-weight:800;color:var(--text)}
+  .fn-sub{font-size:12.5px;color:var(--muted);margin-top:4px;line-height:1.5}
+  .fn-card{border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:12px;background:var(--card)}
+  .fn-card-head{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+  .fn-dot{width:10px;height:10px;border-radius:50%;flex:none}
+  .fn-card-title{font-size:15px;font-weight:700;flex:1;min-width:0}
+  .fn-total{font-size:12.5px;font-weight:700;color:var(--text-secondary);background:var(--border-light);border-radius:999px;padding:2px 10px;flex:none}
+  .fn-metrics{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+  .fn-chip{font-size:11.5px;padding:2px 9px;border-radius:999px;background:#f1f5f9;color:#475569;font-weight:600}
+  .fn-chip-bad{background:#fee2e2;color:#dc2626}
+  .fn-chip-warn{background:#fef3c7;color:#b45309}
+  .fn-row{padding:5px 0}
+  .fn-row1{display:flex;align-items:center;gap:8px}
+  .fn-name{width:76px;flex:none;font-size:13px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fn-barwrap{flex:1;background:var(--border-light);border-radius:6px;height:13px;min-width:36px;overflow:hidden}
+  .fn-bar{height:100%;border-radius:6px;min-width:2px}
+  .fn-count{width:34px;text-align:right;font-size:13px;font-weight:700;flex:none}
+  .fn-row-zero .fn-name,.fn-row-zero .fn-count{color:#b6bdc9;font-weight:500}
+  .fn-chips{display:flex;flex-wrap:wrap;gap:6px 12px;margin:3px 0 1px 85px}
+  .fn-ck{font-size:11.5px;color:var(--muted)}
+  .fn-ck.ck-bad{color:#dc2626;font-weight:600}
+  .fn-ck.ck-new{color:#059669;font-weight:600}
+  .fn-ck.ck-move{color:#2563eb;font-weight:600}
+  .fn-ck.ck-warn{color:#b45309;font-weight:600}
+  .fn-rates{margin-top:9px;font-size:12px;color:var(--text-secondary);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .fn-rate{background:#eef2ff;color:#4338ca;border-radius:999px;padding:2px 9px;font-weight:600;font-size:11.5px}
+  .fn-notes{margin-top:9px;border-top:1px dashed var(--border);padding-top:8px;display:flex;flex-direction:column;gap:3px}
+  .fn-note{font-size:12px;color:var(--muted);line-height:1.5}
+  .fn-empty{border:1px dashed var(--border);border-radius:10px;padding:18px;text-align:center;color:var(--muted);font-size:13px;line-height:1.7;background:#fafbfc;white-space:pre-line}
+  .fn-ai-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:15px;font-weight:700}
+  .fn-ai-tip{font-size:12px;color:var(--muted);margin:8px 0 2px;line-height:1.5}
+  .fn-ai-text{white-space:pre-line;font-size:13.5px;line-height:1.85;color:var(--text);background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-top:10px}
+  .fn-ai-badge{display:inline-block;font-size:11px;background:#fef3c7;color:#b45309;border-radius:999px;padding:2px 10px;font-weight:600;margin-bottom:8px}
+  @media(max-width:768px){
+    .fn-card{padding:12px}
+    .fn-title{font-size:18px}
+    .fn-name{width:64px;font-size:12.5px}
+    .fn-chips{margin-left:72px;gap:4px 10px}
+    .fn-ai-text{font-size:13px}
+  }
   /* AI 沟通记录助手：翠绿按钮 + 建议更新区 */
   .btn-ai{background:#10b981;color:#fff;border-color:#10b981}
   .btn-ai:hover{background:#059669;border-color:#059669;box-shadow:0 2px 8px rgba(16,185,129,.3)}
@@ -822,6 +864,7 @@ function route(){
   if(hash === '#/activity/recruit') return showRecruitActivity();
   if(hash === '#/ai-suggestions') return showAiSuggestions();
   if(hash === '#/today') return showTodayCoach();
+  if(hash === '#/funnels') return showFunnels();
   if(hash === '#/customers') return showList();
   if(hash === '#/customers/trash') return showCustomerTrash();
   if(hash === '#/activities') return showActivities();
@@ -1432,11 +1475,150 @@ async function showDashboard(){
     el('button', {type:'button', onclick:function(){ openAiParse(); }}, 'AI 解析新增'),
     el('a', {href:'#/customers'}, '全部客户'),
     el('a', {href:'#/today'}, '今日经营'),
+    el('a', {href:'#/funnels'}, '漏斗经营'),
     el('a', {href:'#/ai-suggestions'}, 'AI 建议'),
     el('a', {href:'#/recruit'}, '增员管理'),
     el('a', {href:'#/activities'}, '活动列表'),
     el('a', {href:'#/activity/customer'}, '活动量'),
   ]));
+}
+
+// ==================== v1.8 Sprint 8：轻量漏斗（#/funnels）====================
+// SQL 视图 v_funnel_stats 给事实，云函数 funnel_insight 拼装，AI 只做解读。
+// 页面刻意简单：三条漏斗各一张事实卡（阶段人数条形 + 逾期/停留/新进），加一张 AI 解读卡。
+var FN_COLORS = { customer:'#2563eb', opportunity:'#7c3aed', recruit:'#d97706' };
+var FN_HEAD = { customer:'👥 客户经营漏斗', opportunity:'🎯 机会漏斗', recruit:'🤝 组织发展漏斗' };
+
+async function showFunnels(){
+  var view = $('view');
+  view.innerHTML = '';
+  view.appendChild(el('div', {class:'toolbar'}, [
+    el('button', {class:'btn', onclick:function(){ location.hash='#/'; }}, '← 返回首页'),
+  ]));
+  view.appendChild(el('div', {class:'fn-head'}, [
+    el('div', {class:'fn-title'}, '漏斗经营'),
+    el('div', {class:'fn-sub'}, 'SQL 视图计算事实（人数 / 阶段 / 逾期 / 停留 / 近期变化），AI 只负责解读；样本不足不做比率统计。'),
+  ]));
+  var card = el('div', {class:'card'});
+  card.appendChild(el('div', {class:'loading'}, '加载中…'));
+  view.appendChild(card);
+  try {
+    var res = await callFn('funnel_insight', {action:'stats'});
+    if(!res || !res.ok) throw new Error((res && res.error) || '接口返回异常');
+    renderFunnels(card, res.funnels, res.generated_at);
+  } catch(e) {
+    card.innerHTML = '';
+    card.appendChild(el('div', {class:'empty'}, [
+      '加载失败：' + esc(e.message || e),
+      el('div', {style:'margin-top:10px'},
+        el('button', {class:'btn', onclick:function(){ showFunnels(); }}, '重试')),
+    ]));
+  }
+}
+
+function fnStageRow(s, color, max){
+  var barColor = (s.kind === 'unclassified' || s.kind === 'terminal') ? '#94a3b8' : color;
+  var widthPct = s.count > 0 ? Math.max(3, Math.round(s.count / max * 100)) : 0;
+  var barStyle = 'width:' + widthPct + '%;background:' + barColor + ';min-width:' + (s.count > 0 ? 2 : 0) + 'px';
+  var row = el('div', {class:'fn-row' + (s.count === 0 ? ' fn-row-zero' : '')});
+  row.appendChild(el('div', {class:'fn-row1'}, [
+    el('div', {class:'fn-name', title:s.stage}, s.stage),
+    el('div', {class:'fn-barwrap'},
+      el('div', {class:'fn-bar', style:barStyle})),
+    el('div', {class:'fn-count'}, String(s.count)),
+  ]));
+  var chips = [];
+  if(s.entered_30d > 0) chips.push(el('span', {class:'fn-ck ck-new'}, '近30天进入 ' + s.entered_30d));
+  if(s.moved_30d !== null && s.moved_30d > 0) chips.push(el('span', {class:'fn-ck ck-move'}, '近30天阶段推进 ' + s.moved_30d));
+  if(s.overdue > 0) chips.push(el('span', {class:'fn-ck ck-bad'}, '逾期行动 ' + s.overdue + ' 人'));
+  if(s.dwell_median_days !== null && s.count > 0 && s.kind !== 'terminal')
+    chips.push(el('span', {class:'fn-ck'}, '停留中位 ' + s.dwell_median_days + ' 天'));
+  if(s.stuck > 0) chips.push(el('span', {class:'fn-ck ck-warn'}, '停留偏久 ' + s.stuck + ' 人'));
+  if(chips.length) row.appendChild(el('div', {class:'fn-chips'}, chips));
+  return row;
+}
+
+function renderFunnelCard(f){
+  var color = FN_COLORS[f.key] || '#64748b';
+  var box = el('div', {class:'fn-card'});
+  box.appendChild(el('div', {class:'fn-card-head'}, [
+    el('span', {class:'fn-dot', style:'background:' + color}),
+    el('span', {class:'fn-card-title'}, FN_HEAD[f.key] || f.label),
+    el('span', {class:'fn-total'}, '在漏斗 ' + f.total + ' 人'),
+  ]));
+
+  if(f.metrics && f.metrics.length){
+    box.appendChild(el('div', {class:'fn-metrics'}, f.metrics.map(function(m){
+      var cls = 'fn-chip' + (m.tone === 'bad' ? ' fn-chip-bad' : (m.tone === 'warn' ? ' fn-chip-warn' : ''));
+      return el('span', {class:cls}, m.label + ' ' + m.value);
+    })));
+  }
+
+  if(f.total === 0){
+    box.appendChild(el('div', {class:'fn-empty'}, '当前没有在跟进中的记录，漏斗为空。\n先在业务里产生数据（新建机会 / 录入候选人 / 给客户分层），再回来解读。'));
+  } else {
+    var max = f.stages.reduce(function(m, s){ return Math.max(m, s.count); }, 0) || 1;
+    f.stages.forEach(function(s){ box.appendChild(fnStageRow(s, color, max)); });
+    if(f.rates && f.rates.length){
+      box.appendChild(el('div', {class:'fn-rates'},
+        ['阶段转化率（上游≥10 人才计算）：'].concat(f.rates.map(function(r){
+          return el('span', {class:'fn-rate'}, r.from + '→' + r.to + ' ' + r.percent + '%');
+        }))));
+    }
+  }
+
+  var seen = {};
+  var notes = [];
+  (f.warnings || []).forEach(function(w){ if(!seen[w]){ seen[w] = 1; notes.push(w); } });
+  if(notes.length){
+    box.appendChild(el('div', {class:'fn-notes'},
+      notes.map(function(w){ return el('div', {class:'fn-note'}, 'ⓘ ' + w); })));
+  }
+  return box;
+}
+
+function renderFunnelAi(){
+  var ai = el('div', {class:'card fn-card'});
+  var out = el('div', {});
+  var btn = el('button', {type:'button', class:'btn btn-sm btn-ai'}, '🤖 AI 解读三条漏斗');
+  ai.appendChild(el('div', {class:'fn-ai-head'}, [
+    el('span', {}, 'AI 漏斗解读'),
+    btn,
+  ]));
+  ai.appendChild(el('div', {class:'fn-ai-tip'}, '数字一律以上方事实卡为准；样本不足或信息缺失时 AI 会直接说明，不编造比率和原因。'));
+  ai.appendChild(out);
+
+  btn.onclick = async function(){
+    btn.disabled = true;
+    out.innerHTML = '';
+    out.appendChild(el('div', {class:'loading'}, 'AI 解读中…（通常 10-30 秒）'));
+    try {
+      var r = await callFn('funnel_insight', {action:'explain'});
+      if(!r || !r.ok) throw new Error((r && r.error) || 'AI 接口异常');
+      out.innerHTML = '';
+      if(r.degraded) out.appendChild(el('div', {class:'fn-ai-badge'}, '规则版解读 · AI 暂不可用'));
+      out.appendChild(el('div', {class:'fn-ai-text'}, r.text || '（无解读内容）'));
+    } catch(e) {
+      out.innerHTML = '';
+      out.appendChild(el('div', {class:'empty'}, [
+        'AI 解读暂时不可用：' + esc(e.message || e) + '（事实卡不受影响）',
+        el('div', {style:'margin-top:8px'},
+          el('button', {class:'btn btn-sm', onclick:function(){ btn.click(); }}, '重试解读')),
+      ]));
+    } finally {
+      btn.disabled = false;
+    }
+  };
+  return ai;
+}
+
+function renderFunnels(card, funnels, generatedAt){
+  card.innerHTML = '';
+  (funnels || []).forEach(function(f){ card.appendChild(renderFunnelCard(f)); });
+  card.appendChild(renderFunnelAi());
+  var at = String(generatedAt || '').replace('T', ' ').slice(0, 16);
+  card.appendChild(el('div', {class:'fn-sub', style:'text-align:center;margin-top:6px'},
+    '事实由 SQL 视图 v_funnel_stats 实时计算' + (at ? ' · 更新于 ' + at : '')));
 }
 
 // ==================== 客户列表 ====================

@@ -25,6 +25,12 @@
       "timeout": 10,
       "runtime": "Nodejs20.19",
       "handler": "index.main"
+    },
+    {
+      "name": "funnel_insight",
+      "timeout": 60,
+      "runtime": "Nodejs20.19",
+      "handler": "index.main"
     }
   ]
 }
