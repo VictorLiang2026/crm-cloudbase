@@ -958,8 +958,24 @@ var todayCoachBox = null;
 function coachLoad(){ try{ return JSON.parse(localStorage.getItem(COACH_KEY)||'null'); }catch(e){ return null; } }
 function coachSave(c){ try{ localStorage.setItem(COACH_KEY, JSON.stringify(c)); }catch(e){} }
 function coachGo(it){
+  // v1.7.6：活动行动跳转——任务/复盘→活动详情；客户/增员跟进→对应详情；嘉宾→嘉宾列表（无孤立行动）
+  if(it.type === 'activity_action'){
+    if(it.action_type === 'followup_customer' && it.person_id) location.hash = '#/customer/' + it.person_id;
+    else if(it.action_type === 'followup_recruit' && it.person_id) location.hash = '#/recruit/' + it.person_id;
+    else if(it.action_type === 'contact_speaker') location.hash = '#/speakers';
+    else if(it.activity_id) location.hash = '#/activity/' + it.activity_id;
+    return;
+  }
   if(it.type === 'recruit') location.hash = '#/recruit/' + it.id;
   else location.hash = '#/customer/' + it.id;
+}
+// v1.7.6：活动行动标签文案与配色
+function coachActTag(it){
+  if(it.action_type === 'contact_speaker') return { t: '嘉宾', s: 'background:#fefce8;color:#a16207;border:1px solid #fde68a' };
+  if(it.action_type === 'followup_customer') return { t: '活动跟进', s: 'background:#fdf2f8;color:#be185d;border:1px solid #fbcfe8' };
+  if(it.action_type === 'followup_recruit') return { t: '活动增员', s: 'background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe' };
+  if(it.action_type === 'review_activity') return { t: '活动复盘', s: 'background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe' };
+  return { t: '活动任务', s: 'background:#fff7ed;color:#c2410c;border:1px solid #fed7aa' };
 }
 function renderCoachItems(box, data, stale){
   box.innerHTML = '';
@@ -982,6 +998,24 @@ function renderCoachItems(box, data, stale){
   var items = data.items || [];
   items.forEach(function(it, i){
     var pCls = it.priority === '高' ? 'p-high' : (it.priority === '中' ? 'p-mid' : 'p-low');
+    // v1.7.6：活动行动条目（来源真实活动/任务/嘉宾，点击直达对应详情，无孤立行动）
+    if(it.type === 'activity_action'){
+      var actTag = coachActTag(it);
+      list.appendChild(el('div', {class:'coach-item', onclick:function(){ coachGo(it); }}, [
+        el('div', {class:'coach-rank'}, String(i + 1)),
+        el('div', {class:'coach-body'}, [
+          el('div', {class:'coach-line1'}, [
+            el('span', {class:'coach-name'}, String(it.name || '')),
+            el('span', {class:'coach-tag', style: actTag.s}, actTag.t),
+            el('span', {class:'coach-tag ' + pCls}, '优先级 ' + String(it.priority || '中')),
+          ]),
+          el('div', {class:'coach-reason'}, String(it.assessment || '')),
+          el('div', {class:'coach-action'}, [ el('b', {}, '下一步：'), String(it.next_action || '查看详情') ]),
+          el('div', {class:'coach-crit'}, (it.next_followup_date ? '到期/应联系：' + String(it.next_followup_date).slice(0,10) : '')),
+        ]),
+      ]));
+      return;
+    }
     list.appendChild(el('div', {class:'coach-item', onclick:function(){ coachGo(it); }}, [
       el('div', {class:'coach-rank'}, String(i + 1)),
       el('div', {class:'coach-body'}, [
@@ -1009,7 +1043,7 @@ async function renderTodayCoach(force){
   if(!box) return;
   var today = dayStr(new Date());
   var cache = coachLoad();
-  if(!force && cache && cache.date === today && cache.v === 4 && cache.data && cache.data.items){
+  if(!force && cache && cache.date === today && cache.v === 5 && cache.data && cache.data.items){
     renderCoachItems(box, cache.data, false);
     // 指纹校验（轻量接口，不调 AI）：数据有变化仅提示
     callFn('today_coach', {action:'candidates'}).then(function(r){
@@ -1024,7 +1058,7 @@ async function renderTodayCoach(force){
   try{
     var r = await callFn('today_coach', {action:'generate'});
     if(r.error) throw new Error(r.error);
-    coachSave({ v: 4, date: today, fingerprint: r.fingerprint || '', data: r });
+    coachSave({ v: 5, date: today, fingerprint: r.fingerprint || '', data: r });
     renderCoachItems(box, r, false);
   }catch(e){
     box.innerHTML = '';
