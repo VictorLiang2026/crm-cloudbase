@@ -8,22 +8,17 @@
  *     candidates: { action:'candidates' }
  *       → 纯规则筛选（不调 AI，快），返回 { today, fingerprint, customerPool, recruitPool, activityPool }
  *     generate:   { action:'generate' }
- *       → 规则候选（客户 top12 + 增员 top9 + v1.7.6 活动行动 top12）→ hy3 结构化排序/NBA → { today, fingerprint, source, items }
- *         v1.7.6 Activity → Today：活动行动（活动任务逾期/到期、活动后重要人员未跟进、嘉宾到联系时间、
- *           待复盘、AI复盘行动到期）统一为 { type:'activity_action', source_type, source_id, action_type,
- *           activity_id, person_type, person_id, speaker_id, ... }；AI 参与排序，失败降级规则版；
- *           最终列表活动行动 ≤5 条，不抢占 Top 15；纯只读，不建表。
- *         items[]: { type:'customer'|'recruit', id, name, stage, priority,
- *                    assessment(当前经营判断), goal(经营目标), next_action(下一最佳行动),
- *                    topic(推荐沟通主题), avoid(不建议), success_criteria(成功标准),
- *                    next_followup_date(建议下一次跟进时间，取自现有数据), nba_from?('detail'=直接引用详情页NBA) }
- *         Next Best Action（v1.0.7 增量）：与详情页 ai_recommend/recruit_recommend 同构 7 字段；
- *           客户若在 NBA_FRESH_DAYS 天内已有 ai_recommendations.nba → 直接引用（nba_from='detail'）；
- *           其余由 AI 生成（增员候选用增员语言）；AI 失败自动降级为规则版（source:'rule'），
- *           规则版 assessment=真实规则信号，其余字段按类型给可执行默认值，不编造客户信息
- *         next_followup_date 统一取自现有数据（customers.next_followup_date / recruit_candidates.next_action_date），
- *         AI 不生成日期，杜绝编造；无数据为空串，前端显示"信息不足"
- *     v1.8 Sprint3（Today 5，2026-09-09）：generate 升级为 Today 5 —— 事实全部取统一行动视图
+ *       → v1.8 Sprint3 起为 Today 5（旧 Top15 规则排序已下线）：读取统一行动视图 v_action_center，
+ *         返回 { today, fingerprint, source, generated_at, today5, items, all_actions, all_actions_total, quota }
+ *         today5[]（5 条）: { tier(must_do|recommended|optional，配额 2/2/1), action, reason, priority,
+ *                            channel, goal, suggested_date, script, confidence(high|medium|low), evidence[],
+ *                            action_id, action_type, person_type, person_id, person_name, title, source,
+ *                            status, stage, days_until, action_date }
+ *         items[]: today5 的旧结构映射（保持当前前端 renderCoachItems 兼容，前端 Sprint 后可直接用 today5）
+ *         all_actions[]: 「查看全部」事实清单（全部行动按规则综合分排序，纯事实不调 AI）
+ *       旧版说明（已删除，仅供追溯）：v1.7.6 及以前 generate 为客户 top12+增员 top9+活动行动 top12
+ *         候选池 → AI 排序 15 条 + NBA 7 字段 + 详情页新鲜 NBA 直引；相关函数已于 v1.8 Sprint3 清理。
+ *     v1.8 Sprint3（Today 5，2026-09-09）：事实全部取统一行动视图
  *       v_action_center（status overdue/today/upcoming/unscheduled、days_until、last_followup_date 均 SQL 计算，
  *       AI 不参与基础事实）；AI 只负责综合 Urgency/Impact/Relationship/Opportunity/Timing/Actionability 六维
  *       选出今天最值得做的 5 件（Must Do×2/Recommended×2/Optional×1），返回
@@ -42,7 +37,6 @@ const { rdb, generateText, extractJson, assertOk, nowIso } = require('./db');
 
 const POOL_CUSTOMER = 12;  // 进入 AI 排序的客户候选数
 const POOL_RECRUIT = 9;    // 进入 AI 排序的增员候选数
-const FINAL_COUNT = 15;    // 最终展示人数
 const NBA_FRESH_DAYS = 14; // 详情页 NBA 在此天数内视为新鲜，今日经营直接引用
 
 // ---------- 北京日期工具（同 activity_reports 口径） ----------
@@ -340,7 +334,6 @@ const AA_OPEN_TASK = ['pending', 'in_progress'];
 const AA_POST_STATUS = ['ended', 'reviewed'];      // 活动结束后
 // 筹备/进行中（idea 为筹备起点：任务已设定到期日即为承诺，纳入逾期/到期/高风险提醒）
 const AA_PREP_STATUS = ['idea', 'preparing', 'confirmed', 'in_progress'];
-const AA_MAX_FINAL = 5;                            // 最终列表中活动行动上限
 const AA_POOL_MAX = 12;                            // 候选池活动行动上限
 
 function scoreActivityActions(d, today, custPool, rcPool) {
@@ -555,282 +548,6 @@ function scoreActivityActions(d, today, custPool, rcPool) {
     dedup.push(a);
   }
   return dedup.slice(0, AA_POOL_MAX);
-}
-
-// 活动行动 → 今日列表项（规则版字段；priority high/medium/low → 高/中/低）
-function actionToItem(a) {
-  const prioMap = { high: '高', medium: '中', low: '低' };
-  const verb = {
-    complete_task: '打开活动详情完成该任务',
-    followup_customer: '今天联系该客户，跟进后记录跟进并更新下次跟进日期',
-    followup_recruit: '今天联系该增员对象，推进到下一阶段',
-    contact_speaker: '按约定时间联系嘉宾，维护合作关系',
-    review_activity: '打开活动详情，点击「AI 活动复盘」生成复盘建议',
-  };
-  return {
-    type: 'activity_action',
-    source_type: a.source_type, source_id: a.source_id, action_type: a.action_type,
-    id: a.source_id,
-    activity_id: a.activity_id || null,
-    person_type: a.person_type || '', person_id: a.person_id || null,
-    speaker_id: a.speaker_id || null,
-    name: a.title, stage: '', priority: prioMap[a.priority] || '中',
-    assessment: a.reason,
-    goal: '', next_action: verb[a.action_type] || '查看详情',
-    topic: '', avoid: '', success_criteria: '',
-    next_followup_date: a.due_date || '',
-  };
-}
-
-// ---------- 规则版最终列表（AI 降级兜底；字段同 NBA 结构，不编造客户信息） ----------
-function ruleItems(custPool, rcPool, nbaIdx, actionPool) {
-  function prio(score) { return score >= 45 ? '高' : (score >= 25 ? '中' : '低'); }
-  function actC(x) {
-    const nd = x.hits.join();
-    if (nd.indexOf('逾期') >= 0) return '今天先电话或微信补一次跟进，重新约定下次跟进日期';
-    if (nd.indexOf('今日待跟进') >= 0) return '按原计划完成今日跟进，跟进后更新客户阶段';
-    if (nd.indexOf('未联系') >= 0) return '用问候+价值信息破冰，避免长期沉默流失';
-    if (nd.indexOf('新客户') >= 0) return '完成首访，建档并约定下次联系时间';
-    return '跟进一次并更新下次跟进计划';
-  }
-  function actR(x) {
-    const h = x.hits.join();
-    if (h.indexOf('逾期') >= 0 || h.indexOf('今日待推进') >= 0) return '按既定动作推进（约面谈/邀活动），同步更新阶段';
-    if (h.indexOf('新阶段') >= 0) return '趁阶段刚变化趁热打铁，落实该阶段的下一步';
-    if (h.indexOf('未推进') >= 0 || h.indexOf('破冰') >= 0) return '重新激活：分享一条与对方相关的机会信息';
-    return '保持接触节奏，推进到下一增员阶段';
-  }
-  // 判断 = 真实规则信号；目标/不建议/成功标准 = 按阶段给的可执行默认值（规则，非编造）
-  function goalC(x) {
-    const st = x.stage || '';
-    if (st.indexOf('需求') >= 0) return '进一步确认需求';
-    if (st.indexOf('方案') >= 0) return '推进方案确认';
-    if (st.indexOf('成交') >= 0) return '推进签单';
-    if (st.indexOf('转介绍') >= 0) return '获取转介绍';
-    if (st.indexOf('新认识') >= 0) return '建立信任并获取基本信息';
-    return '保持联系温度，推进当前阶段经营';
-  }
-  function goalR(x) {
-    const m = {
-      '新增人才': '完成破冰并评估意向',
-      '互动暖客': '保持互动并观察动机',
-      '初次面谈': '完成初次面谈并明确顾虑',
-      '增员活动': '邀约参加增员活动',
-      '精准面谈': '推进精准面谈并给出发展路径',
-      '入职申请': '协助完成入职申请',
-      '签约入司': '完成签约并规划起步',
-    };
-    return m[x.stage] || '推进当前增员阶段';
-  }
-  const avoidC = '需求未确认前，不要直接发送产品方案';
-  const avoidR = '不要急于推进签约，先建立信任与机会共识';
-  const critC = '完成一次有效跟进：客户有回应并更新下次跟进日期';
-  const critR = '候选人同意下一步具体安排（时间/活动/面谈）';
-  const personItems = custPool.concat(rcPool).sort((a, b) => b.score - a.score).map(x => {
-    const fresh = x.type === 'customer' ? nbaIdx[x.id] : null;
-    // v1.4 转介绍线索：规则版直接给出推进动作，覆盖通用客户话术
-    const ref = x.ref || null;
-    const refGoal = '推进转介绍线索';
-    const refAction = ref
-      ? '跟进转介绍线索「' + (ref.name || '被介绍人') + '」（当前' + ref.status + '）：' +
-        (ref.next_action ? ref.next_action : '联系来源客户了解近况并推进到下一步')
-      : '';
-    if (fresh) {
-      return Object.assign({
-        type: x.type, id: x.id, name: x.name, stage: x.stage, priority: prio(x.score),
-        assessment: cut(fresh.assessment, 80), goal: cut(fresh.goal, 40),
-        next_action: cut(fresh.next_action, 60), topic: cut(fresh.topic, 16),
-        avoid: cut(fresh.avoid, 60), success_criteria: cut(fresh.success_criteria, 40),
-        next_followup_date: x.next_date || '', nba_from: 'detail', ref: ref,
-      }, { _score: x.score });
-    }
-    return Object.assign({
-      type: x.type, id: x.id, name: x.name, stage: x.stage, priority: prio(x.score),
-      assessment: x.hits.join('；') || '有跟进价值',
-      goal: ref ? refGoal : (x.type === 'customer' ? goalC(x) : goalR(x)),
-      next_action: ref ? cut(refAction, 60) : (x.type === 'customer' ? actC(x) : actR(x)),
-      topic: ref ? '转介绍' : (x.last_note ? cut(x.last_note, 16) : (x.type === 'customer' ? x.stage : '近况交流')),
-      avoid: x.type === 'customer' ? avoidC : avoidR,
-      success_criteria: ref ? '线索状态向前推进一步（已介绍/已联系/已建立关系）' : (x.type === 'customer' ? critC : critR),
-      next_followup_date: x.next_date || '',
-      ref: ref,
-    }, { _score: x.score });
-  });
-  // v1.7.6：活动行动并入规则版候选（分数交错排序，活动行动最终上限 AA_MAX_FINAL 条，不抢占 Top 15）
-  const actionItems = (actionPool || []).map(a => Object.assign(actionToItem(a), { _score: a.score }));
-  const merged = personItems.concat(actionItems).sort((a, b) => b._score - a._score);
-  const out = [];
-  let actionCount = 0;
-  for (const it of merged) {
-    if (out.length >= FINAL_COUNT) break;
-    if (it.type === 'activity_action') {
-      if (actionCount >= AA_MAX_FINAL) continue;
-      actionCount++;
-    }
-    delete it._score;
-    out.push(it);
-  }
-  return out;
-}
-
-// ---------- AI 排序 + NBA 生成 ----------
-// v1.7.6：候选池含人员（customer/recruit）与活动行动（activity_action）；活动行动用 动作#序号 标识
-function buildMessages(pools, nbaIdx, actionPool) {
-  const lines = [];
-  pools.forEach((x, i) => {
-    const fresh = x.type === 'customer' ? nbaIdx[x.id] : null;
-    lines.push((i + 1) + '. type=' + x.type + ' id=' + x.id + ' 姓名=' + x.name +
-      ' 阶段=' + x.stage + ' 信号=' + (x.hits.join('、') || '无') +
-      ' 最近跟进摘要=' + (x.last_note || '无') +
-      (x.ref ? ' 转介绍线索=被介绍人「' + (x.ref.name || '待记录') + '」状态' + x.ref.status +
-        '（goal/next_action 应围绕推进该转介绍线索，话术体现自然请介绍人牵线）' : '') +
-      (fresh ? ' 已有下一步行动方案(内容必须原样采用)=' + JSON.stringify(fresh) : ''));
-  });
-  const actLines = [];
-  (actionPool || []).forEach((a, i) => {
-    actLines.push('动作' + (i + 1) + '. 行动=' + a.title +
-      ' 类型=' + ({ activity_task: '活动任务', activity_followup: '活动跟进', speaker_followup: '嘉宾维护', activity_review: '活动复盘' }[a.source_type] || a.source_type) +
-      ' 优先级=' + ({ high: '高', medium: '中', low: '低' }[a.priority] || '中') +
-      ' 到期=' + (a.due_date || '无') +
-      ' 原因=' + a.reason);
-  });
-  const system = [
-    '你是保险从业者 Victor 的每日经营助手。输入是按规则筛出的今天值得做的事：',
-    '（A）值得联系的人：客户 type=customer 与增员候选人 type=recruit；',
-    '（B）活动行动 type=activity_action：活动任务到期/逾期、活动后重要人员未跟进、嘉宾到联系时间、活动待复盘。',
-    '任务：综合紧迫度、经营价值、阶段节奏，选出今天最值得做的最多 ' + FINAL_COUNT + ' 项，按建议先后排序；为人员条目给出 Next Best Action（下一最佳行动）。',
-    '注意：增员候选人也是客户（先有关系后有增员），人员与活动行动可交错排序；逾期/今天到期的硬时间信号排前面。',
-    '活动行动条目：type 填 "activity_action"，id 填"动作"后的序号数字；assessment 直接用行动原因，priority 按紧迫度判断；goal/next_action/topic/avoid/success_criteria 可填空字符串。',
-    '活动行动不要超过 ' + AA_MAX_FINAL + ' 条，避免挤占客户/增员经营时间。',
-    '客户条目若带"已有下一步行动方案"：其 assessment/goal/next_action/topic/avoid/success_criteria 六个字段必须原样采用该方案内容，不要改写（排序优先级仍由你判断）。',
-    '其余人员条目由你生成：客户用客户经营语言（结合其阶段与信号），增员候选人用增员经营语言（阶段推进/机会吸引，结合增员五步法）。',
-    '【信息不足规则】资料不足以判断的字段必须填"信息不足"，严禁编造客户的家庭/收入/需求/意向等信息；严禁编造候选之外的人员或行动。',
-    '只输出 JSON，不要解释。输出格式：',
-    '{"items":[{"type":"customer|recruit|activity_action","id":数字,"priority":"高|中|低","assessment":"当前经营判断/行动原因，不超过60字","goal":"经营目标，不超过30字","next_action":"下一最佳行动，1句具体可执行，不超过40字","topic":"推荐沟通主题，不超过12字","avoid":"不建议做什么，不超过40字","success_criteria":"成功标准，不超过30字"}]}',
-    '所有字段必须简洁、具体、可执行，不要空话；不要输出日期（日期由系统按现有数据填写）。',
-  ].join('\n');
-  const user = '今日候选（已按规则分数初排）：\n【人员】\n' + lines.join('\n') +
-    (actLines.length ? '\n【活动行动】\n' + actLines.join('\n') : '');
-  return [
-    { role: 'system', content: system },
-    { role: 'user', content: user },
-  ];
-}
-
-function mergeAiResult(parsed, pools, nbaIdx, actionPool) {
-  const items = parsed && Array.isArray(parsed.items) ? parsed.items : null;
-  if (!items || !items.length) return null;
-  const key = {}; pools.forEach(x => { key[x.type + '#' + x.id] = x; });
-  const out = [];
-  for (const it of items) {
-    if (out.length >= FINAL_COUNT) break;
-    if (it.type === 'activity_action') {
-      // 活动行动：id 是动作序号（1 起），只允许引用候选内行动，防幻觉
-      const seq = parseInt(it.id, 10);
-      const base = (actionPool || [])[seq - 1];
-      if (!base) continue;
-      const item = actionToItem(base);
-      item.priority = ['高', '中', '低'].indexOf(it.priority) >= 0 ? it.priority : item.priority;
-      out.push(item);
-      continue;
-    }
-    const base = key[it.type + '#' + it.id];
-    if (!base) continue; // 只允许引用候选池内的人，防幻觉
-    const fresh = base.type === 'customer' ? nbaIdx[base.id] : null;
-    if (fresh) {
-      // 有新鲜 NBA 的客户：直接引用详情页方案（仅优先级/排序由 AI 决定）
-      out.push({
-        type: base.type, id: base.id, name: base.name, stage: base.stage,
-        priority: ['高', '中', '低'].indexOf(it.priority) >= 0 ? it.priority : '中',
-        assessment: cut(fresh.assessment, 80), goal: cut(fresh.goal, 40),
-        next_action: cut(fresh.next_action, 60), topic: cut(fresh.topic, 16),
-        avoid: cut(fresh.avoid, 60), success_criteria: cut(fresh.success_criteria, 40),
-        next_followup_date: base.next_date || '', nba_from: 'detail', ref: base.ref || null,
-      });
-      continue;
-    }
-    out.push({
-      type: base.type, id: base.id, name: base.name, stage: base.stage,
-      priority: ['高', '中', '低'].indexOf(it.priority) >= 0 ? it.priority : '中',
-      assessment: cut(it.assessment, 80),
-      goal: cut(it.goal, 40),
-      next_action: cut(it.next_action, 60),
-      topic: cut(it.topic, 16),
-      avoid: cut(it.avoid, 60),
-      success_criteria: cut(it.success_criteria, 40),
-      next_followup_date: base.next_date || '',
-      ref: base.ref || null,
-    });
-  }
-  return out.length ? out : null;
-}
-
-// v1.7.6 兜底：硬时间信号的活动行动（高优逾期/今天到期，score>=52）AI 漏排时补上；活动行动总数封顶 AA_MAX_FINAL
-function ensureActionItems(items, actionPool) {
-  const have = new Set(items.filter(x => x.type === 'activity_action')
-    .map(x => x.source_type + '#' + x.source_id));
-  let actionCount = items.filter(x => x.type === 'activity_action').length;
-  for (const a of (actionPool || [])) {
-    if (a.score < 52) break; // actionPool 已按 score 降序
-    if (actionCount >= AA_MAX_FINAL) break;
-    if (items.length >= FINAL_COUNT + 2) break;
-    if (have.has(a.source_type + '#' + a.source_id)) continue;
-    items.push(actionToItem(a));
-    have.add(a.source_type + '#' + a.source_id);
-    actionCount++;
-  }
-  return items;
-}
-
-// 最终裁剪：活动行动严格不超过 AA_MAX_FINAL（不抢占 Top 15）；总数沿用 v1.4 语义
-// （转介绍兜底条目可溢出至 FINAL_COUNT+3），ensureRefItems 先于 ensureActionItems 追加，尾切时优先砍活动行动
-function capItems(items) {
-  const out = [];
-  let actionCount = 0;
-  for (const it of items) {
-    if (it.type === 'activity_action') {
-      if (actionCount >= AA_MAX_FINAL) continue;
-      actionCount++;
-    }
-    out.push(it);
-    if (out.length >= FINAL_COUNT + 3) break;
-  }
-  return out;
-}
-
-// v1.4 兜底：进行中的转介绍线索必须出现在今日经营列表（AI 只负责排序，ref 是硬经营信号）
-function ensureRefItems(items, custPool, nbaIdx) {
-  const have = new Set(items.filter(x => x.type === 'customer').map(x => x.id));
-  for (const base of custPool) {
-    if (!base.ref || have.has(base.id)) continue;
-    if (items.length >= FINAL_COUNT + 3) break;
-    const ref = base.ref;
-    const fresh = nbaIdx[base.id];
-    if (fresh) {
-      items.push({
-        type: 'customer', id: base.id, name: base.name, stage: base.stage, priority: '高',
-        assessment: cut(fresh.assessment, 80), goal: cut(fresh.goal, 40),
-        next_action: cut(fresh.next_action, 60), topic: cut(fresh.topic, 16),
-        avoid: cut(fresh.avoid, 60), success_criteria: cut(fresh.success_criteria, 40),
-        next_followup_date: base.next_date || '', nba_from: 'detail', ref: ref,
-      });
-    } else {
-      items.push({
-        type: 'customer', id: base.id, name: base.name, stage: base.stage, priority: '高',
-        assessment: base.hits.join('；') || '有进行中的转介绍线索',
-        goal: '推进转介绍线索',
-        next_action: cut('跟进转介绍线索「' + (ref.name || '被介绍人') + '」（当前' + ref.status + '）：' +
-          (ref.next_action || '联系来源客户了解近况并推进到下一步'), 60),
-        topic: '转介绍',
-        avoid: '不要绕过来源客户直接接触被介绍人',
-        success_criteria: '线索状态向前推进一步（已介绍/已联系/已建立关系）',
-        next_followup_date: base.next_date || '',
-        ref: ref,
-      });
-    }
-    have.add(base.id);
-  }
-  return items;
 }
 
 // ==================== v1.8 Sprint 3：Today 5（基于 v_action_center） ====================
