@@ -53,6 +53,7 @@ exports.main = async (event, context) => {
       case 'updateParticipant':  return await updateParticipant(event);
       case 'removeParticipant':  return await removeParticipant(event);
       case 'listByPerson':        return await listByPerson(event);
+      case 'applyTopics':         return await applyTopics(event);
       default: return { error: 'unknown action: ' + action };
     }
   } catch (e) {
@@ -380,4 +381,60 @@ async function listByPerson(event) {
     rows.forEach(function(r){ r.activity = map[r.activity_id] || null; });
   }
   return { rows: rows };
+}
+
+// 保存活动主题（v1.7.4 Activity Topic Pool）：
+// 更新 activities.topic_ids；对"新采用"的主题 use_count+1、last_used_date=活动日期（无日期取今天）。
+// 移除主题不回退计数（保留历史使用事实）；同一活动重复保存不重复计数（差集计算）。
+async function applyTopics(event) {
+  const id = parseInt(event.id, 10);
+  if (!id) return { error: 'id required' };
+  // 规范化 topic_ids：正整数数组、去重
+  let ids = Array.isArray(event.topic_ids) ? event.topic_ids : [];
+  ids = ids.map(function (t) { return parseInt(t, 10); }).filter(function (t) { return t && t > 0; });
+  ids = Array.from(new Set(ids));
+
+  // 活动存在且未删除
+  const a = assertOk(await rdb.from('activities').select('id, topic_ids, activity_date')
+    .eq('id', id).is('deleted_at', null).maybeSingle());
+  if (!a.data) return { error: 'activity not found' };
+
+  // 过滤掉已删除/不存在的主题 id
+  let validIds = ids;
+  if (ids.length) {
+    const t = assertOk(await rdb.from('activity_topics').select('id')
+      .in('id', ids).is('deleted_at', null));
+    const exist = {};
+    (t.data || []).forEach(function (x) { exist[x.id] = true; });
+    validIds = ids.filter(function (x) { return exist[x]; });
+  }
+
+  // 更新活动 topic_ids
+  assertOk(await rdb.from('activities').update({ topic_ids: validIds, updated_at: nowIso() })
+    .eq('id', id));
+
+  // 差集：本次新采用的主题才计数
+  const oldIds = Array.isArray(a.data.topic_ids)
+    ? a.data.topic_ids.map(function (x) { return parseInt(x, 10); }).filter(Boolean) : [];
+  const oldMap = {};
+  oldIds.forEach(function (x) { oldMap[x] = true; });
+  const added = validIds.filter(function (x) { return !oldMap[x]; });
+
+  if (added.length) {
+    // 最近使用日期：活动日期优先，否则取北京时间今天
+    let usedDate = a.data.activity_date ? String(a.data.activity_date).slice(0, 10) : null;
+    if (!usedDate || !/^\d{4}-\d{2}-\d{2}$/.test(usedDate)) {
+      usedDate = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+    }
+    for (const tid of added) {
+      const cur = assertOk(await rdb.from('activity_topics').select('use_count')
+        .eq('id', tid).maybeSingle());
+      const next = (cur.data && typeof cur.data.use_count === 'number' ? cur.data.use_count : 0) + 1;
+      assertOk(await rdb.from('activity_topics')
+        .update({ use_count: next, last_used_date: usedDate, updated_at: nowIso() })
+        .eq('id', tid));
+    }
+  }
+
+  return { ok: true, topic_ids: validIds, added: added };
 }

@@ -747,6 +747,7 @@ function route(){
   if(hash === '#/customers/trash') return showCustomerTrash();
   if(hash === '#/activities') return showActivities();
   if(hash === '#/speakers') return showSpeakers();
+  if(hash === '#/topics') return showTopics();
   var ra = hash.match(/^#\/activity\/(\d+)$/);
   if(ra) return showActivityDetail(parseInt(ra[1],10));
   showDashboard();
@@ -758,7 +759,7 @@ function route(){
 function currentModule(hash){
   hash = hash || location.hash || '#/';
   if(hash.indexOf('#/recruit') === 0 || hash === '#/activity/recruit') return 'recruit';
-  if(hash === '#/activities' || /^#\/activity\/\d+/.test(hash)) return 'activity';
+  if(hash === '#/activities' || hash === '#/speakers' || hash === '#/topics' || /^#\/activity\/\d+/.test(hash)) return 'activity';
   return 'customer';
 }
 function updateModuleSwitch(hash){
@@ -4158,6 +4159,8 @@ async function showActivities(){
   view.innerHTML = '';
   var toolbar = el('div', {class:'toolbar'}, [
     el('button', {class:'btn btn-primary', onclick:function(){ openActivityForm(null); }}, '+ 新增活动'),
+    el('button', {class:'btn', onclick:function(){ location.hash='#/speakers'; }}, '嘉宾资源'),
+    el('button', {class:'btn', onclick:function(){ location.hash='#/topics'; }}, '活动主题'),
   ]);
   view.appendChild(toolbar);
 
@@ -4350,6 +4353,11 @@ async function showActivityDetail(id){
       card.appendChild(reviewCard);
     }
 
+    // 活动主题区块（v1.7.4）：选择主题 / AI 推荐主题；采用后走 activities.applyTopics 计数
+    var topicsBox = el('div', {id:'activity-topics-box'});
+    card.appendChild(topicsBox);
+    renderActivityTopics(id, act.topic_ids, topicsBox);
+
     // 活动待办区块（v1.7.1）
     var tasksBox = el('div', {id:'activity-tasks-box'});
     card.appendChild(tasksBox);
@@ -4396,9 +4404,9 @@ async function showActivityDetail(id){
         var fi = followupStatusInfo(p.followup_status);
         var actions = [];
         if(linked){
-          actions.push(p.person_type === 'customer'
-            ? el('a', {class:'btn-sm', style:'margin-right:6px', onclick:function(){ location.hash='#/customer/'+p.person_id; }}, '查看')
-            : el('a', {class:'btn-sm', style:'margin-right:6px', onclick:function(){ location.hash='#/recruit/'+p.person_id; }}, '查看'));
+          var viewHash = p.person_type === 'customer' ? '#/customer/' + p.person_id
+            : (p.person_type === 'speaker' ? '#/speakers' : '#/recruit/' + p.person_id);
+          actions.push(el('a', {class:'btn-sm', style:'margin-right:6px', onclick:function(){ location.hash = viewHash; }}, '查看'));
           if(p.person_type === 'customer')
             actions.push(el('a', {class:'btn-sm btn-green', style:'margin-right:6px', onclick:function(){ openActivityFollowup(id, p); }}, '记录沟通'));
         } else {
@@ -4408,7 +4416,7 @@ async function showActivityDetail(id){
         actions.push(el('a', {class:'btn-sm btn-danger', onclick:async function(){ if(!confirm('移除该参与者？')) return; var rr=await callFn('activities',{action:'removeParticipant',id:p.id}); if(rr.error){toast('移除失败');return;} toast('已移除'); showActivityDetail(id); }}, '移除'));
         pc.appendChild(el('div', {style:'display:flex;justify-content:space-between;align-items:center'}, [
           el('div', {}, [
-            el('span', {style:'font-size:11px;color:#fff;background:'+(p.person_type==='customer'?'#2563eb':'#d97706')+';padding:1px 6px;border-radius:8px;margin-right:6px'}, p.person_type === 'customer' ? '客户' : '增员'),
+            el('span', {style:'font-size:11px;color:#fff;background:'+(p.person_type==='customer'?'#2563eb':(p.person_type==='speaker'?'#7c3aed':'#d97706'))+';padding:1px 6px;border-radius:8px;margin-right:6px'}, p.person_type === 'customer' ? '客户' : (p.person_type === 'speaker' ? '嘉宾' : '增员')),
             el('strong', {}, esc(p.person_name || '（未命名）')),
             p.participant_role ? el('span', {style:'font-size:11px;color:var(--muted);border:1px solid #ddd;padding:0 4px;border-radius:4px;margin-left:4px'}, ri.label) : null,
             el('span', {style:'margin-left:8px;color:#fff;background:'+stColor+';padding:1px 6px;border-radius:8px;font-size:11px'}, stLabel),
@@ -4845,7 +4853,7 @@ function renderActivityAnalysis(activityId, act, parts, analysis){
       var card = el('div', {class:'card', style:'margin-bottom:6px;padding:10px;border-left:3px solid #047857'});
       card.appendChild(el('div', {}, [
         el('strong', {}, (i+1) + '. ' + esc(p.name)),
-        el('span', {style:'margin-left:6px;font-size:12px;color:var(--muted)'}, p.person_type === 'customer' ? '客户' : '增员'),
+        el('span', {style:'margin-left:6px;font-size:12px;color:var(--muted)'}, p.person_type === 'customer' ? '客户' : (p.person_type === 'speaker' ? '嘉宾' : '增员')),
       ]));
       if(p.reason) card.appendChild(el('p', {style:'font-size:13px;margin:4px 0'}, '理由：' + esc(p.reason)));
       if(p.suggested_action) card.appendChild(el('p', {style:'font-size:13px;margin:2px 0'}, '推荐动作：' + esc(p.suggested_action)));
@@ -4927,6 +4935,7 @@ function openPersonPickerModal(opts){
   var typeSel = el('select', {class:'input'}, [
     el('option', {value:'customer'}, '客户'),
     el('option', {value:'recruit'}, '增员对象'),
+    el('option', {value:'speaker'}, '嘉宾（资源池）'),
   ]);
   typeSel.value = personType;
   m.appendChild(el('div', {class:'field'}, [el('label', {}, '类型'), typeSel]));
@@ -5294,6 +5303,267 @@ async function addRecommendedSpeaker(activityId, rec, btn){
     return;
   }
   toast('已加入活动');
+  showActivityDetail(activityId);
+}
+
+// ==================== 活动主题资源池（v1.7.4 Activity Topic Pool） ====================
+// 主题列表页：搜索（名称/分类/人群/关键词，云函数 JS 全字段过滤）+ 状态筛选
+async function showTopics(){
+  var view = $('view');
+  view.innerHTML = '';
+  var toolbar = el('div', {class:'toolbar'}, [
+    el('button', {class:'btn btn-primary', onclick:function(){ openTopicForm(null); }}, '+ 新增主题'),
+    el('button', {class:'btn', onclick:function(){ location.hash='#/activities'; }}, '返回活动列表'),
+  ]);
+  view.appendChild(toolbar);
+
+  var card = el('div', {class:'card'});
+  card.appendChild(el('h2', {}, '活动主题'));
+  view.appendChild(card);
+
+  var kw = '', st = '';
+  var kwInput = el('input', {type:'text', class:'input', placeholder:'搜索：名称 / 分类 / 人群 / 关键词', style:'max-width:280px', autocomplete:'off'});
+  var stSel = el('select', {class:'input'}, [
+    el('option', {value:''}, '全部状态'),
+    el('option', {value:'active'}, '可用'),
+    el('option', {value:'inactive'}, '停用'),
+  ]);
+  var listDiv = el('div');
+  card.appendChild(el('div', {style:'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px'}, [kwInput, stSel]));
+  card.appendChild(listDiv);
+
+  var timer = null;
+  function reload(){
+    listDiv.innerHTML = '';
+    listDiv.appendChild(el('div', {class:'loading'}, '加载中…'));
+    callFn('activity_topics', {action:'list', keyword:kw, status:st}).then(function(r){
+      listDiv.innerHTML = '';
+      if(r.error){ listDiv.appendChild(el('div', {class:'empty'}, '加载失败：' + esc(r.error))); return; }
+      var rows = r.rows || [];
+      if(!rows.length){
+        listDiv.appendChild(el('div', {class:'empty'}, (kw || st) ? '没有符合条件的主题。' : '暂无主题。点击"新增主题"建立活动主题资源池。'));
+        return;
+      }
+      rows.forEach(function(t){ listDiv.appendChild(topicCard(t)); });
+    }).catch(function(){
+      listDiv.innerHTML = '';
+      listDiv.appendChild(el('div', {class:'empty'}, '加载失败，请稍后重试。'));
+    });
+  }
+  kwInput.addEventListener('input', function(){ kw = kwInput.value.trim(); if(timer) clearTimeout(timer); timer = setTimeout(reload, 300); });
+  stSel.addEventListener('change', function(){ st = stSel.value; reload(); });
+  reload();
+}
+
+function topicCard(t){
+  var c = el('div', {class:'card', style:'margin-bottom:8px;padding:12px'});
+  c.appendChild(el('div', {style:'display:flex;justify-content:space-between;align-items:center'}, [
+    el('div', {}, [
+      el('strong', {}, esc(t.topic_name || '')),
+      t.category ? el('span', {style:'margin-left:8px;font-size:12px;color:#4338ca;background:#eef2ff;padding:1px 6px;border-radius:8px'}, esc(t.category)) : null,
+      t.status === 'inactive' ? el('span', {style:'font-size:11px;color:#6b7280;border:1px solid #ddd;padding:0 4px;border-radius:4px;margin-left:6px'}, '已停用') : null,
+    ]),
+    el('div', {}, [
+      el('a', {class:'btn-sm', style:'margin-right:6px', onclick:function(){ openTopicForm(t); }}, '编辑'),
+      el('a', {class:'btn-sm', style:'margin-right:6px', onclick:async function(){
+        var newSt = t.status === 'active' ? 'inactive' : 'active';
+        if(!confirm((newSt === 'inactive' ? '停用' : '启用') + '主题「' + (t.topic_name || '') + '」？')) return;
+        var r = await callFn('activity_topics', {action:'update', id:t.id, data:{status:newSt}});
+        if(r.error){ toast('操作失败'); return; }
+        toast(newSt === 'inactive' ? '已停用' : '已启用');
+        showTopics();
+      }}, t.status === 'active' ? '停用' : '启用'),
+      el('a', {class:'btn-sm btn-danger', onclick:async function(){
+        if(!confirm('删除主题「' + (t.topic_name || '') + '」？（软删除，不影响已使用该主题的历史活动）')) return;
+        var r = await callFn('activity_topics', {action:'remove', id:t.id});
+        if(r.error){ toast('删除失败'); return; }
+        toast('已删除');
+        showTopics();
+      }}, '删除'),
+    ]),
+  ]));
+  var infos = [];
+  if(t.target_audience) infos.push('目标人群：' + t.target_audience);
+  infos.push('使用 ' + (t.use_count || 0) + ' 次');
+  if(t.last_used_date) infos.push('最近使用 ' + String(t.last_used_date).slice(0,10));
+  c.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:6px 0 0'}, esc(infos.join(' ｜ '))));
+  if(Array.isArray(t.keywords) && t.keywords.length)
+    c.appendChild(el('p', {style:'font-size:12px;color:var(--muted);margin:4px 0 0'}, '关键词：' + esc(t.keywords.join('、'))));
+  if(t.description)
+    c.appendChild(el('p', {style:'font-size:12px;color:var(--muted);margin:4px 0 0'}, esc(t.description)));
+  return c;
+}
+
+// 新增/编辑主题（keywords 逗号文本，云函数拆分为数组；use_count/last_used_date 为统计字段不在表单）
+function openTopicForm(t){
+  var FIELDS = [
+    {name:'topic_name', label:'主题名称', type:'text', req:true},
+    {name:'category', label:'分类', type:'text'},
+    {name:'target_audience', label:'目标人群', type:'text'},
+    {name:'keywords', label:'关键词（逗号分隔）', type:'text'},
+    {name:'status', label:'状态', type:'select', options:[{v:'active', label:'可用'}, {v:'inactive', label:'停用'}]},
+    {name:'description', label:'主题说明', type:'textarea'},
+    {name:'ai_summary', label:'AI 摘要（可选）', type:'textarea'},
+    {name:'notes', label:'备注', type:'textarea'},
+  ];
+  var init = t ? Object.assign({}, t, {keywords: Array.isArray(t.keywords) ? t.keywords.join(', ') : (t.keywords || '')}) : {};
+  modal(t ? ('编辑主题：' + t.topic_name) : '新增主题', FIELDS, init, async function(data){
+    var r = t
+      ? await callFn('activity_topics', {action:'update', id:t.id, data:data})
+      : await callFn('activity_topics', {action:'create', data:data});
+    if(r.error) throw new Error(r.error);
+    toast(t ? '已保存' : '已创建主题');
+    showTopics();
+  }, {wide:true});
+}
+
+// 活动详情：主题区块（已选 chips + 选择主题 + AI 推荐）
+async function renderActivityTopics(activityId, topicIds, box){
+  box.innerHTML = '<div class="loading">加载主题…</div>';
+  var r = await callFn('activity_topics', {action:'list'});
+  if(r.error){ box.innerHTML = ''; box.appendChild(el('div', {class:'empty'}, '主题加载失败：' + esc(r.error))); return; }
+  var all = r.rows || [];
+  var byId = {}; all.forEach(function(t){ byId[t.id] = t; });
+  var curIds = (Array.isArray(topicIds) ? topicIds : []).map(function(x){ return parseInt(x, 10); }).filter(Boolean);
+  var selected = curIds.map(function(id){ return byId[id]; }).filter(Boolean);
+
+  box.innerHTML = '';
+  box.appendChild(el('h3', {style:'margin:12px 0 6px'}, '活动主题 (' + selected.length + ')'));
+  var chipBox = el('div', {style:'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px'});
+  if(!selected.length) chipBox.appendChild(el('span', {style:'font-size:13px;color:var(--muted)'}, '暂未选择主题'));
+  selected.forEach(function(t){
+    chipBox.appendChild(el('span', {style:'font-size:12px;color:#4338ca;background:#eef2ff;padding:3px 8px;border-radius:10px;display:inline-flex;align-items:center;gap:6px'}, [
+      esc(t.topic_name),
+      el('a', {style:'cursor:pointer;font-weight:bold;color:#4338ca', title:'移除该主题（不影响历史使用次数）', onclick:function(){ removeTopicFromActivity(activityId, t.id, curIds); }}, '×'),
+    ]));
+  });
+  box.appendChild(chipBox);
+  box.appendChild(el('div', {style:'margin-bottom:8px'}, [
+    el('button', {class:'btn btn-primary btn-sm', style:'margin-right:8px', onclick:function(){ openTopicPicker(activityId, curIds, all); }}, '+ 选择主题'),
+    el('button', {class:'btn btn-ai btn-sm', onclick:function(){ runTopicRecommend(activityId, this); }}, '✨ AI 推荐主题'),
+  ]));
+  box.appendChild(el('div', {id:'activity-topic-rec-box'}));
+}
+
+// 从活动移除一个主题（不回退使用次数）
+async function removeTopicFromActivity(activityId, tid, curIds){
+  if(!confirm('从本场活动移除该主题？（主题的历史使用次数不回退）')) return;
+  var next = curIds.filter(function(x){ return x !== tid; });
+  var r = await callFn('activities', {action:'applyTopics', id:activityId, topic_ids:next});
+  if(r.error){ toast('移除失败：' + r.error); return; }
+  toast('已移除');
+  showActivityDetail(activityId);
+}
+
+// 多选主题弹窗（仅 active；勾选后统一保存 → applyTopics）
+function openTopicPicker(activityId, curIds, allTopics){
+  var selected = {}; curIds.forEach(function(id){ selected[id] = true; });
+  var overlay = el('div', {class:'modal-overlay'});
+  var m = el('div', {class:'modal', style:'max-width:480px'});
+  overlay.appendChild(m);
+  overlay.addEventListener('click', function(e){ if(e.target === overlay) overlay.remove(); });
+  m.appendChild(el('h3', {}, '选择活动主题（可多选）'));
+  var search = el('input', {type:'text', class:'input', placeholder:'搜索主题名称 / 分类 / 关键词', autocomplete:'off'});
+  m.appendChild(search);
+  var listBox = el('div', {style:'max-height:320px;overflow-y:auto;margin:8px 0'});
+  m.appendChild(listBox);
+
+  function renderList(kw){
+    listBox.innerHTML = '';
+    var k = (kw || '').toLowerCase();
+    var rows = allTopics.filter(function(t){
+      if(t.status !== 'active') return false;
+      if(!k) return true;
+      var hay = [t.topic_name, t.category, t.target_audience, (Array.isArray(t.keywords) ? t.keywords.join(' ') : '')]
+        .filter(Boolean).join(' ').toLowerCase();
+      return hay.indexOf(k) >= 0;
+    });
+    if(!rows.length){ listBox.appendChild(el('div', {class:'empty'}, '没有可用主题')); return; }
+    rows.forEach(function(t){
+      var row = el('label', {style:'display:flex;align-items:flex-start;gap:8px;padding:8px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px'}, [
+        el('input', {type:'checkbox', checked: !!selected[t.id], onchange:function(){ selected[t.id] = this.checked; }}),
+        el('div', {}, [
+          el('div', {}, [
+            el('strong', {}, esc(t.topic_name)),
+            t.category ? el('span', {style:'margin-left:6px;color:var(--muted);font-size:12px'}, esc(t.category)) : null,
+          ]),
+          t.target_audience ? el('div', {style:'color:var(--muted);font-size:12px'}, '人群：' + esc(t.target_audience)) : null,
+          el('div', {style:'color:var(--muted);font-size:12px'}, '使用 ' + (t.use_count || 0) + ' 次' + (t.last_used_date ? '，最近 ' + String(t.last_used_date).slice(0,10) : '')),
+        ]),
+      ]);
+      listBox.appendChild(row);
+    });
+  }
+  var timer;
+  search.addEventListener('input', function(){ if(timer) clearTimeout(timer); timer = setTimeout(function(){ renderList(search.value.trim()); }, 250); });
+  renderList('');
+
+  m.appendChild(el('div', {style:'display:flex;gap:8px;justify-content:flex-end'}, [
+    el('button', {class:'btn', onclick:function(){ overlay.remove(); }}, '取消'),
+    el('button', {class:'btn btn-primary', onclick:async function(){
+      var ids = Object.keys(selected).filter(function(k){ return selected[k]; }).map(function(k){ return parseInt(k, 10); });
+      var btn = this; btn.disabled = true; btn.textContent = '保存中…';
+      var r = await callFn('activities', {action:'applyTopics', id:activityId, topic_ids:ids});
+      if(r.error){ toast('保存失败：' + r.error); btn.disabled = false; btn.textContent = '保存'; return; }
+      toast('已保存主题' + (r.added && r.added.length ? ('，新采用 ' + r.added.length + ' 个') : ''));
+      overlay.remove();
+      showActivityDetail(activityId);
+    }}, '保存'),
+  ]));
+  document.body.appendChild(overlay);
+}
+
+// ===== AI 推荐主题（v1.7.4）：AI 只推荐，用户点「采用」才调 activities.applyTopics 写入并计数 =====
+async function runTopicRecommend(activityId, btn){
+  var box = document.getElementById('activity-topic-rec-box');
+  if(!box) return;
+  if(btn){ btn.disabled = true; btn.textContent = 'AI 匹配中…（约几秒）'; }
+  box.innerHTML = '';
+  box.appendChild(el('div', {class:'loading'}, 'AI 正在从主题资源池匹配…'));
+  try {
+    var r = await callFn('ai_activity', {action:'recommendTopics', activity_id:activityId});
+    if(r.error) throw new Error(r.error);
+    box.innerHTML = '';
+    var recs = r.recommendations || [];
+    var card = el('div', {class:'card', style:'border:1px solid #ddd6fe;background:#faf5ff;padding:12px'});
+    card.appendChild(el('div', {style:'font-weight:600;color:#7c3aed;margin-bottom:6px'}, '✨ AI 主题推荐'));
+    if(r.note) card.appendChild(el('p', {style:'font-size:13px;color:var(--muted);margin:0 0 8px'}, esc(r.note)));
+    if(!recs.length){
+      if(!r.note) card.appendChild(el('div', {class:'empty'}, '暂无合适主题推荐。可先在"活动主题"中沉淀主题档案。'));
+    } else {
+      recs.forEach(function(rec){
+        var rc = el('div', {style:'border:1px solid #e9d5ff;border-radius:8px;padding:10px;margin-bottom:8px;background:#fff'});
+        rc.appendChild(el('div', {style:'display:flex;justify-content:space-between;align-items:center'}, [
+          el('div', {}, [
+            el('strong', {}, esc(rec.topic_name || ('#' + rec.topic_id))),
+            el('span', {style:'font-size:12px;color:#7c3aed;margin-left:8px'}, '匹配度 ' + rec.score),
+          ]),
+          el('button', {class:'btn btn-sm', onclick:function(){ adoptRecommendedTopic(activityId, rec, this); }}, '采用'),
+        ]));
+        rc.appendChild(el('p', {style:'font-size:13px;margin:6px 0 0'}, esc(rec.reason || '')));
+        rc.appendChild(el('p', {style:'font-size:13px;margin:4px 0 0'}, [el('span', {style:'color:#7c3aed'}, '建议嘉宾：'), esc(rec.suggested_speaker || '信息不足')]));
+        card.appendChild(rc);
+      });
+    }
+    box.appendChild(card);
+  } catch(e){
+    box.innerHTML = '';
+    box.appendChild(el('div', {class:'empty'}, 'AI 暂时无法生成推荐，请稍后重试。'));
+  }
+  if(btn){ btn.disabled = false; btn.textContent = '✨ AI 推荐主题'; }
+}
+
+// 采用推荐主题：合并进当前 topic_ids 后走 applyTopics（唯一写路径；新采用主题计数 +1）
+async function adoptRecommendedTopic(activityId, rec, btn){
+  var act = await callFn('activities', {action:'get', id:activityId});
+  var cur = (act.activity && Array.isArray(act.activity.topic_ids)) ? act.activity.topic_ids.slice() : [];
+  if(cur.indexOf(rec.topic_id) >= 0){ toast('该主题已在活动中'); return; }
+  if(!confirm('采用主题「' + (rec.topic_name || ('#' + rec.topic_id)) + '」用于本场活动？')) return;
+  if(btn){ btn.disabled = true; btn.textContent = '采用中…'; }
+  cur.push(rec.topic_id);
+  var r = await callFn('activities', {action:'applyTopics', id:activityId, topic_ids:cur});
+  if(r.error){ toast('采用失败：' + r.error); if(btn){ btn.disabled = false; btn.textContent = '采用'; } return; }
+  toast('已采用主题');
   showActivityDetail(activityId);
 }
 

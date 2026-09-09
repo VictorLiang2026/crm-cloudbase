@@ -28,6 +28,7 @@ exports.main = async (event, context) => {
     if (action === 'prepare') return await prepare(event, false);
     if (action === 'decompose') return await prepare(event, true);
     if (action === 'recommendSpeakers') return await recommendSpeakers(event);
+    if (action === 'recommendTopics') return await recommendTopics(event);
     if (action !== 'analyze') return { error: 'unknown action: ' + action };
 
     var activityId = parseInt(event && event.activity_id, 10);
@@ -322,6 +323,96 @@ async function recommendSpeakers(event) {
     })
     .filter(Boolean)
     .sort(function(a, b){ return b.score - a.score; })
+    .slice(0, 5);
+
+  return { recommendations: recommendations, note: clip(parsed.note, 60) || '' };
+}
+
+// AI 推荐活动主题（v1.7.4）：基于本场活动/参与者/历史活动/主题池推荐；只读不写
+async function recommendTopics(event) {
+  var activityId = parseInt(event && event.activity_id, 10);
+  if (!activityId) return { error: 'activity_id required' };
+
+  var ctx = await loadActivityContext(activityId);
+  if (ctx.error) return ctx;
+  var activity = ctx.activity;
+
+  // 主题池：active 未删除，按使用次数排序；排除本场已选
+  var pool = assertOk(await rdb.from('activity_topics').select()
+    .eq('status', 'active').is('deleted_at', null)
+    .order('use_count', { ascending: false }).limit(50)).data || [];
+  var chosen = {};
+  (Array.isArray(activity.topic_ids) ? activity.topic_ids : []).forEach(function (id) { chosen[parseInt(id, 10)] = true; });
+  var candidates = pool.filter(function (t) { return !chosen[t.id]; });
+  if (!candidates.length) {
+    return { recommendations: [], note: '主题池中没有可推荐的新主题（池子为空或可用主题均已选入本场）' };
+  }
+
+  // 近期活动（供 AI 参考主题复用）
+  var hist = assertOk(await rdb.from('activities').select('id, name, activity_type, topic_ids, activity_date')
+    .is('deleted_at', null).neq('id', activityId)
+    .order('activity_date', { ascending: false }).limit(10)).data || [];
+  var histDesc = hist.filter(function (h) { return Array.isArray(h.topic_ids) && h.topic_ids.length; })
+    .map(function (h) { return (h.activity_date ? String(h.activity_date).slice(0, 10) : '日期未定') + '《' + h.name + '》(' + (h.activity_type || '') + ')'; })
+    .join('、') || '暂无';
+
+  // 嘉宾池（供 suggested_speaker 给真实姓名）
+  var speakers = assertOk(await rdb.from('activity_speakers').select('name')
+    .eq('status', 'active').is('deleted_at', null).limit(50)).data || [];
+  var speakerNames = speakers.map(function (s) { return s.name; });
+
+  var poolDesc = candidates.map(function (t, i) {
+    return (i + 1) + '. #' + t.id + ' ' + t.topic_name
+      + '｜分类：' + (t.category || '未分类')
+      + '｜目标人群：' + (t.target_audience || '未知')
+      + '｜关键词：' + (Array.isArray(t.keywords) && t.keywords.length ? t.keywords.join('、') : '无')
+      + '｜历史使用：' + (t.use_count || 0) + '次'
+      + '｜说明：' + (t.description || '无');
+  }).join('\n');
+
+  var sys = [
+    '你是保险业务员的活动主题推荐助手。基于本场活动信息、历史活动和主题资源池，推荐最合适的主题（最多5个，按匹配度从高到低）。',
+    '【本场活动】名称：' + activity.name + '；日期：' + (activity.activity_date || '未定') + '；类型：' + (activity.activity_type || '未知') + '；目标：' + (Array.isArray(activity.goal_types) && activity.goal_types.length ? activity.goal_types.join('、') : '未设') + '；说明：' + (activity.description || '无'),
+    '【已有参与者】' + (ctx.participants.length ? ctx.participants.map(function (p) { return p.name; }).join('、') : '暂无'),
+    '【近期用过主题的活动】' + histDesc,
+    '【主题资源池】\n' + poolDesc,
+    '【可用嘉宾】' + (speakerNames.length ? speakerNames.join('、') : '暂无'),
+    '只能从主题池中推荐（topic_id 必须是池中真实 #编号），严禁编造。若无匹配，recommendations 返回空数组并在 note 说明。',
+    'suggested_speaker：建议由哪位嘉宾主讲，必须是【可用嘉宾】名单中的真实姓名；名单为空或无合适人选时填"信息不足"，严禁编造姓名。',
+    '【只输出 JSON】结构：{recommendations:[{topic_id, score, reason, suggested_speaker}], note}',
+    'score 为 0-100 整数匹配度；reason ≤40字（为何适合本场）；suggested_speaker 填嘉宾姓名或"信息不足"',
+  ].join('\n');
+
+  var gen = await generateText([
+    { role: 'system', content: sys },
+    { role: 'user', content: '请推荐活动主题。' },
+  ], { timeout: 55000 });
+
+  var parsed = extractJson(gen.text) || {};
+  var byId = {};
+  candidates.forEach(function (t) { byId[t.id] = t; });
+  var speakerSet = {};
+  speakerNames.forEach(function (n) { speakerSet[n] = true; });
+  var recommendations = (Array.isArray(parsed.recommendations) ? parsed.recommendations : [])
+    .map(function (r) {
+      var tid = parseInt(r && r.topic_id, 10);
+      if (!tid || !byId[tid]) return null; // AI 编造的 ID 直接丢弃
+      var score = parseInt(r.score, 10);
+      if (isNaN(score)) score = 0;
+      if (score < 0) score = 0;
+      if (score > 100) score = 100;
+      var sp = clip(r.suggested_speaker, 20) || '';
+      if (sp && sp !== '信息不足' && !speakerSet[sp]) sp = '信息不足'; // 编造嘉宾名兜底
+      return {
+        topic_id: tid,
+        topic_name: byId[tid].topic_name,
+        score: score,
+        reason: clip(r.reason, 40) || '信息不足',
+        suggested_speaker: sp || '信息不足',
+      };
+    })
+    .filter(Boolean)
+    .sort(function (a, b) { return b.score - a.score; })
     .slice(0, 5);
 
   return { recommendations: recommendations, note: clip(parsed.note, 60) || '' };
