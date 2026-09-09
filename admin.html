@@ -1360,7 +1360,7 @@ function openCustomerForm(customer){
 }
 
 // ==================== 客户详情 ====================
-var detailState = { id:null, tab:'info', data:null };
+var detailState = { id:null, tab:'home', data:null };
 
 async function showDetail(id){
   detailState.id = id;
@@ -1389,9 +1389,9 @@ async function showDetail(id){
     card.innerHTML = '';
     card.appendChild(el('h2', {}, (r.customer.customer_name||'').trim() + (r.customer.phone?' · '+r.customer.phone:'')));
 
-    // 标签栏
+    // 标签栏（第一个为「总览」指挥台，其余功能模块下沉保留）
     var tabs = el('div', {class:'tabs'});
-    var tabsDef = [['info','基本信息'],['profile','客户画像'],['opps','经营机会'],['followups','跟进记录 ('+r.followups.length+')'],['products','保单检视'],['gifts','伴手礼 ('+r.gifts.length+')'],['photos','照片/附件 ('+r.photos.length+')'],['ocr','AI 解析记录'],['ai','AI 建议']];
+    var tabsDef = [['home','🧭 总览'],['info','基本信息'],['profile','客户画像'],['opps','经营机会'],['followups','跟进记录 ('+r.followups.length+')'],['products','保单检视'],['gifts','伴手礼 ('+r.gifts.length+')'],['photos','照片/附件 ('+r.photos.length+')'],['ocr','AI 解析记录'],['ai','AI 建议']];
     tabsDef.forEach(function(t){
       var tab = el('div', {class:'tab'+(detailState.tab===t[0]?' active':''), onclick:function(){ detailState.tab=t[0]; showDetail(id); }}, t[1]);
       tabs.appendChild(tab);
@@ -1400,6 +1400,7 @@ async function showDetail(id){
 
     var content = el('div', {});
     switch(detailState.tab){
+      case 'home': content.appendChild(renderCommandCenter(r, id)); break;
       case 'info': content.appendChild(renderInfo(r.customer)); break;
       case 'profile': content.appendChild(renderProfile(r.customer, r.followups ? r.followups.length : 0)); break;
       case 'opps': content.appendChild(await renderOpps(id)); break;
@@ -1415,6 +1416,138 @@ async function showDetail(id){
     card.innerHTML='';
     card.appendChild(el('div',{class:'empty'}, '加载失败：'+esc(e.message)));
   }
+}
+
+// ---------- 总览 · Customer Command Center（v1.8 Sprint5） ----------
+// 日期 → 距今天数（负数=已过去 N 天；无法解析返回 null）
+function ccDaysFromToday(dateStr){
+  if(!dateStr) return null;
+  var s = String(dateStr).slice(0,10);
+  var m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return null;
+  var d = new Date(+m[1], +m[2]-1, +m[3]);
+  var t = new Date(); t.setHours(0,0,0,0);
+  return Math.round((d - t) / 86400000);
+}
+function ccStripPrefix(s){ return String(s||'').replace(/^【快速记录】/, '').trim(); }
+
+function renderCommandCenter(r, cid){
+  var c = r.customer || {};
+  var followups = r.followups || [];
+  var gifts = r.gifts || [];
+  var photos = r.photos || [];
+  var reports = r.reports || [];
+  var recs = r.recommendations || [];
+  var latest = followups[0] || null;
+  var latestRec = recs[0] || null;
+  var nba = (latestRec && latestRec.nba && typeof latestRec.nba === 'object') ? latestRec.nba : null;
+
+  // 下一步行动：客户表 next_action 优先，其次最新跟进的 next_action
+  var nextAction = (c.next_action || '').trim() || (latest ? (latest.next_action || '').trim() : '') || '';
+  var nextDate = c.next_action_date || (latest ? (latest.next_action_date || latest.next_followup_date || '') : '') || '';
+  var goalText = (latest ? (latest.next_followup_goal || '') : '') || (nba ? (nba.goal || '') : '') || '';
+
+  function goTab(t){ return function(){ detailState.tab = t; showDetail(cid); }; }
+
+  var box = el('div', {});
+
+  // —— Hero：姓名 + 阶段 + 主入口「告诉 AI 刚刚发生了什么」 ——
+  var stageBadge = c.customer_stage ? el('span', {class:'badge stage', style:'font-size:14px;padding:4px 12px;margin-left:10px;vertical-align:middle;'}, c.customer_stage) : null;
+  var hero = el('div', {style:'background:linear-gradient(135deg,#f0fdf4 0%,#ecfdf5 60%,#eff6ff 100%);border:1px solid #bbf7d0;border-radius:12px;padding:18px 20px;margin-bottom:16px;'});
+  var heroTop = el('div', {style:'display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;'}, [
+    el('div', {style:'font-size:22px;font-weight:800;color:#0f172a;display:flex;align-items:center;flex-wrap:wrap;'}, [
+      (c.customer_name||'未命名客户') + (c.phone ? ' · '+c.phone : ''), stageBadge,
+    ]),
+  ]);
+  hero.appendChild(heroTop);
+  var ctaWrap = el('div', {style:'margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;'});
+  ctaWrap.appendChild(el('button', {class:'btn', style:'background:#059669;color:#fff;font-weight:700;font-size:15px;padding:10px 18px;border:none;border-radius:8px;cursor:pointer;',
+    onclick:function(){ openQuickCapture({cid:cid, name:c.customer_name||''}); }}, '✍️ 告诉 AI 刚刚发生了什么'));
+  ctaWrap.appendChild(el('button', {class:'btn', style:'padding:10px 16px;border-radius:8px;', onclick:goTab('followups')}, '＋ 手动写跟进'));
+  hero.appendChild(ctaWrap);
+  hero.appendChild(el('div', {style:'font-size:12px;color:#6b7280;margin-top:10px;'}, '像说话一样记录刚发生的交流，AI 帮你拆解、并在你确认后保存为跟进记录。'));
+  box.appendChild(hero);
+
+  // —— 下一步行动（最突出） ——
+  var nextCard = el('div', {style:'border:2px solid #7c3aed;border-radius:12px;padding:14px 16px;margin-bottom:14px;background:#faf5ff;'});
+  nextCard.appendChild(el('div', {style:'font-size:13px;font-weight:700;color:#7c3aed;letter-spacing:.02em;margin-bottom:8px;'}, '🎯 下一步行动'));
+  if(nextAction){
+    var dd = ccDaysFromToday(nextDate);
+    var dateColor = '#374151', dateTag = '', dateNote = '';
+    if(dd === null && !nextDate){ dateColor = '#9ca3af'; dateNote = '暂未排期'; }
+    else if(dd === null){ dateTag = String(nextDate).slice(0,10); dateColor='#374151'; }
+    else if(dd < 0){ dateColor = '#dc2626'; dateTag = String(nextDate).slice(0,10); dateNote = '已逾期 ' + Math.abs(dd) + ' 天'; }
+    else if(dd === 0){ dateColor = '#dc2626'; dateTag = String(nextDate).slice(0,10); dateNote = '就在今天'; }
+    else { dateColor = '#059669'; dateTag = String(nextDate).slice(0,10); dateNote = dd + ' 天后'; }
+    nextCard.appendChild(el('div', {style:'font-size:16px;font-weight:700;color:#1e293b;line-height:1.5;'}, nextAction));
+    var dateRow = el('div', {style:'margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;'});
+    dateRow.appendChild(el('span', {style:'color:var(--muted);'}, '📅 行动日期：'));
+    dateRow.appendChild(el('span', {style:'font-weight:700;color:'+dateColor+';'}, dateTag || '—'));
+    if(dateNote) dateRow.appendChild(el('span', {class:'badge', style:'background:'+dateColor+';color:#fff;'}, dateNote));
+    nextCard.appendChild(dateRow);
+    if(goalText) nextCard.appendChild(el('div', {style:'margin-top:6px;font-size:13px;color:#4b5563;'}, '🎯 目标：' + goalText));
+  } else {
+    nextCard.appendChild(el('div', {style:'font-size:14px;color:#6b7280;line-height:1.6;'}, '还没有明确的下一步。点上方「告诉 AI 刚刚发生了什么」记一条，或到「AI 建议」生成跟进策略。'));
+  }
+  box.appendChild(nextCard);
+
+  // 两栏：AI建议（为什么值得经营） | 最近发生了什么
+  var grid = el('div', {style:'display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:14px;'});
+
+  // AI 建议 · 当前重点
+  var aiCard = el('div', {style:'border:1px solid #c7d2fe;border-radius:12px;padding:14px 16px;background:#f8faff;'});
+  aiCard.appendChild(el('div', {style:'font-size:13px;font-weight:700;color:#4338ca;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;'}, [
+    '🤖 AI 建议 · 当前重点',
+    el('a', {style:'font-size:12px;font-weight:500;color:#4338ca;cursor:pointer;', onclick:goTab('ai')}, '全部建议 →'),
+  ]));
+  if(nba){
+    aiCard.appendChild(renderNbaCard(nba, latestRec.suggested_followup_date, latestRec.id));
+  } else if(latestRec && (latestRec.suggested_message || latestRec.suggested_strategy)){
+    if(latestRec.suggested_message) aiCard.appendChild(el('div', {style:'font-size:13px;color:#1e293b;line-height:1.7;background:#fff;border-left:3px solid var(--pri);padding:10px 12px;border-radius:0 8px 8px 0;'}, latestRec.suggested_message));
+    if(latestRec.suggested_followup_goal) aiCard.appendChild(el('div', {style:'margin-top:8px;font-size:13px;'}, el('span', {class:'badge'}, '目标：'+latestRec.suggested_followup_goal)));
+  } else {
+    aiCard.appendChild(el('div', {style:'font-size:13px;color:#6b7280;line-height:1.6;margin-bottom:10px;'}, '还没有 AI 建议。生成一次，AI 会基于历史跟进给出当前判断、经营目标和下一步最佳行动。'));
+    aiCard.appendChild(el('button', {class:'btn btn-ai', onclick:goTab('ai')}, '✨ 生成 AI 建议'));
+  }
+  grid.appendChild(aiCard);
+
+  // 最近发生了什么（过去）
+  var recentCard = el('div', {style:'border:1px solid #fde68a;border-radius:12px;padding:14px 16px;background:#fffdf5;'});
+  recentCard.appendChild(el('div', {style:'font-size:13px;font-weight:700;color:#b45309;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;'}, [
+    '🕘 最近发生了什么',
+    el('a', {style:'font-size:12px;font-weight:500;color:#b45309;cursor:pointer;', onclick:goTab('followups')}, '全部跟进 ('+followups.length+') →'),
+  ]));
+  if(latest){
+    var ld = ccDaysFromToday(latest.followup_date);
+    var ago = ld === null ? '' : (ld < 0 ? Math.abs(ld)+' 天前' : (ld === 0 ? '今天' : '未来 '+ld+' 天'));
+    var latestText = ccStripPrefix(latest.interaction_summary || latest.followup_notes || '') || '（本次跟进未填写摘要）';
+    recentCard.appendChild(el('div', {style:'font-size:12px;color:var(--muted);margin-bottom:4px;'}, (latest.followup_date ? String(latest.followup_date).slice(0,10) : '日期未定') + (ago ? ' · '+ago : '')));
+    recentCard.appendChild(el('div', {style:'font-size:14px;color:#1e293b;line-height:1.6;'}, latestText.length > 120 ? latestText.slice(0,120)+'…' : latestText));
+  } else {
+    recentCard.appendChild(el('div', {style:'font-size:13px;color:#6b7280;line-height:1.6;'}, '还没有跟进记录。第一次交流后，点上方「告诉 AI」快速记一条。'));
+  }
+  grid.appendChild(recentCard);
+  box.appendChild(grid);
+
+  // —— 事实概览（纯计数/时间，不是评分，不写库） ——
+  var factCard = el('div', {style:'border:1px solid var(--border-light);border-radius:12px;padding:12px 16px;display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--text-secondary);'});
+  function factChip(label, n, tab){
+    var inner = el('span', {style:'cursor:'+(tab?'pointer':'default')+';'}, [
+      el('strong', {style:'color:var(--text);font-size:15px;margin-right:4px;'}, String(n)), label,
+    ]);
+    if(tab) inner.addEventListener('click', goTab(tab));
+    return inner;
+  }
+  factCard.appendChild(el('span', {style:'color:var(--muted);font-weight:600;'}, '📊 经营事实：'));
+  factCard.appendChild(factChip(' 条跟进', followups.length, 'followups'));
+  factCard.appendChild(factChip(' 份伴手礼', gifts.length, 'gifts'));
+  factCard.appendChild(factChip(' 个照片/附件', photos.length, 'photos'));
+  factCard.appendChild(factChip(' 份保单报告', reports.length, 'products'));
+  factCard.appendChild(factChip(' 条 AI 建议', recs.length, 'ai'));
+  box.appendChild(factCard);
+  box.appendChild(el('div', {style:'font-size:12px;color:var(--muted);margin-top:10px;'}, '关系温度 / 健康度等不做手工评分、也不写入资料库；以上为实时统计事实，AI 建议见上方卡片。'));
+
+  return box;
 }
 
 // ---------- 基本信息 ----------
@@ -7436,11 +7569,11 @@ window.addEventListener('hashchange', route);
 // ==================== AI Quick Capture（v1.8 Sprint4：快速记录） ====================
 function qcTag(txt, bg){ return el('span', {style:'display:inline-block;font-size:11px;font-weight:700;color:#fff;background:'+bg+';border-radius:4px;padding:1px 6px;margin-right:6px;vertical-align:middle;'}, txt); }
 
-function openQuickCapture(){
+function openQuickCapture(preset){
   var overlay = el('div', {class:'modal-overlay'});
   var box = el('div', {class:'modal', style:'max-width:680px;max-height:90vh;overflow-y:auto;'});
-  box.appendChild(el('h3', {}, '✍️ 快速记录'));
-  box.appendChild(el('div', {style:'font-size:12px;color:#6b7280;margin-bottom:8px;'}, '像说话一样记下这次交流，AI 帮你拆成人、事、需求、机会和下一步；你确认后才保存，AI 不会自动改阶段或建机会。'));
+  box.appendChild(el('h3', {}, '✍️ 快速记录' + (preset && preset.name ? ' · ' + preset.name : '')));
+  box.appendChild(el('div', {style:'font-size:12px;color:#6b7280;margin-bottom:8px;'}, (preset && preset.name ? '本次记录将保存到客户「' + preset.name + '」。' : '像说话一样记下这次交流，AI 帮你拆解、识别人和事；') + '你确认后才保存，AI 不会自动改阶段或建机会。'));
 
   var ta = el('textarea', {placeholder:'例如：今天和王总吃饭，他说孩子明年准备去美国读大学，对教育金比较感兴趣，但是最近比较忙，让我十月份以后再联系。', style:'width:100%;min-height:96px;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;resize:vertical;box-sizing:border-box;'});
   box.appendChild(ta);
@@ -7461,7 +7594,7 @@ function openQuickCapture(){
       var r = await callFn('ai_parse', {action:'quick_capture', text:text});
       resultBox.innerHTML = '';
       if(r && r.error){ resultBox.appendChild(el('div', {style:'color:#e11d48;padding:10px;'}, 'AI 解析失败：'+r.error)); return; }
-      renderQuickCapture(resultBox, r, text);
+      renderQuickCapture(resultBox, r, text, preset);
     }catch(e){
       resultBox.innerHTML = '';
       resultBox.appendChild(el('div', {style:'color:#e11d48;padding:10px;'}, 'AI 解析失败：'+e.message));
@@ -7476,7 +7609,7 @@ function openQuickCapture(){
   setTimeout(function(){ ta.focus(); }, 50);
 }
 
-function renderQuickCapture(container, r, text){
+function renderQuickCapture(container, r, text, preset){
   var p = r.parsed || {};
   var match = r.match || {status:'none', candidates:[]};
   var today = r.today;
@@ -7501,22 +7634,29 @@ function renderQuickCapture(container, r, text){
   var newNameInput = el('input', {type:'text', placeholder:'新客户姓名（保存时自动创建客户）', style:'width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;'});
   newNameWrap.appendChild(newNameInput);
   function addOpt(v, label, selected){ var o = el('option', {value:v}, label); if(selected) o.selected = true; personSel.appendChild(o); }
-  addOpt('', '— 请选择关联对象 —');
-  if(match.status === 'matched'){
-    var mv = match.person_type + '|' + match.person_id + '|' + (match.cid != null ? match.cid : '') + '|' + match.person_name;
-    addOpt(mv, (match.person_type === 'recruit' ? '增员对象：' : '客户：') + match.person_name + (match.stage ? ('（' + match.stage + '）') : ''), true);
+  if(preset && preset.cid){
+    // 详情页入口：锁定为当前客户，不再让用户重选或新建
+    addOpt('customer|' + preset.cid + '|' + preset.cid + '|' + preset.name, '当前客户：' + preset.name, true);
+    personSel.disabled = true;
+    personLine.appendChild(el('div', {style:'font-size:12px;color:#059669;margin-top:6px;'}, '✓ 将保存到该客户的跟进记录（' + (p.person_name ? '原话称呼：' + p.person_name + '，' : '') + '若对象不符请关闭后从对应客户页进入）'));
+  } else {
+    addOpt('', '— 请选择关联对象 —');
+    if(match.status === 'matched'){
+      var mv = match.person_type + '|' + match.person_id + '|' + (match.cid != null ? match.cid : '') + '|' + match.person_name;
+      addOpt(mv, (match.person_type === 'recruit' ? '增员对象：' : '客户：') + match.person_name + (match.stage ? ('（' + match.stage + '）') : ''), true);
+    }
+    (match.candidates || []).forEach(function(c){
+      addOpt(c.type + '|' + c.id + '|' + (c.cid != null ? c.cid : '') + '|' + c.name, (c.type === 'recruit' ? '增员对象：' : '客户：') + c.name + (c.stage ? ('（' + c.stage + '）') : ''));
+    });
+    addOpt('__new__', '＋ 新建客户…');
+    personSel.addEventListener('change', function(){ newNameWrap.style.display = (personSel.value === '__new__') ? 'block' : 'none'; });
+    if(p.person_name){
+      var hint = match.status === 'none' ? '（未在现有名单匹配到，可新建或在上方选择）' : (match.status === 'ambiguous' ? '（有多个相似对象，请在上方选择）' : '（已匹配到现有对象）');
+      personLine.appendChild(el('div', {style:'font-size:12px;color:#6b7280;margin-top:6px;'}, '原话称呼：' + p.person_name + '　' + hint));
+    }
   }
-  (match.candidates || []).forEach(function(c){
-    addOpt(c.type + '|' + c.id + '|' + (c.cid != null ? c.cid : '') + '|' + c.name, (c.type === 'recruit' ? '增员对象：' : '客户：') + c.name + (c.stage ? ('（' + c.stage + '）') : ''));
-  });
-  addOpt('__new__', '＋ 新建客户…');
-  personSel.addEventListener('change', function(){ newNameWrap.style.display = (personSel.value === '__new__') ? 'block' : 'none'; });
   personLine.appendChild(personSel);
   personLine.appendChild(newNameWrap);
-  if(p.person_name){
-    var hint = match.status === 'none' ? '（未在现有名单匹配到，可新建或在上方选择）' : (match.status === 'ambiguous' ? '（有多个相似对象，请在上方选择）' : '（已匹配到现有对象）');
-    personLine.appendChild(el('div', {style:'font-size:12px;color:#6b7280;margin-top:6px;'}, '原话称呼：' + p.person_name + '　' + hint));
-  }
   container.appendChild(personLine);
 
   // —— 事实：发生了什么 / 需求兴趣 ——
@@ -7614,6 +7754,8 @@ function renderQuickCapture(container, r, text){
       toast('已保存为跟进记录', 'ok');
       var ov = saveBtn.closest ? saveBtn.closest('.modal-overlay') : null;
       if(ov) ov.remove();
+      // 从客户详情页进入：保存后刷新该客户总览，让新跟进/下一步立即显示
+      if(preset && preset.cid){ detailState.tab = 'home'; showDetail(preset.cid); }
     }catch(e){
       toast('保存失败：' + e.message, 'err');
       saveBtn.disabled = false; saveBtn.textContent = '✓ 确认并保存';
