@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="2580" height="2300" viewBox="0 0 2580 2300" font-family="Microsoft YaHei, PingFang SC, Segoe UI, sans-serif">
 <defs><marker id="arr" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#475569"/></marker></defs>
 <rect width="2580" height="2300" fill="#f8fafc"/>
-<text x="60" y="56" font-size="30" font-weight="bold" fill="#0f172a">Victor&#8217;s CRM 数据库 Schema 关系图 (v1.7.7)</text>
-<text x="60" y="92" font-size="16" fill="#475569">PostgreSQL 共享集群 (CloudBase: crm-d1gkae8ddc930d151) &#183; 20 张业务表 &#183; 9 个视图 &#183; 截至 v1.7.7</text>
+<text x="60" y="56" font-size="30" font-weight="bold" fill="#0f172a">Victor&#8217;s CRM 数据库 Schema 关系图</text>
+<text x="60" y="92" font-size="16" fill="#475569">PostgreSQL 共享集群 (CloudBase: crm-d1gkae8ddc930d151) &#183; 20 张业务表 &#183; 9 个视图 &#183; 当前覆盖版本 v1.7.7（2026-09-09）</text>
 <rect x="30" y="130" width="1430" height="1430" rx="14" fill="#2563eb" opacity="0.04" stroke="#2563eb" stroke-opacity="0.3" stroke-dasharray="6 4"/>
 <text x="48" y="160" font-size="17" font-weight="bold" fill="#2563eb">客户域 (Customer)</text>
 <rect x="1490" y="130" width="530" height="1030" rx="14" fill="#db2777" opacity="0.04" stroke="#db2777" stroke-opacity="0.3" stroke-dasharray="6 4"/>
@@ -695,5 +695,5 @@
 <text x="955" y="2220" font-size="13" font-family="Consolas, monospace"><tspan fill="#059669" font-weight="bold">[J]</tspan><tspan fill="#334155" font-family="Microsoft YaHei"> JSONB 列</tspan></text>
 <text x="1255" y="2220" font-size="13" font-family="Consolas, monospace"><tspan fill="#0891b2" font-weight="bold">[E]</tspan><tspan fill="#334155" font-family="Microsoft YaHei"> 枚举列</tspan></text>
 <text x="1560" y="2220" font-size="13" fill="#475569">注：所有表均含 created_at/updated_at；主对象及子表含 deleted_at（软删除），图中省略。</text>
-<text x="60" y="2270" font-size="13" fill="#94a3b8">Victor&#8217;s CRM v1.7.7 &#183; docs/db-schema-v1.7.7.svg &#183; 由 tools/gen-schema-v1.7.7.js 生成</text>
+<text x="60" y="2270" font-size="13" fill="#94a3b8">Victor&#8217;s CRM &#183; docs/db-schema.svg &#183; 由 tools/gen-schema-svg.js 生成（schema 变更后更新此脚本重新生成）</text>
 </svg>

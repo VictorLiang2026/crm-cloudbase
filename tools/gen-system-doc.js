@@ -1,6 +1,10 @@
 /**
- * 生成 Victor's CRM v1.7.7 系统说明文档 (DOCX)
+ * 生成 Victor's CRM 系统说明文档 (DOCX) —— 唯一事实来源
+ * 输出: docs/system-documentation.docx （不带版本号，始终代表最新；封面标注当前版本）
+ * 系统变更后更新本脚本并重新生成。
  */
+const DOC_VERSION = 'v1.7.7';
+const DOC_DATE = '2026-09-09';
 const fs = require('fs');
 const path = require('path');
 const {
@@ -46,8 +50,8 @@ const sections = [];
 // ===== 封面 =====
 sections.push(new Paragraph({ spacing: { before: 3000 }, alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Victor's CRM", size: 52, bold: true, color: DARK })] }));
 sections.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 200 }, children: [new TextRun({ text: '系统说明文档', size: 40, bold: true, color: BLUE })] }));
-sections.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 100 }, children: [new TextRun({ text: 'v1.7.7 — Activity Learning / AI活动经验', size: 26, color: GRAY })] }));
-sections.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 400 }, children: [new TextRun({ text: '2026-09-09', size: 22, color: GRAY })] }));
+sections.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 100 }, children: [new TextRun({ text: DOC_VERSION + ' — Activity Learning / AI活动经验', size: 26, color: GRAY })] }));
+sections.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 400 }, children: [new TextRun({ text: DOC_DATE, size: 22, color: GRAY })] }));
 sections.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'CloudBase: crm-d1gkae8ddc930d151', size: 18, color: GRAY })] }));
 sections.push(pageBreak());
 
@@ -454,9 +458,10 @@ sections.push(tbl(
     ['cloudfunctions/<name>/package.json', '函数依赖声明'],
     ['cloudbase/migrations/*.sql', '数据库迁移文件（幂等可重放）'],
     ['cloudbaserc.json', 'CloudBase 环境与函数配置'],
-    ['docs/db-schema-v1.7.7.svg', '数据库 Schema 关系图'],
-    ['docs/data-dictionary-v1.7.7.html', '数据字典'],
-    ['tools/gen-schema-v1.7.7.js', 'Schema SVG 生成脚本'],
+    ['docs/db-schema.svg', '数据库 Schema 关系图（始终最新）'],
+    ['docs/data-dictionary.html', '数据字典（始终最新）'],
+    ['docs/system-documentation.docx', '本说明文档（始终最新）'],
+    ['tools/gen-schema-svg.js', 'Schema SVG 生成脚本'],
     ['tools/gen-system-doc.js', '本说明文档生成脚本'],
     ['tools/release.ps1', '发布脚本'],
   ],
@@ -465,15 +470,15 @@ sections.push(tbl(
 sections.push(spacer());
 
 sections.push(h2('8.3 相关文档'));
-sections.push(bullet('数据库 Schema 关系图：docs/db-schema-v1.7.7.svg'));
-sections.push(bullet('数据字典：docs/data-dictionary-v1.7.7.html'));
+sections.push(bullet('数据库 Schema 关系图：docs/db-schema.svg'));
+sections.push(bullet('数据字典：docs/data-dictionary.html'));
 sections.push(bullet('GitHub 仓库：https://github.com/VictorLiang2026/crm-cloudbase'));
 
 // ===== 构建 =====
 const doc = new Document({
   creator: "Victor's CRM",
-  title: "Victor's CRM 系统说明文档 v1.7.7",
-  description: 'System documentation for Victor\'s CRM v1.7.7',
+  title: "Victor's CRM 系统说明文档",
+  description: "System documentation for Victor's CRM (current: " + DOC_VERSION + ')',
   styles: {
     default: {
       document: { run: { font: 'Microsoft YaHei', size: 21 } },
@@ -493,13 +498,13 @@ const doc = new Document({
         margin: { top: convertInchesToTwip(1), bottom: convertInchesToTwip(1), left: convertInchesToTwip(1), right: convertInchesToTwip(1) },
       },
     },
-    headers: { default: new Header({ children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: "Victor's CRM v1.7.7 系统说明文档", size: 16, color: '94a3b8' })] })] }) },
+    headers: { default: new Header({ children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: "Victor's CRM 系统说明文档（" + DOC_VERSION + '）', size: 16, color: '94a3b8' })] })] }) },
     footers: { default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: '第 ', size: 16, color: '94a3b8' }), new TextRun({ children: [PageNumber.CURRENT], size: 16, color: '94a3b8' }), new TextRun({ text: ' 页', size: 16, color: '94a3b8' })] })] }) },
     children: sections,
   }],
 });
 
-const outPath = path.join(__dirname, '..', 'docs', 'Victor-CRM-System-Documentation-v1.7.7.docx');
+const outPath = path.join(__dirname, '..', 'docs', 'system-documentation.docx');
 Packer.toBuffer(doc).then(buffer => {
   fs.writeFileSync(outPath, buffer);
   console.log('DOCX 已生成:', outPath, (fs.statSync(outPath).size / 1024).toFixed(1) + ' KB');
