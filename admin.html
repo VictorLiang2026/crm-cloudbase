@@ -4195,6 +4195,7 @@ async function showActivities(){
     el('button', {class:'btn btn-primary', onclick:function(){ openActivityForm(null); }}, '+ 新增活动'),
     el('button', {class:'btn', onclick:function(){ location.hash='#/speakers'; }}, '嘉宾资源'),
     el('button', {class:'btn', onclick:function(){ location.hash='#/topics'; }}, '活动主题'),
+    el('button', {class:'btn btn-ai', onclick:function(){ toggleActivityLearning(); }}, '✨ 活动经验'),
   ]);
   view.appendChild(toolbar);
 
@@ -4208,6 +4209,10 @@ async function showActivities(){
     card.innerHTML = '';
     var allRows = r.rows || [];
     card.appendChild(el('h2', {}, '活动经营'));
+
+    // AI 活动经验（v1.7.7）展开区
+    learningState.open = false;
+    card.appendChild(el('div', {id:'activity-learning-box'}));
 
     // 状态筛选条
     var filterStatus = '';
@@ -5922,6 +5927,99 @@ async function confirmActivityPostReview(activityId, summary, btn){
     if(btn){ btn.disabled = false; btn.textContent = '确认完成复盘'; }
     toast('复盘确认失败：' + e.message);
   }
+}
+
+// ==================== AI 活动经验（v1.7.7 Activity Learning） ====================
+// AI 基于活动历史输出四类经验：值得继续/优化/复用/尝试；纯只读分析，无采纳、不写业务数据。
+// 样本不足（已结束/已复盘活动 < 2 场）时后端直接返回"样本不足，暂不能判断。"。
+var LEARNING_RANGES = [{v:'30d', label:'最近30天'}, {v:'90d', label:'最近90天'}, {v:'all', label:'全部'}];
+var LEARNING_BUCKETS = [
+  {key:'worth_continuing', label:'值得继续', color:'#059669', bg:'#ecfdf5', icon:'✅'},
+  {key:'worth_optimizing', label:'值得优化', color:'#d97706', bg:'#fffbeb', icon:'⚠️'},
+  {key:'worth_reusing', label:'值得复用', color:'#4338ca', bg:'#eef2ff', icon:'♻️'},
+  {key:'worth_trying', label:'值得尝试', color:'#db2777', bg:'#fdf2f8', icon:'💡'},
+];
+var learningState = { open:false, range:'90d' };
+
+function toggleActivityLearning(){
+  var box = document.getElementById('activity-learning-box');
+  if(!box) return;
+  if(learningState.open){ box.innerHTML = ''; learningState.open = false; return; }
+  learningState.open = true;
+  runActivityLearning(learningState.range);
+}
+
+async function runActivityLearning(range){
+  if(range) learningState.range = range;
+  var box = document.getElementById('activity-learning-box');
+  if(!box) return;
+  box.innerHTML = '';
+  var card = el('div', {class:'card', style:'margin-bottom:12px;border:1px solid #c4b5fd;background:#faf5ff;padding:14px'});
+  box.appendChild(card);
+  card.appendChild(el('div', {style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px'}, [
+    el('div', {style:'font-weight:700;color:#7c3aed'}, '✨ AI 活动经验'),
+    el('div', {style:'display:flex;gap:6px;align-items:center'},
+      LEARNING_RANGES.map(function(r){
+        return el('button', {
+          class:'btn btn-sm ' + (learningState.range === r.v ? 'btn-primary' : ''),
+          onclick:function(){ runActivityLearning(r.v); }
+        }, r.label);
+      }).concat([
+        el('a', {class:'btn-sm', onclick:function(){ box.innerHTML=''; learningState.open=false; }}, '收起'),
+      ])
+    ),
+  ]));
+  var body = el('div');
+  card.appendChild(body);
+  body.appendChild(el('div', {class:'loading'}, 'AI 正在总结活动经营经验…（约十几秒）'));
+  try {
+    var r = await callFn('ai_activity', {action:'learning', range: learningState.range});
+    if(r.error) throw new Error(r.error);
+    renderActivityLearning(body, r);
+  } catch(e){
+    body.innerHTML = '';
+    body.appendChild(el('div', {class:'empty'}, 'AI 暂时无法生成活动经验：' + esc(e.message)));
+  }
+}
+
+function renderActivityLearning(body, r){
+  body.innerHTML = '';
+  var s = r.stats || {};
+  var rangeLabel = LEARNING_RANGES.filter(function(x){return x.v === r.range;})[0];
+  var statLine = (rangeLabel ? rangeLabel.label : r.range)
+    + '（' + (r.window_start || '最早') + ' ~ ' + (r.today || '') + '）'
+    + ' · 活动 ' + (s.activities_in_window != null ? s.activities_in_window : '?') + ' 场（已结束 ' + (s.activities_completed != null ? s.activities_completed : '?') + '）'
+    + ' · 出席 ' + (s.attended_total != null ? s.attended_total : '?') + ' 人次'
+    + (s.task_completion_pct != null ? ' · 任务完成率 ' + s.task_completion_pct + '%' : '')
+    + ' · 活动关联跟进 ' + (s.followups_linked != null ? s.followups_linked : '?') + ' 条';
+  body.appendChild(el('p', {style:'font-size:12px;color:var(--muted);margin:0 0 10px;padding:6px 8px;background:#fff;border-radius:6px'}, statLine));
+
+  if(r.insufficient){
+    body.appendChild(el('div', {class:'empty', style:'background:#fff;border:1px dashed #c4b5fd'}, esc(r.message || '样本不足，暂不能判断。')
+      + '（窗口内已结束/已复盘活动 ' + (s.activities_completed || 0) + ' 场，至少需要 ' + (s.min_required || 2) + ' 场；完成活动复盘后经验总结会更准）'));
+    return;
+  }
+
+  LEARNING_BUCKETS.forEach(function(b){
+    var items = Array.isArray(r[b.key]) ? r[b.key] : [];
+    var sec = el('div', {style:'margin-bottom:12px'});
+    sec.appendChild(el('div', {style:'font-weight:700;color:' + b.color + ';margin-bottom:6px;font-size:14px'}, b.icon + ' ' + b.label));
+    if(!items.length){
+      sec.appendChild(el('div', {style:'font-size:13px;color:var(--muted);padding:8px 10px;background:#fff;border-radius:6px;border-left:3px solid ' + b.color}, '样本不足，暂不能判断。'));
+      body.appendChild(sec);
+      return;
+    }
+    items.forEach(function(it){
+      var row = el('div', {style:'background:' + b.bg + ';border:1px solid ' + b.color + '33;border-left:3px solid ' + b.color + ';border-radius:6px;padding:8px 10px;margin-bottom:6px'}, [
+        el('div', {style:'font-weight:600;font-size:13px;color:' + b.color}, esc(it.title || '')),
+        it.reason ? el('div', {style:'font-size:13px;margin:3px 0'}, esc(it.reason)) : null,
+        it.evidence ? el('div', {style:'font-size:12px;color:#52525b;margin:3px 0;padding:4px 8px;background:#fff;border-radius:4px'}, '证据：' + esc(it.evidence)) : null,
+        it.suggestion ? el('div', {style:'font-size:12px;color:#3f3f46;margin:3px 0'}, '建议：' + esc(it.suggestion)) : null,
+      ]);
+      sec.appendChild(row);
+    });
+    body.appendChild(sec);
+  });
 }
 
 

@@ -10,7 +10,12 @@
  *   postReview: AI 活动复盘（v1.7.5）：活动 ended/reviewed 后从 6 维度发现经营机会
  *               → {summary, customer_actions[], recruit_actions[], speaker_actions[], topic_actions[],
  *                  opportunity_suggestions[], next_activity_suggestions[]}
- *   prepare/decompose/recommendSpeakers/recommendTopics/postReview 只返回建议，绝不写库；
+ *   learning:   AI 活动经验（v1.7.7）：基于窗口（30d/90d/all）内活动历史总结经验，纯只读不写库
+ *               → {insufficient, message?, stats, worth_continuing[], worth_optimizing[],
+ *                  worth_reusing[], worth_trying[]}，每条 {title, reason, evidence, suggestion}；
+ *                  已结束/已复盘活动 < 2 场时直接返回"样本不足，暂不能判断。"，不调用 AI；
+ *                  严禁虚构成功率/ROI/因果，evidence 必须引用事实单真实数据。
+ *   prepare/decompose/recommendSpeakers/recommendTopics/postReview/learning 只返回建议，绝不写库；
  *   用户确认后由前端调 ai_recommend/followups/opportunities/recruit_followups/activity_speakers/activities 写入
  * 出参: { analysis, raw }
  *   analysis: {
@@ -35,6 +40,7 @@ exports.main = async (event, context) => {
     if (action === 'recommendSpeakers') return await recommendSpeakers(event);
     if (action === 'recommendTopics') return await recommendTopics(event);
     if (action === 'postReview') return await postReview(event);
+    if (action === 'learning') return await learning(event);
     if (action !== 'analyze') return { error: 'unknown action: ' + action };
 
     var activityId = parseInt(event && event.activity_id, 10);
@@ -841,6 +847,292 @@ async function postReview(event) {
       next_activity_suggestions: next_activity_suggestions,
       raw: gen.text,
     };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+// ---------- v1.7.7：Activity Learning（AI 活动经验） ----------
+// 纯只读：窗口内活动历史 → 确定性事实单 → AI 输出四类经验；不写任何业务数据、不建表。
+// 输出：{worth_continuing, worth_optimizing, worth_reusing, worth_trying}，每条 {title, reason, evidence, suggestion}
+// 样本不足（已结束/已复盘活动 < 2 场）直接返回"样本不足，暂不能判断。"，不调用 AI。
+var LEARNING_MIN_SAMPLES = 2;
+var LEARNING_DONE_STATUS = ['ended', 'reviewed'];
+var LEARNING_BUCKETS = ['worth_continuing', 'worth_optimizing', 'worth_reusing', 'worth_trying'];
+
+function uniqArr(arr) {
+  var seen = {};
+  var out = [];
+  for (var i = 0; i < arr.length; i++) {
+    var v = arr[i];
+    if (v == null || seen[v]) continue;
+    seen[v] = 1;
+    out.push(v);
+  }
+  return out;
+}
+
+async function learning(event) {
+  try {
+    var range = (event && event.range) || '90d';
+    if (['30d', '90d', 'all'].indexOf(range) < 0) range = '90d';
+    var today = todayStr();
+    var days = range === '30d' ? 30 : (range === '90d' ? 90 : 0);
+    var windowStart = days ? new Date(Date.parse(today) - (days - 1) * 86400000).toISOString().slice(0, 10) : '';
+
+    function inWindow(dateStr) {
+      if (!days) return true;
+      var d = String(dateStr || '').slice(0, 10);
+      return !!d && d >= windowStart && d <= today;
+    }
+    function dKey(v) { return v ? String(v).slice(0, 10) : ''; }
+
+    // 1. 活动（窗口内）
+    var acts = assertOk(await rdb.from('activities')
+      .select('id, name, activity_type, activity_date, status, goal_types, topic_ids, target_participants, actual_participants, location, review_summary, review_score, created_at')
+      .is('deleted_at', null)
+      .order('activity_date', { ascending: false })).data || [];
+    var winActs = acts.filter(function (a) { return inWindow(a.activity_date || a.created_at); });
+    var doneActs = winActs.filter(function (a) { return LEARNING_DONE_STATUS.indexOf(a.status) >= 0; });
+
+    // 样本不足：确定性判定，不调 AI
+    if (doneActs.length < LEARNING_MIN_SAMPLES) {
+      return {
+        range: range, window_start: windowStart, today: today, insufficient: true,
+        message: '样本不足，暂不能判断。',
+        stats: {
+          activities_in_window: winActs.length,
+          activities_completed: doneActs.length,
+          min_required: LEARNING_MIN_SAMPLES,
+        },
+      };
+    }
+
+    var actIds = winActs.map(function (a) { return a.id; });
+
+    // 2. 参与者 / 3. 任务（窗口内活动）
+    var parts = assertOk(await rdb.from('activity_participants')
+      .select('activity_id, person_type, person_id, person_name, status, participant_role, followup_status')
+      .in('activity_id', actIds).is('deleted_at', null)).data || [];
+    var tasks = assertOk(await rdb.from('activity_tasks')
+      .select('activity_id, task_type, status, priority, due_date')
+      .in('activity_id', actIds)).data || [];
+
+    // 4. 主题池 / 5. 嘉宾池
+    var topics = assertOk(await rdb.from('activity_topics')
+      .select('id, topic_name, category, target_audience, use_count, last_used_date, status')
+      .is('deleted_at', null)).data || [];
+    var topicMap = {};
+    topics.forEach(function (t) { topicMap[t.id] = t; });
+    var speakers = assertOk(await rdb.from('activity_speakers')
+      .select('id, name, organization, expertise, relationship_stage, cooperation_count, status')
+      .is('deleted_at', null)).data || [];
+    var speakerMap = {};
+    speakers.forEach(function (s) { speakerMap[s.id] = s; });
+
+    // 6. 活动关联跟进（窗口内活动）
+    var fols = assertOk(await rdb.from('followups')
+      .select('Id, customer_id, activity_id, followup_date, recommendation_id')
+      .in('activity_id', actIds).is('deleted_at', null)
+      .order('followup_date', { ascending: false }).limit(500)).data || [];
+
+    // 7. 客户（参与者客户 + 参与者增员的 customer_id）
+    var recruits = assertOk(await rdb.from('recruit_candidates')
+      .select('id, customer_id, stage, stage_changed_at, potential_score')
+      .is('deleted_at', null)).data || [];
+    var recruitMap = {};
+    recruits.forEach(function (r) { recruitMap[r.id] = r; });
+    var custIds = uniqArr(parts.filter(function (p) { return p.person_type === 'customer' && p.person_id; })
+      .map(function (p) { return p.person_id; })
+      .concat(parts.filter(function (p) { return p.person_type === 'recruit' && p.person_id && recruitMap[p.person_id]; })
+        .map(function (p) { return recruitMap[p.person_id].customer_id; })));
+    var customerMap = {};
+    if (custIds.length) {
+      var cs = assertOk(await rdb.from('customers')
+        .select('Id, customer_name, customer_stage, sales_priority')
+        .in('Id', custIds).is('deleted_at', null)).data || [];
+      cs.forEach(function (c) { customerMap[c.Id] = c; });
+    }
+    function recruitName(rid) {
+      var r = recruitMap[rid];
+      if (!r) return '增员#' + rid;
+      var c = r.customer_id ? customerMap[r.customer_id] : null;
+      return (c && c.customer_name) || ('增员#' + rid);
+    }
+
+    // 8. 机会（窗口内新建；仅同期统计，不做活动归因）
+    var opps = assertOk(await rdb.from('opportunities')
+      .select('customer_id, opportunity_type, status, discovered_at, created_at')
+      .is('deleted_at', null).order('created_at', { ascending: false }).limit(500)).data || [];
+
+    // ---- 聚合事实单 ----
+    var partsByAct = {};
+    parts.forEach(function (p) {
+      (partsByAct[p.activity_id] = partsByAct[p.activity_id] || []).push(p);
+    });
+    var tasksByAct = {};
+    tasks.forEach(function (t) {
+      (tasksByAct[t.activity_id] = tasksByAct[t.activity_id] || []).push(t);
+    });
+
+    var attendedTotal = 0, absentTotal = 0, pendingFollowup = 0;
+    var tasksTotal = 0, tasksDone = 0, tasksOpen = 0;
+    var typeCount = {};
+    var topicUseCount = {};
+    var speakerActCount = {};
+
+    var actLines = doneActs.map(function (a, idx) {
+      var ps = partsByAct[a.id] || [];
+      var attended = ps.filter(function (p) { return p.status === 'attended'; });
+      var absent = ps.filter(function (p) { return p.status === 'absent'; }).length;
+      var nCust = attended.filter(function (p) { return p.person_type === 'customer'; }).length;
+      var nRc = attended.filter(function (p) { return p.person_type === 'recruit'; }).length;
+      var nSp = attended.filter(function (p) { return p.person_type === 'speaker'; }).length;
+      var fuPending = attended.filter(function (p) { return p.followup_status === 'pending'; }).length;
+      var fuDone = attended.filter(function (p) { return p.followup_status === 'done'; }).length;
+      var fuNone = attended.filter(function (p) { return !p.followup_status || p.followup_status === 'none'; }).length;
+      attendedTotal += attended.length;
+      absentTotal += absent;
+      pendingFollowup += fuPending;
+      attended.forEach(function (p) {
+        if (p.person_type === 'speaker' && p.person_id) {
+          speakerActCount[p.person_id] = (speakerActCount[p.person_id] || 0) + 1;
+        }
+      });
+
+      var ts = tasksByAct[a.id] || [];
+      var tDone = ts.filter(function (t) { return t.status === 'completed'; }).length;
+      var tOpen = ts.filter(function (t) { return t.status === 'pending' || t.status === 'in_progress'; }).length;
+      tasksTotal += ts.length;
+      tasksDone += tDone;
+      tasksOpen += tOpen;
+
+      if (a.activity_type) typeCount[a.activity_type] = (typeCount[a.activity_type] || 0) + 1;
+      var tNames = (Array.isArray(a.topic_ids) ? a.topic_ids : []).map(function (tid) {
+        if (topicMap[tid]) { topicUseCount[tid] = (topicUseCount[tid] || 0) + 1; return topicMap[tid].topic_name; }
+        return null;
+      }).filter(Boolean);
+
+      var line = (idx + 1) + '. ' + dKey(a.activity_date) + '《' + a.name + '》'
+        + '；类型：' + (a.activity_type || '未分类')
+        + '；目标：' + ((Array.isArray(a.goal_types) && a.goal_types.length) ? a.goal_types.join('/') : '未设')
+        + '；主题：' + (tNames.length ? tNames.join('、') : '无')
+        + '；人数：计划' + (a.target_participants != null ? a.target_participants : '?')
+        + '/实际' + (a.actual_participants != null ? a.actual_participants : ('出席' + attended.length))
+        + '；出席' + attended.length + '人（客户' + nCust + '/增员' + nRc + '/嘉宾' + nSp + '），缺席' + absent
+        + '；跟进状态：已跟进' + fuDone + '/待跟进' + fuPending + '/未标记' + fuNone
+        + '；任务：完成' + tDone + '/未完成' + tOpen + '/共' + ts.length
+        + (a.review_score ? '；复盘评分：' + a.review_score + '/5' : '')
+        + (a.review_summary ? '；复盘摘要：' + clip(a.review_summary, 60) : '');
+      return line;
+    });
+
+    // 进行中/筹备活动（窗口内未结束）
+    var upcomingLines = winActs.filter(function (a) { return LEARNING_DONE_STATUS.indexOf(a.status) < 0; }).map(function (a) {
+      var ts = tasksByAct[a.id] || [];
+      var tDone = ts.filter(function (t) { return t.status === 'completed'; }).length;
+      var tOpen = ts.filter(function (t) { return t.status === 'pending' || t.status === 'in_progress'; }).length;
+      tasksTotal += ts.length; tasksDone += tDone; tasksOpen += tOpen;
+      if (a.activity_type) typeCount[a.activity_type] = (typeCount[a.activity_type] || 0) + 1;
+      return dKey(a.activity_date) + '《' + a.name + '》（' + (a.status || '') + '）任务完成' + tDone + '/未完成' + tOpen;
+    });
+
+    // 跨活动事实
+    var typeDesc = Object.keys(typeCount).map(function (k) { return k + '×' + typeCount[k]; }).join('、') || '无';
+    var topicDesc = Object.keys(topicUseCount).map(function (tid) {
+      var t = topicMap[tid];
+      return '《' + (t ? t.topic_name : ('#' + tid)) + '》用于' + topicUseCount[tid] + '场（池内累计use_count=' + (t ? (t.use_count || 0) : '?') + '）';
+    }).join('；') || '无';
+    var speakerDesc = Object.keys(speakerActCount).map(function (sid) {
+      var s = speakerMap[sid];
+      return (s ? s.name : ('嘉宾#' + sid)) + '参与' + speakerActCount[sid] + '场'
+        + (s ? '（关系' + (s.relationship_stage || 'new') + '，历史合作' + (s.cooperation_count || 0) + '次'
+          + (s.organization ? '，' + s.organization : '') + '）' : '');
+    }).join('；') || '无';
+    var aiFolCount = fols.filter(function (f) { return f.recommendation_id; }).length;
+    var stageChanges = recruits.filter(function (r) { return inWindow(r.stage_changed_at); });
+    var stageChgNames = stageChanges.filter(function (r) {
+      return parts.some(function (p) { return p.person_type === 'recruit' && p.person_id === r.id; });
+    }).map(function (r) { return recruitName(r.id) + '→' + r.stage; });
+    var oppsInWin = opps.filter(function (o) { return inWindow(o.discovered_at || o.created_at); });
+    var partCustIds = {};
+    parts.forEach(function (p) {
+      if (p.person_type === 'customer' && p.person_id) partCustIds[p.person_id] = 1;
+      if (p.person_type === 'recruit' && p.person_id && recruitMap[p.person_id] && recruitMap[p.person_id].customer_id) {
+        partCustIds[recruitMap[p.person_id].customer_id] = 1;
+      }
+    });
+    var oppsParticipant = oppsInWin.filter(function (o) { return partCustIds[o.customer_id]; }).length;
+    var taskRate = tasksTotal ? Math.round(tasksDone * 100 / tasksTotal) : null;
+
+    var stats = {
+      range: range, window_start: windowStart, today: today,
+      activities_in_window: winActs.length,
+      activities_completed: doneActs.length,
+      activities_upcoming: winActs.length - doneActs.length,
+      participants_records: parts.length,
+      attended_total: attendedTotal,
+      absent_total: absentTotal,
+      followup_pending: pendingFollowup,
+      followups_linked: fols.length,
+      followups_from_ai_review: aiFolCount,
+      tasks_total: tasksTotal,
+      tasks_completed: tasksDone,
+      tasks_open: tasksOpen,
+      task_completion_pct: taskRate,
+      opps_in_window: oppsInWin.length,
+      opps_participant_related: oppsParticipant,
+      recruit_stage_changes: stageChanges.length,
+      speakers_involved: Object.keys(speakerActCount).length,
+    };
+
+    var sys = [
+      '你是保险从业者 Victor 的活动经营经验分析助手。下面是【' + (range === 'all' ? '全部历史' : ('最近' + days + '天')) + '】活动经营的真实数据事实单（窗口：' + (windowStart || '最早') + ' ~ ' + today + '）。',
+      '任务：基于事实单总结活动经验，输出四类：worth_continuing（值得继续：被多场/明确数据支持的有效做法）、worth_optimizing（值得优化：出席、跟进、任务完成等环节的真实短板）、worth_reusing（值得复用：验证过的主题、嘉宾、活动形式/目标组合）、worth_trying（值得尝试：针对缺口的下一步新做法）。',
+      '【纪律——最高优先级】',
+      '1. 严禁虚构：所有数字、姓名、日期、活动名必须来自事实单；事实单没有的数据一律不得出现。',
+      '2. 严禁虚构成功率、ROI、转化率、客单价等任何事实单未给出的比率/金额；任务完成率这类事实单已给出的数字可直接引用。',
+      '3. 严禁制造因果：不得说"某活动带来了签单/增员/机会"。机会、阶段变化等只可表述为"同期出现/记录显示"，相关不等于因果；worth_trying 是你的推断建议，evidence 中必须注明"推断"而非数据结论。',
+      '4. evidence（证据）必须具体引用事实单中的真实活动名/数字/日期，不允许空泛表述（如"效果不错"）；reason 说明为什么这算经验。',
+      '5. 每类 0-3 条：有充分证据才写，证据不足的类返回空数组，不要硬凑。',
+      '6. 每条字段：title（≤24字，经验标题）、reason（≤70字，判断依据）、evidence（≤110字，引用事实）、suggestion（≤70字，具体可执行的下一步）。',
+      '7. 只输出 JSON，不要解释、不要 markdown。结构：{"worth_continuing":[...],"worth_optimizing":[...],"worth_reusing":[...],"worth_trying":[...]}',
+      '',
+      '【跨活动汇总】活动类型分布：' + typeDesc
+        + '；主题使用：' + topicDesc
+        + '；参与嘉宾：' + (speakerDesc || '无')
+        + '；活动关联跟进记录：' + fols.length + ' 条（其中 AI 复盘采纳行动 ' + aiFolCount + ' 条）'
+        + '；出席者中标记"待跟进"：' + pendingFollowup + ' 人'
+        + '；任务总完成率：' + (taskRate != null ? taskRate + '%（完成' + tasksDone + '/共' + tasksTotal + '）' : '无任务数据')
+        + '；窗口内增员阶段变化：' + stageChanges.length + ' 人次' + (stageChgNames.length ? '（参与者中：' + stageChgNames.join('、') + '）' : '')
+        + '；窗口内新建业务机会：' + oppsInWin.length + ' 条（其中活动参与者相关 ' + oppsParticipant + ' 条；注意：仅同期数据，不做活动归因）。',
+      '【已结束/已复盘活动（共 ' + doneActs.length + ' 场）】',
+      actLines.join('\n') || '无',
+      upcomingLines.length ? '【筹备/进行中活动】\n' + upcomingLines.join('\n') : '',
+    ].filter(Boolean).join('\n');
+
+    var gen = await generateText([
+      { role: 'system', content: sys },
+      { role: 'user', content: '请基于以上事实单总结活动经验。', },
+    ], { timeout: 55000 });
+
+    var parsed = extractJson(gen.text) || {};
+    function normBucket(key) {
+      return (Array.isArray(parsed[key]) ? parsed[key] : []).map(function (it) {
+        var title = clip(it && it.title, 24);
+        if (!title) return null;
+        return {
+          title: title,
+          reason: clip(it.reason, 70),
+          evidence: clip(it.evidence, 110),
+          suggestion: clip(it.suggestion, 70),
+        };
+      }).filter(Boolean).slice(0, 3);
+    }
+    var out = { range: range, window_start: windowStart, today: today, insufficient: false, stats: stats };
+    LEARNING_BUCKETS.forEach(function (b) { out[b] = normBucket(b); });
+    out.raw = gen.text;
+    return out;
   } catch (e) {
     return { error: e.message };
   }
