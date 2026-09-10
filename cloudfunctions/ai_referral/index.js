@@ -14,6 +14,7 @@
 'use strict';
 
 const { rdb, generateText, extractJson, assertOk } = require('./db');
+const aiStd = require('./ai');
 
 function clip(s, n) {
   s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
@@ -109,8 +110,10 @@ exports.main = async (event, context) => {
       'timing: 推荐时机（什么时候开口最自然，如"本次保单服务完成后/活动后一周内/下次见面茶歇时"），不超过40字',
       'approach: 推荐切入方式（怎么自然引出，不引起反感），1-2句，不超过80字',
       'message: 推荐话术（微信可直接发送的口语化话术，称呼自然，50-120字；suitable=false 时为空串）',
-      'nba: { assessment, goal, next_action, topic, avoid, success_criteria }（同 NBA 六字段，围绕"推进转介绍"；信息不足的字段填"信息不足"）',
-      '【必填要求】无论 suitable 为 true 还是 false，reason/timing/approach/nba 六个字段都必须非空：suitable=false 时，timing 给出"何时再评估/开口"（如"等保单成交或下次活动后"），approach 给出"现阶段铺垫动作"（如何先升温关系），nba 围绕"为转介绍铺垫"填写；只有 message 在 suitable=false 时为空串。',
+      aiStd.nbaPromptBlock(true),
+      '- nba 必须围绕“推进转介绍”（suitable=false 时围绕“为转介绍铺垫”），nba.goal 与该主题一致，nba.script 与 message 口径一致。',
+      '【必填要求】无论 suitable 为 true 还是 false，reason/timing/approach/nba 各字段都必须非空：suitable=false 时，timing 给出“何时再评估/开口”（如“等保单成交或下次活动后”），approach 给出“现阶段铺垫动作”（如何先升温关系）；只有 message 在 suitable=false 时为空串。',
+      aiStd.GUARDRAILS,
       '只输出 JSON，不要解释。',
     ].join('\n');
 
@@ -121,19 +124,26 @@ exports.main = async (event, context) => {
 
     const parsed = extractJson(raw) || {};
     var suitable = parsed.suitable === true;
-    var nba = parsed.nba;
-    if (nba && typeof nba === 'object' && !Array.isArray(nba)) {
-      ['assessment', 'goal', 'next_action', 'topic', 'avoid', 'success_criteria'].forEach(function (k) {
-        nba[k] = typeof nba[k] === 'string' ? clip(nba[k], 200) : '';
-      });
-    } else {
-      nba = null;
-    }
-    // 兜底：模型缺字段时给结构完整的默认值（不编造客户信息）
+    // NBA 统一走标准清洗（9 字段 + 兼容旧 6 字段）；模型缺失时用保守兜底（不编造客户信息）
+    var nba = aiStd.normNba(parsed.nba, { legacy: true, priority: suitable ? 'medium' : 'low' });
     if (!nba) {
-      nba = suitable
-        ? { assessment: '客户关系信号积极，适合尝试自然转介绍', goal: '推进转介绍', next_action: '选择自然时机开口，请客户帮忙介绍身边有需要的朋友', topic: '转介绍', avoid: '生硬索取名单，引起客户反感', success_criteria: '客户愿意提供 1-2 个被介绍人线索' }
-        : { assessment: clip(parsed.reason, 200) || '当前关系基础尚不足以开口转介绍', goal: '先升温关系，为未来转介绍铺垫', next_action: '保持规律联络，借服务/活动自然增加接触', topic: '关系维护', avoid: '现阶段不要提转介绍或保险推销', success_criteria: '关系升温（成交/服务/共同活动）后再评估' };
+      nba = aiStd.normNba(suitable
+        ? {
+            action: '选择自然时机开口，请客户帮忙介绍身边有需要的朋友',
+            reason: '客户关系信号积极，适合尝试自然转介绍',
+            goal: '推进转介绍', topic: '转介绍',
+            avoid: '生硬索取名单，引起客户反感',
+            success_criteria: '客户愿意提供 1-2 个被介绍人线索',
+            channel: '面谈', priority: 'medium', confidence: 'low', evidence: [],
+          }
+        : {
+            action: '保持规律联络，借服务/活动自然增加接触',
+            reason: clip(parsed.reason, 160) || '当前关系基础尚不足以开口转介绍',
+            goal: '先升温关系，为未来转介绍铺垫', topic: '关系维护',
+            avoid: '现阶段不要提转介绍或保险推销',
+            success_criteria: '关系升温（成交/服务/共同活动）后再评估',
+            channel: '微信', priority: 'low', confidence: 'low', evidence: [],
+          }, { legacy: true });
     }
     var timing = clip(parsed.timing, 80);
     var approach = clip(parsed.approach, 160);

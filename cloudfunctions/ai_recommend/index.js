@@ -23,6 +23,7 @@
 'use strict';
 
 const { rdb, generateText, extractJson, assertOk } = require('./db');
+const aiStd = require('./ai');
 
 // 操作员默认信息（前端未传时兜底）
 const OPERATOR_DEFAULT = { name: 'Victor', gender: '男', birthday: '1976-10' };
@@ -56,33 +57,15 @@ function buildSystem(op) {
     'suggested_followup_date(建议跟进日期 YYYY-MM-DD),',
     'suggested_customer_stage(建议客户经营阶段:新认识/关系维护/需求挖掘/方案沟通/成交推进/转介绍经营),',
     'suggested_followup_goal(建议跟进目标:建立联系/约见面/邀请活动/获取家庭信息/推进签单/推进招募/推进转介绍/安排家庭保单检视)。',
-    '【Next Best Action（下一步行动）— 必须输出】',
-    '- 在上述字段外，额外输出 nba 对象（与其它字段同一次 JSON 输出），字段：',
-    '  assessment(当前经营判断：结合客户阶段/保单检视结论/最近联系时间/最近跟进记录，不超过2句),',
-    '  goal(当前最重要的经营目标：1句，与 suggested_followup_goal 呼应),',
-    '  next_action(下一最佳行动：1句，具体到渠道与动作，业务员拿到即可执行，如"微信沟通并争取一次30分钟见面"),',
-    '  topic(推荐沟通主题：不超过12字，可用、分隔多个),',
-    '  avoid(不建议做什么：1句，指出当前阶段最容易犯的错误),',
-    '  success_criteria(成功标准：1句，可验证的结果，如"约到一次30分钟沟通"),',
-    '- nba 不含日期字段：建议下一次跟进时间统一使用 suggested_followup_date，不要在 nba 中输出日期。',
-    '- 【信息不足规则】任一字段若现有资料不足以判断，必须填"信息不足"，严禁编造客户的家庭/收入/需求/意向等信息。',
+    aiStd.nbaPromptBlock(true),
+    '- nba.goal 必须与 suggested_followup_goal 呼应；nba.suggested_date 必须与 suggested_followup_date 一致（无法确定则为空字符串）。',
     '- nba 必须与 suggested_message/suggested_strategy 相互一致，不得矛盾。',
+    aiStd.GUARDRAILS,
     '只输出 JSON，不要解释。',
   ].join('\n');
 }
 
-// NBA 结构清洗：仅保留 6 个文本字段；全空视为未产出（返回 null）
-function normNba(n) {
-  if (!n || typeof n !== 'object' || Array.isArray(n)) return null;
-  var KEYS = ['assessment', 'goal', 'next_action', 'topic', 'avoid', 'success_criteria'];
-  var out = {}, any = false;
-  KEYS.forEach(function (k) {
-    var v = typeof n[k] === 'string' ? n[k].trim().slice(0, 200) : '';
-    out[k] = v;
-    if (v) any = true;
-  });
-  return any ? out : null;
-}
+// NBA 清洗统一走 aiStd.normNba（统一 9 字段 + 兼容旧 6 字段）
 
 // 枚举词表校验（与 DB enum 完全一致）：AI 输出超出词表时置 null，避免插入失败
 var GOAL_ENUM = ['建立联系', '约见面', '邀请活动', '获取家庭信息', '推进签单', '推进招募', '推进转介绍'];
@@ -190,18 +173,7 @@ exports.main = async (event, context) => {
       recent_photos: photoRows.map(function (p) {
         return { file: p.file_name, notes: p.photo_notes, date: p.created_at };
       }),
-      // 历史 AI 建议作为参考（倒序，最新在前）
-      recent_recommendations: histRows.map(function (r) {
-        return {
-          date: r.recommendation_date,
-          message: r.suggested_message,
-          strategy: r.suggested_strategy,
-          followup_date: r.suggested_followup_date,
-          stage: r.suggested_customer_stage,
-          goal: r.suggested_followup_goal,
-          nba: r.nba || null,
-        };
-      }),
+      // 历史 AI 建议统一在下方 HISTORY_HINT 段拼入 user 消息，避免重复发送浪费 token
       // 保单检视报告（关键输入）：优先编辑后版本
       policy_reviews: prrRows.length ? prrRows.map(function (r) {
         return {
@@ -240,7 +212,7 @@ exports.main = async (event, context) => {
     const parsed = extractJson(raw) || {};
 
     const today = new Date().toISOString().slice(0, 10);
-    const nba = normNba(parsed.nba);
+    const nba = aiStd.normNba(parsed.nba, { legacy: true });
     const payload = {
       customer_id: customerId,
       customer_name: customer.customer_name,

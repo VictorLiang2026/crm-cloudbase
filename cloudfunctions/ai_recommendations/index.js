@@ -18,6 +18,7 @@
 'use strict';
 
 const { rdb, normFields, assertOk, nowIso } = require('./db');
+const aiStd = require('./ai');
 
 // 与 ai_recommend 一致的枚举词表（PG enum 列，超出值会插入失败）
 var GOAL_ENUM = ['建立联系', '约见面', '邀请活动', '获取家庭信息', '推进签单', '推进招募', '推进转介绍'];
@@ -25,17 +26,15 @@ var STAGE_ENUM = ['新认识', '关系维护', '需求挖掘', '方案沟通', '
 function inEnum(v, list) {
   return (typeof v === 'string' && list.indexOf(v.trim()) >= 0) ? v.trim() : null;
 }
-// NBA jsonb 清洗：仅保留 6 个文本字段；全空返回 null（同 ai_recommend.normNba）
+// NBA jsonb 清洗：统一 9 字段 + 兼容旧 6 字段（v1.8 Sprint9 起新建议带 channel/confidence/evidence 等）；
+// 全空返回 null（与历史行为一致，避免存入只有默认枚举值的空对象）
 function normNba(n) {
-  if (!n || typeof n !== 'object' || Array.isArray(n)) return null;
-  var KEYS = ['assessment', 'goal', 'next_action', 'topic', 'avoid', 'success_criteria'];
-  var out = {}, any = false;
-  KEYS.forEach(function (k) {
-    var v = typeof n[k] === 'string' ? n[k].trim().slice(0, 200) : '';
-    out[k] = v;
-    if (v) any = true;
-  });
-  return any ? out : null;
+  var out = aiStd.normNba(n, { legacy: true });
+  if (!out) return null;
+  var TEXT_KEYS = ['action', 'reason', 'goal', 'suggested_date', 'script',
+    'assessment', 'next_action', 'topic', 'avoid', 'success_criteria'];
+  var anyText = TEXT_KEYS.some(function (k) { return !!out[k]; });
+  return (anyText || out.evidence.length) ? out : null;
 }
 function normDate(v) {
   if (v == null || v === '') return null;

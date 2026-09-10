@@ -11,6 +11,7 @@
 'use strict';
 
 const { rdb, generateText, extractJson, assertOk, nowIso } = require('./db');
+const aiStd = require('./ai');
 
 function buildScoringPrompt(c) {
   return [
@@ -23,8 +24,11 @@ function buildScoringPrompt(c) {
     '5. 创业动机(15%): 求职动机与保险创业的契合度',
     '6. 文化适配(10%): 价值观、团队协作倾向',
     '【输出 JSON】',
-    '{ "score": 0-100整数, "reason": "三大理由（60字内）", "risks": "三大风险点（60字内）" }',
-    '只输出 JSON，不要解释。',
+    '{ "score": 0-100整数, "reason": "三大理由（60字内，每条只引用上面给出的事实）", "risks": "三大风险点（60字内）" }',
+    '【统一护栏】',
+    '1. 只能依据上面给出的资料打分，严禁虚构候选人的经历/资源/动机；',
+    '2. 资料严重不足（大部分字段为未知/无）时 score 不得高于 60，且 reason 首句必须注明“资料不足，分数为初步判断”；',
+    '3. 严禁虚构成功率、ROI 或收益承诺；只输出 JSON，不要解释。',
     '【候选人资料】',
     '姓名：' + (c.customer_name || c.name || '未知'),
     '性别：' + (c.gender || '未知'),
@@ -59,18 +63,22 @@ exports.main = async (event, context) => {
     const { text: raw } = await generateText(messages, { timeout: 60000 });
     const parsed = extractJson(raw) || {};
 
+    // 分数夹取 0-100 整数，非法值置 null（防 AI 输出越界/非数字污染业务字段）
+    var scoreNum = Number.isFinite(parseInt(parsed.score, 10)) ? parseInt(parsed.score, 10) : null;
+    if (scoreNum != null) scoreNum = Math.max(0, Math.min(100, scoreNum));
+    var reasonText = aiStd.clipText(parsed.reason, 300) + (parsed.risks ? ' | 风险：' + aiStd.clipText(parsed.risks, 300) : '');
+
     // 回写到候选人表
-    const reasonText = (parsed.reason || '') + (parsed.risks ? ' | 风险：' + parsed.risks : '');
     assertOk(await rdb.from('recruit_candidates').update({
-      potential_score: parsed.score != null ? parseInt(parsed.score, 10) : null,
+      potential_score: scoreNum,
       potential_reason: reasonText || null,
       updated_at: nowIso(),
     }).eq('id', candidateId));
 
     return {
-      score: parsed.score != null ? parseInt(parsed.score, 10) : null,
-      reason: parsed.reason || null,
-      risks: parsed.risks || null,
+      score: scoreNum,
+      reason: aiStd.clipText(parsed.reason, 300) || null,
+      risks: aiStd.clipText(parsed.risks, 300) || null,
       raw: raw,
     };
   } catch (e) {

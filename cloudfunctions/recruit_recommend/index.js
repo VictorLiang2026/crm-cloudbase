@@ -21,6 +21,7 @@
 'use strict';
 
 const { rdb, generateText, extractJson, assertOk } = require('./db');
+const aiStd = require('./ai');
 
 const OPERATOR_DEFAULT = { name: 'Victor', gender: '男', birthday: '1976-10' };
 
@@ -45,54 +46,41 @@ function buildSystem(op) {
     'suggested_objection_handling(针对候选人顾虑的3条异议处理话术，数组，每条80字内),',
     'suggested_next_stage_goal(下一步推进目标：约面谈/邀创说会/促报考/其他，20字内),',
     'suggested_followup_date(建议下次跟进日期 YYYY-MM-DD)。',
-    '【Next Best Action（下一步行动）— 必须输出】',
-    '- 在上述字段外，额外输出 nba 对象（增员经营视角），字段：',
-    '  assessment(当前增员经营判断：结合当前增员阶段/最近接触情况/动机与顾虑，不超过2句),',
-    '  goal(当前最重要的增员目标：1句，对应增员五步法当前阶段的推进要求),',
-    '  next_action(下一最佳行动：1句，具体到渠道与动作，拿到即可执行),',
-    '  topic(推荐沟通主题：不超过12字),',
-    '  avoid(不建议做什么：1句，指出当前增员阶段最容易犯的错误),',
-    '  success_criteria(成功标准：1句，可验证的结果),',
-    '- nba 不含日期字段：建议下次跟进时间统一使用 suggested_followup_date，不要在 nba 中输出日期。',
-    '- 【信息不足规则】资料不足的字段必须填"信息不足"，严禁编造候选人的动机/家庭/收入等信息。',
+    aiStd.nbaPromptBlock(true),
+    '- nba.goal 必须与 suggested_next_stage_goal 呼应；nba.suggested_date 必须与 suggested_followup_date 一致（无法确定则为空字符串）。',
     '- nba 必须与 suggested_message/suggested_next_stage_goal 相互一致，不得矛盾。',
+    aiStd.GUARDRAILS,
     '只输出 JSON，不要解释。',
   ].join('\n');
 }
 
+// 统一七段 Context：只发非空事实，空字段直接省略（省 token、避免诱导模型脑补）
 function buildUser(c) {
-  return [
-    '【候选人资料】',
-    '姓名：' + (c.customer_name || c.name || '未知'),
-    '性别：' + (c.gender || '未知'),
-    '出生：' + (c.birthday || '未知'),
-    '现职/行业：' + (c.occupation || '未知'),
-    '年收入：' + (c.annual_income || '未知'),
-    '学历：' + (c.education || '未知'),
-    'MBTI：' + (c.mbti || '未知'),
-    '求职动机：' + (c.motivation || '未知'),
-    '顾虑点：' + (c.concerns || '未知'),
-    '来源：' + (c.source || '未知'),
-    '当前阶段：' + (c.stage || '名单'),
-    '工作经历：' + (c.work_experience || '无'),
-    '家庭情况：' + (c.family_situation || '无'),
-    '性格标签：' + (c.personality_tags || '无'),
-    '职业规划：' + (c.career_plan || '无'),
-    '请生成下一步接触建议。',
-  ].join('\n');
-}
-
-// NBA 结构清洗：仅保留 6 个文本字段；全空视为未产出（返回 null）
-function normNba(n) {
-  if (!n || typeof n !== 'object' || Array.isArray(n)) return null;
-  var KEYS = ['assessment', 'goal', 'next_action', 'topic', 'avoid', 'success_criteria'];
-  var out = {}, any = false;
-  KEYS.forEach(function (k) {
-    var v = typeof n[k] === 'string' ? n[k].trim().slice(0, 200) : '';
-    out[k] = v;
-    if (v) any = true;
+  var facts = [];
+  [
+    ['姓名', c.customer_name || c.name],
+    ['性别', c.gender],
+    ['出生', c.birthday],
+    ['现职/行业', c.occupation],
+    ['年收入', c.annual_income],
+    ['学历', c.education],
+    ['MBTI', c.mbti],
+    ['求职动机', c.motivation],
+    ['顾虑点', c.concerns],
+    ['来源', c.source],
+    ['工作经历', c.work_experience],
+    ['家庭情况', c.family_situation],
+    ['性格标签', c.personality_tags],
+    ['职业规划', c.career_plan],
+  ].forEach(function (kv) {
+    var v = kv[1];
+    if (v != null && String(v).trim() && String(v).trim() !== '无') facts.push(kv[0] + '：' + String(v).trim());
   });
-  return any ? out : null;
+  return aiStd.buildContext({
+    facts: facts,
+    stage: '当前增员阶段：' + (c.stage || '名单') + '（增员五步法：接触 → 唤醒 → 面谈 → 促成 → 入司）',
+    goal: '请基于以上事实，给出当前阶段的下一步接触建议；资料不足的字段按护栏处理，严禁补充候选人没说过的信息。',
+  });
 }
 
 exports.main = async (event, context) => {
@@ -118,7 +106,7 @@ exports.main = async (event, context) => {
     ];
     const { text: raw } = await generateText(messages, { timeout: 120000 });
     const parsed = extractJson(raw) || {};
-    const nba = normNba(parsed.nba);
+    const nba = aiStd.normNba(parsed.nba, { legacy: true });
 
     return { recommendation: Object.assign({}, parsed, { nba: nba }), raw: raw };
   } catch (e) {
