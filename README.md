@@ -13,7 +13,7 @@
 ## 目录结构
 
 ```
-crm-cloudbase/
+crm-v1/
 ├── cloudfunctions/
 │   ├── _shared/db.js                # 共享：rdb() 数据访问 + AI(hy3) 封装（部署时复制为各函数 ./db.js）
 │   ├── customers/                   # 客户 CRUD

@@ -410,7 +410,7 @@ sections.push(tbl(
     ['前端入口', 'admin.html（根路径直接服务，errorDocument=admin.html）'],
     ['AI 文本模型', 'Hunyuan hy3（21 处调用）'],
     ['AI 视觉模型', 'glm-5v-turbo（1 处 OCR）'],
-    ['GitHub 仓库', 'https://github.com/VictorLiang2026/crm-cloudbase'],
+    ['GitHub 仓库', 'https://github.com/VictorLiang2026/crm-v1'],
   ],
   [30, 70]
 ));
@@ -557,7 +557,7 @@ sections.push(spacer());
 sections.push(h2('8.3 相关文档'));
 sections.push(bullet('数据库 Schema 关系图：docs/db-schema.svg'));
 sections.push(bullet('数据字典：docs/data-dictionary.html'));
-sections.push(bullet('GitHub 仓库：https://github.com/VictorLiang2026/crm-cloudbase'));
+sections.push(bullet('GitHub 仓库：https://github.com/VictorLiang2026/crm-v1'));
 
 // ===== 构建 =====
 const doc = new Document({
