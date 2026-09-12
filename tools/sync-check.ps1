@@ -54,7 +54,9 @@ if ($missingTags.Count -gt 0) {
 }
 
 # 4) 线上 admin.html MD5 vs 本地
-$onlineUrl = 'https://crm-d1gkae8ddc930d151-1434199662.tcloudbaseapp.com/admin.html?v=' + [DateTimeOffset]::Now.ToUnixTimeSeconds()
+# 注意：托管在 /crm-v1/ 子目录；tcbgw 网关对带查询参数的 URL 返回 404，故不加时间戳
+# admin.html 已设置 no-store/no-cache meta，无需防缓存
+$onlineUrl = 'https://crm-d1gkae8ddc930d151-1434199662.tcloudbaseapp.com/crm-v1/admin.html'
 $tmp = Join-Path $env:TEMP ('sync_check_' + [guid]::NewGuid().ToString('N') + '.html')
 try {
   Invoke-WebRequest -Uri $onlineUrl -OutFile $tmp -UseBasicParsing | Out-Null
@@ -64,7 +66,7 @@ try {
     Ok "线上 admin.html 与本地一致（MD5 $localHash）"
   } else {
     Bad "admin.html 不一致：线上 $onlineHash / 本地 $localHash"
-    Sub "可能原因：本地改动尚未部署到托管，或浏览器/CDN 缓存（脚本已加时间戳防缓存）"
+    Sub "可能原因：本地改动尚未部署到托管 /crm-v1/ 目录"
   }
 } catch {
   Bad "无法获取线上 admin.html：$($_.Exception.Message)"

@@ -148,7 +148,7 @@ recruit_candidates / recruit_milestones / recruit_followups / recruit_goals / re
    ```
    （当前 16 个函数都需同步）
 3. **部署云函数**：`tcb fn deploy <name>` 或控制台上传各目录（超时：ai_parse / ai_recommend / policy_review_reports / recruit_score / recruit_recommend = 120s，其余 10s；依赖 `@cloudbase/node-sdk@^4.0.3` 云端安装）
-4. **部署前端**：`tcb hosting deploy admin.html`（或控制台静态托管上传 `admin.html`，并填入 `envId`）；**单文件无构建步骤**
+4. **部署前端**：`tcb hosting deploy ./admin.html /crm-v1/admin.html -e crm-d1gkae8ddc930d151 --yes`（或控制台静态托管上传到 `crm-v1/` 目录，并填入 `envId`）；**单文件无构建步骤**，访问地址 `.../crm-v1/admin.html`（多系统按目录隔离）
 5. **创建登录用户**：`managePermissions(action="createUser", username=..., password=...)` 或控制台「身份认证 → 用户管理」创建（PG 模式 HTTP API 不支持纯用户名密码自助注册）。当前账号：`crm_admin`
 6. **网关 OPA 策略**（已配置）：`authz.user.rego` 显式 `deny` 匿名/未登录用户调用 functions（纵深防御；注册用户由平台默认策略放行）
 7. **端到端验证**：打开 admin.html → 登录 → 客户工作台 → 新增客户 → 详情各 Tab → AI 解析 / AI 建议 → 切换到"组织发展" → 增员工作台 → 目标管理 → 活动量日报 → 客户/增员回收站
