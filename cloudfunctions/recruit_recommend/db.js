@@ -4,6 +4,7 @@
  * - 数据访问：@cloudbase/node-sdk@^4 `app.rdb()`（Supabase 风格链式 API，走网关，免数据库凭证/免 VPC）
  * - AI 封装：app.ai().createModel('cloudbase')，model='hy3'
  * - 工具：normFields / assertOk / nowIso / extractJson
+ * - 注意：PG 模式个人版（共享集群）不提供 PG 协议直连凭证，必须走 rdb()/REST/云API 三条官方通道之一
  *
  * 部署注意：每个云函数目录需包含本文件副本，函数内 require('./db')。
  */
@@ -14,6 +15,7 @@ const cloudbase = require('@cloudbase/node-sdk');
 const app = cloudbase.init({ env: process.env.TCB_ENV });
 const rdb = app.rdb();
 
+// ---------- AI（hy3，cloudbase 组）----------
 const AI_MODEL = process.env.AI_MODEL || 'hy3';
 let _ai = null;
 
@@ -46,10 +48,12 @@ function extractJson(text) {
   }
 }
 
+// ---------- 工具 ----------
 function nowIso() {
   return new Date().toISOString();
 }
 
+// 从 data 中挑出 allowedFields 内的字段；空串统一转 null（避免 date/enum 报错）
 function normFields(data, allowedFields) {
   const out = {};
   for (const f of allowedFields) {
@@ -62,6 +66,7 @@ function normFields(data, allowedFields) {
   return out;
 }
 
+// rdb() 返回 { data, error }；有 error 时抛异常（与旧版 pool.query 抛错行为一致）
 function assertOk(res) {
   if (res && res.error) {
     const e = res.error;

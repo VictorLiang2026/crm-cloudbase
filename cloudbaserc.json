@@ -1,6 +1,7 @@
 {
   "envId": "crm-d1gkae8ddc930d151",
   "version": "2.0",
+  "functionRoot": "cloudfunctions",
   "functions": [
     {
       "name": "activities",
